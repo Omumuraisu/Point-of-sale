@@ -2,7 +2,7 @@
   "expo": {
     "name": "Point-of-sale",
     "slug": "Point-of-sale",
-    
+    "scheme": "pos-scheme",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -30,6 +30,5 @@
       "expo-router"
     ]
   },
-
   "scheme": "pos-scheme"
 }

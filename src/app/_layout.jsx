@@ -1,20 +1,54 @@
-import { Stack, Tabs } from 'expo-router';
+import { Stack } from "expo-router";
 
 export default function Layout() {
   return (
-
-    <Tabs>
- <Tabs.Screen
-        name="index"
+    <Stack>
+      <Stack.Screen
+        name="(tabs)"
         options={{
-          title: 'Home',
+          headerShown: false,
         }}
       />
-      <Tabs.Screen
-        name="settings"
+      <Stack.Screen
+        name="add-product"
         options={{
-          title: 'Settings',
+          headerShown: false,
+          presentation: "modal",
+          animation: "slide_from_bottom",
         }}
-      />    </Tabs>
+      />
+      <Stack.Screen
+        name="add-item"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+          animation: "slide_from_bottom",
+        }}
+      />
+      <Stack.Screen
+        name="receipt"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="payment"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="payment-success"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+    </Stack>
   );
 }
