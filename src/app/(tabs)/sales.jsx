@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
     View,
     Text,
@@ -7,40 +7,81 @@ import {
     ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../../components/pos/components/POSHeader';
+import { loadSavedTransactions } from '../../components/pos/transactionsStore';
 
-const BAR_DATA = [
-    { month: 'Jan', value: 72, active: false },
-    { month: 'Feb', value: 44, active: true },
-    { month: 'Mar', value: 88, active: false },
-    { month: 'Apr', value: 84, active: false },
-    { month: 'May', value: 90, active: false },
-    { month: 'Jun', value: 86, active: false },
-    { month: 'Jul', value: 89, active: false },
-];
+const CHART_PERIODS = {
+    daily: {
+        title: 'Daily Sales',
+        bars: [
+            { label: 'Sun', value: 58 },
+            { label: 'Mon', value: 66 },
+            { label: 'Tue', value: 48 },
+            { label: 'Wed', value: 76 },
+            { label: 'Thu', value: 59 },
+            { label: 'Fri', value: 63 },
+            { label: 'Sat', value: 42 },
+        ],
+        activeIndex: 6,
+    },
+    weekly: {
+        title: 'Weekly Sales',
+        bars: [
+            { label: 'W1', value: 64 },
+            { label: 'W2', value: 70 },
+            { label: 'W3', value: 50 },
+            { label: 'W4', value: 62 },
+            { label: 'W5', value: 56 },
+            { label: 'W1\nMar', value: 53 },
+            { label: 'W2\nMar', value: 49 },
+        ],
+        activeIndex: 1,
+    },
+    monthly: {
+        title: 'Monthly Sales',
+        bars: [
+            { label: 'Jan', value: 66 },
+            { label: 'Feb', value: 44 },
+            { label: 'Mar', value: 68 },
+            { label: 'Apr', value: 71 },
+            { label: 'May', value: 77 },
+            { label: 'Jun', value: 74 },
+            { label: 'Jul', value: 72 },
+        ],
+        activeIndex: 1,
+    },
+};
 
-const TRANSACTIONS = [
-    {
-        id: '#12345',
-        item: 'Chicken Thigh',
-        amount: 'P 364.00',
-        subtitle: '170 per kg',
-        category: 'Meat',
-        categoryType: 'meat',
-    },
-    {
-        id: '#12346',
-        item: 'Pancit Noodles',
-        amount: 'P 144.00',
-        subtitle: '4 packs',
-        category: 'Dry Goods',
-        categoryType: 'dry',
-    },
-];
+const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'];
 
 const Sales = () => {
     const [viewMode, setViewMode] = useState('chart');
+    const [period, setPeriod] = useState('daily');
+    const [savedTransactions, setSavedTransactions] = useState([]);
+
+    useFocusEffect(
+        useCallback(() => {
+            let isMounted = true;
+
+            const hydrateTransactions = async () => {
+                const stored = await loadSavedTransactions();
+
+                if (isMounted) {
+                    setSavedTransactions(stored);
+                }
+            };
+
+            hydrateTransactions();
+
+            return () => {
+                isMounted = false;
+            };
+        }, []),
+    );
+
+    const transactions = savedTransactions;
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -74,54 +115,73 @@ const Sales = () => {
                     </Pressable>
                 </View>
 
-                {viewMode === 'chart' ? <ChartView /> : <TransactionsView />}
+                {viewMode === 'chart'
+                    ? <ChartView period={period} onPeriodChange={setPeriod} />
+                    : <TransactionsView transactions={transactions} />}
             </View>
         </SafeAreaView>
     );
 };
 
-const ChartView = () => (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.summaryWrap}>
-            <Text style={styles.summaryLabel}>Today's Total Sales</Text>
-            <Text style={styles.summaryAmount}>P 14,247.00</Text>
-            <View style={styles.growthPill}>
-                <Text style={styles.growthText}>+12% from yesterday</Text>
-            </View>
-        </View>
+const ChartView = ({ period, onPeriodChange }) => {
+    const activePeriod = CHART_PERIODS[period] ?? CHART_PERIODS.daily;
 
-        <View style={styles.chartCard}>
-            <Text style={styles.cardTitle}>Monthly Sales</Text>
-
-            <View style={styles.barsWrap}>
-                {BAR_DATA.map((bar) => (
-                    <View key={bar.month} style={styles.barCol}>
-                        <View style={styles.barTrack}>
-                            <View style={[styles.barFill, { height: `${bar.value}%` }, bar.active && styles.barFillActive]}>
-                                {bar.active ? (
-                                    <View style={styles.activeDot}>
-                                        <Ionicons name="chevron-up" size={14} color="#ffffff" />
-                                    </View>
-                                ) : null}
-                            </View>
-                        </View>
-                        <Text style={[styles.monthText, bar.active && styles.monthTextActive]}>{bar.month}</Text>
-                    </View>
-                ))}
-            </View>
-
-            <View style={styles.periodSwitchWrap}>
-                <View style={styles.periodSwitchBtn}><Text style={styles.periodText}>Daily</Text></View>
-                <View style={styles.periodSwitchBtn}><Text style={styles.periodText}>Weekly</Text></View>
-                <View style={[styles.periodSwitchBtn, styles.periodSwitchBtnActive]}>
-                    <Text style={[styles.periodText, styles.periodTextActive]}>Monthly</Text>
+    return (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.summaryWrap}>
+                <Text style={styles.summaryLabel}>Today's Total Sales</Text>
+                <Text style={styles.summaryAmount}>P 14,247.00</Text>
+                <View style={styles.growthPill}>
+                    <Text style={styles.growthText}>+12% from yesterday</Text>
                 </View>
             </View>
-        </View>
-    </ScrollView>
-);
 
-const TransactionsView = () => (
+            <View style={styles.chartCard}>
+                <Text style={styles.cardTitle}>{activePeriod.title}</Text>
+
+                <View style={styles.barsWrap}>
+                    {activePeriod.bars.map((bar, index) => {
+                        const isActive = index === activePeriod.activeIndex;
+
+                        return (
+                            <View key={`${period}-${bar.label}-${index}`} style={styles.barCol}>
+                                <View style={styles.barTrack}>
+                                    <View style={[styles.barFill, { height: `${bar.value}%` }, isActive && styles.barFillActive]}>
+                                        {isActive ? (
+                                            <View style={styles.activeMarker}>
+                                                <Ionicons name="chevron-up" size={14} color="#ffffff" />
+                                            </View>
+                                        ) : null}
+                                    </View>
+                                </View>
+                                <Text style={[styles.monthText, isActive && styles.monthTextActive]}>{bar.label}</Text>
+                            </View>
+                        );
+                    })}
+                </View>
+
+                <View style={styles.periodSwitchWrap}>
+                    {PERIOD_OPTIONS.map((option) => {
+                        const isActive = period === option;
+                        const label = option.charAt(0).toUpperCase() + option.slice(1);
+
+                        return (
+                            <Pressable
+                                key={option}
+                                style={[styles.periodSwitchBtn, isActive && styles.periodSwitchBtnActive]}
+                                onPress={() => onPeriodChange(option)}
+                            >
+                                <Text style={[styles.periodText, isActive && styles.periodTextActive]}>{label}</Text>
+                            </Pressable>
+                        );
+                    })}
+                </View>
+            </View>
+        </ScrollView>
+    );
+};
+
+const TransactionsView = ({ transactions = [] }) => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.filtersRow}>
             <View style={styles.filterPill}>
@@ -138,7 +198,16 @@ const TransactionsView = () => (
             </View>
         </View>
 
-        {TRANSACTIONS.map((transaction) => (
+        {transactions.length === 0 ? (
+            <View style={styles.emptyTransactionsWrap}>
+                <Text style={styles.emptyTransactionsTitle}>No transactions yet</Text>
+                <Text style={styles.emptyTransactionsText}>
+                    Confirm a payment to save a transaction record.
+                </Text>
+            </View>
+        ) : null}
+
+        {transactions.map((transaction) => (
             <View key={transaction.id} style={styles.transactionCard}>
                 <View style={styles.transactionTopRow}>
                     <Text style={styles.transactionTitle}>{transaction.item}</Text>
@@ -149,7 +218,9 @@ const TransactionsView = () => (
                     <View
                         style={[
                             styles.categoryPill,
-                            transaction.categoryType === 'meat' ? styles.categoryPillMeat : styles.categoryPillDry,
+                            transaction.categoryType === 'meat'
+                                ? styles.categoryPillMeat
+                                : (transaction.categoryType === 'dry' ? styles.categoryPillDry : styles.categoryPillNeutral),
                         ]}
                     >
                         <Text
@@ -157,7 +228,7 @@ const TransactionsView = () => (
                                 styles.categoryPillText,
                                 transaction.categoryType === 'meat'
                                     ? styles.categoryPillTextMeat
-                                    : styles.categoryPillTextDry,
+                                    : (transaction.categoryType === 'dry' ? styles.categoryPillTextDry : styles.categoryPillTextNeutral),
                             ]}
                         >
                             {transaction.category}
@@ -169,7 +240,7 @@ const TransactionsView = () => (
 
                 <View style={styles.transactionFooterRow}>
                     <Text style={styles.transactionFooterBold}>Transaction ID: {transaction.id}</Text>
-                    <Text style={styles.transactionFooter}>Feb. 12, 2026 | 11:24AM</Text>
+                    <Text style={styles.transactionFooter}>{transaction.dateLabel || 'Feb. 12, 2026 | 11:24AM'}</Text>
                 </View>
             </View>
         ))}
@@ -266,37 +337,41 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
     },
     barCol: {
+        width: 42,
         alignItems: 'center',
     },
     barTrack: {
-        width: 46,
+        width: '100%',
         height: 170,
-        borderRadius: 23,
-        backgroundColor: '#a8b9ea',
+        borderRadius: 5,
+        backgroundColor: '#c2d0f2',
         justifyContent: 'flex-end',
         overflow: 'hidden',
     },
     barFill: {
-        backgroundColor: '#7f98e4',
-        borderRadius: 23,
+        backgroundColor: '#6f8be0',
+        borderTopLeftRadius: 5,
+        borderTopRightRadius: 5,
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
     },
     barFillActive: {
-        backgroundColor: '#2448a4',
+        backgroundColor: '#23439c',
     },
-    activeDot: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 2,
-        borderColor: '#c3d6ff',
+    activeMarker: {
+        marginTop: 6,
+        width: 22,
+        height: 22,
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: '#b5c9ff',
+        backgroundColor: '#1d3a8b',
         alignItems: 'center',
         justifyContent: 'center',
     },
     monthText: {
         marginTop: 8,
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '700',
         color: '#8b8f98',
     },
@@ -361,6 +436,25 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#d85647',
     },
+    emptyTransactionsWrap: {
+        marginTop: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#d1d5df',
+        backgroundColor: '#f4f4f5',
+        padding: 14,
+    },
+    emptyTransactionsTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#1c2029',
+    },
+    emptyTransactionsText: {
+        marginTop: 6,
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#6d7280',
+    },
     transactionCard: {
         marginTop: 12,
         borderRadius: 12,
@@ -408,6 +502,11 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#e0c75f',
     },
+    categoryPillNeutral: {
+        backgroundColor: '#e5e9f2',
+        borderWidth: 1,
+        borderColor: '#a4adc2',
+    },
     categoryPillText: {
         fontSize: 14,
         fontWeight: '700',
@@ -417,6 +516,9 @@ const styles = StyleSheet.create({
     },
     categoryPillTextDry: {
         color: '#d8b83d',
+    },
+    categoryPillTextNeutral: {
+        color: '#6a7182',
     },
     transactionSub: {
         fontSize: 16,

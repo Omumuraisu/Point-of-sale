@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Payment from '../components/pos/Payment';
+import { saveReceiptTransaction } from '../components/pos/transactionsStore';
 
 const parseCart = (rawCart) => {
     if (typeof rawCart !== 'string' || !rawCart.trim()) {
@@ -24,7 +25,13 @@ const PaymentRoute = () => {
         0,
     );
 
-    const handleConfirmPayment = (paidAmount) => {
+    const handleConfirmPayment = async (paidAmount) => {
+        await saveReceiptTransaction({
+            cartItems,
+            paidAmount,
+            totalDue,
+        });
+
         router.replace({
             pathname: '/payment-success',
             params: {
