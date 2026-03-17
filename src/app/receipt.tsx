@@ -1,18 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Receipt from '../components/pos/Receipt';
-
-const parseCart = (rawCart) => {
-    if (typeof rawCart !== 'string' || !rawCart.trim()) {
-        return [];
-    }
-
-    try {
-        const parsed = JSON.parse(rawCart);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
-};
+import { parseCart } from '../lib/utils';
 
 const ReceiptRoute = () => {
     const router = useRouter();

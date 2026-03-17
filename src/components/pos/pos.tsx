@@ -6,22 +6,29 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CATEGORY_ITEMS } from './data';
+import { CartItem, CategoryType } from '../../lib/types';
 import POSHeader from './components/POSHeader';
 import ProductsTitle from './components/ProductsTitle';
 import CategoryCard from './components/CategoryCard';
 import BottomActionsBar from './components/BottomActionsBar';
 import CartSummaryBar from './components/CartSummaryBar';
 
+interface POSProps {
+  cartItems?: CartItem[];
+  cartCount?: number;
+  cartTotal?: string;
+}
+
 const POS = ({
   cartItems = [],
   cartCount = 0,
   cartTotal = 'P 00.00',
-}) => {
+}: POSProps) => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const addButtonLift = 72 + 10;
 
-  const handleCategoryPress = (item) => {
+  const handleCategoryPress = (item: CategoryType) => {
     router.push({
       pathname: '/category',
       params: {

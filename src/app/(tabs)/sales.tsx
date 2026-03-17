@@ -11,6 +11,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../../components/pos/components/POSHeader';
 import { loadSavedTransactions } from '../../components/pos/transactionsStore';
+import { TransactionRecord } from '../../lib/types';
 
 const CHART_PERIODS = {
     daily: {
@@ -54,12 +55,34 @@ const CHART_PERIODS = {
     },
 };
 
-const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'];
+type ChartBar = {
+    label: string;
+    value: number;
+};
+
+type ChartPeriodConfig = {
+    title: string;
+    bars: ChartBar[];
+    activeIndex: number;
+};
+
+const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'] as const;
+type PeriodOption = (typeof PERIOD_OPTIONS)[number];
+const CHART_PERIODS_TYPED: Record<PeriodOption, ChartPeriodConfig> = CHART_PERIODS;
+
+interface ChartViewProps {
+    period: PeriodOption;
+    onPeriodChange: (period: PeriodOption) => void;
+}
+
+interface TransactionsViewProps {
+    transactions: TransactionRecord[];
+}
 
 const Sales = () => {
-    const [viewMode, setViewMode] = useState('chart');
-    const [period, setPeriod] = useState('daily');
-    const [savedTransactions, setSavedTransactions] = useState([]);
+    const [viewMode, setViewMode] = useState<'chart' | 'transactions'>('chart');
+    const [period, setPeriod] = useState<PeriodOption>('daily');
+    const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
 
     useFocusEffect(
         useCallback(() => {
@@ -123,8 +146,8 @@ const Sales = () => {
     );
 };
 
-const ChartView = ({ period, onPeriodChange }) => {
-    const activePeriod = CHART_PERIODS[period] ?? CHART_PERIODS.daily;
+const ChartView = ({ period, onPeriodChange }: ChartViewProps) => {
+    const activePeriod = CHART_PERIODS_TYPED[period] ?? CHART_PERIODS_TYPED.daily;
 
     return (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -181,7 +204,7 @@ const ChartView = ({ period, onPeriodChange }) => {
     );
 };
 
-const TransactionsView = ({ transactions = [] }) => (
+const TransactionsView = ({ transactions = [] }: TransactionsViewProps) => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.filtersRow}>
             <View style={styles.filterPill}>
@@ -218,17 +241,17 @@ const TransactionsView = ({ transactions = [] }) => (
                     <View
                         style={[
                             styles.categoryPill,
-                            transaction.categoryType === 'meat'
+                            transaction.categoryType.key === 'meat'
                                 ? styles.categoryPillMeat
-                                : (transaction.categoryType === 'dry' ? styles.categoryPillDry : styles.categoryPillNeutral),
+                                : (transaction.categoryType.key === 'dry' ? styles.categoryPillDry : styles.categoryPillNeutral),
                         ]}
                     >
                         <Text
                             style={[
                                 styles.categoryPillText,
-                                transaction.categoryType === 'meat'
+                                transaction.categoryType.key === 'meat'
                                     ? styles.categoryPillTextMeat
-                                    : (transaction.categoryType === 'dry' ? styles.categoryPillTextDry : styles.categoryPillTextNeutral),
+                                    : (transaction.categoryType.key === 'dry' ? styles.categoryPillTextDry : styles.categoryPillTextNeutral),
                             ]}
                         >
                             {transaction.category}

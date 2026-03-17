@@ -1,7 +1,13 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const CategoryRow = ({ item, tintColor, onPress }) => (
+interface CategoryRowProps {
+    item: string;
+    tintColor: string;
+    onPress: (item: string) => void;
+}
+
+const CategoryRow = ({ item, tintColor, onPress }: CategoryRowProps) => (
     <Pressable style={styles.row} onPress={() => onPress(item)}>
         <View style={styles.rowLeft}>
             <View style={styles.thumb}>

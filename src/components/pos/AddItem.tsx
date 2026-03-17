@@ -8,10 +8,18 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AddCartItemPayload } from '../../lib/types';
+import { formatCurrency } from '../../lib/utils';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 
-const formatPeso = (value) => `P ${Number.isFinite(value) ? value.toFixed(2) : '0.00'}`;
+interface AddItemScreenProps {
+    productName?: string;
+    categoryLabel?: string;
+    pricePerKg?: number;
+    onBack: () => void;
+    onAdd: (payload: AddCartItemPayload) => void;
+}
 
 const AddItemScreen = ({
     productName = 'Product',
@@ -19,7 +27,7 @@ const AddItemScreen = ({
     pricePerKg = 0,
     onBack,
     onAdd,
-}) => {
+}: AddItemScreenProps) => {
     const insets = useSafeAreaInsets();
     const [quantityInput, setQuantityInput] = useState('');
 
@@ -35,7 +43,7 @@ const AddItemScreen = ({
 
     const canAdd = quantityValue > 0;
 
-    const handleKeyPress = (key) => {
+    const handleKeyPress = (key: string) => {
         if (key === 'backspace') {
             setQuantityInput((prev) => prev.slice(0, -1));
             return;
@@ -74,7 +82,8 @@ const AddItemScreen = ({
         onAdd?.({
             name: productName,
             category: categoryLabel,
-            quantityKg: quantityValue,
+            quantity: quantityValue,
+            unit: 'kg',
             pricePerKg: Number(pricePerKg || 0),
             total: totalAmount,
         });
@@ -104,12 +113,12 @@ const AddItemScreen = ({
 
                     <Text style={styles.sectionLabel}>Price per kg</Text>
                     <View style={styles.priceBox}>
-                        <Text style={styles.priceText}>{formatPeso(Number(pricePerKg || 0))}</Text>
+                        <Text style={styles.priceText}>{formatCurrency(Number(pricePerKg || 0))}</Text>
                     </View>
 
                     <View style={styles.totalBox}>
                         <Text style={styles.totalLabel}>Total Amount</Text>
-                        <Text style={styles.totalText}>{formatPeso(totalAmount)}</Text>
+                        <Text style={styles.totalText}>{formatCurrency(totalAmount)}</Text>
                     </View>
                 </View>
 

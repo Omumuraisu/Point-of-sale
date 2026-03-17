@@ -1,15 +1,22 @@
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { CartItem } from '../../lib/types';
+import { formatCurrency } from '../../lib/utils';
 
-const formatCurrency = (value) => `P ${Number.isFinite(value) ? value.toFixed(2) : '0.00'}`;
+interface PaymentSuccessProps {
+    cartItems?: CartItem[];
+    paidAmount?: number;
+    onNewSale: () => void;
+    onBackHome: () => void;
+}
 
 const PaymentSuccess = ({
     cartItems = [],
     paidAmount = 0,
     onNewSale,
     onBackHome,
-}) => {
+}: PaymentSuccessProps) => {
     const insets = useSafeAreaInsets();
     const totalAmount = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -43,10 +50,10 @@ const PaymentSuccess = ({
                             <View style={styles.itemMain}>
                                 <Text style={styles.itemName}>{item.name}</Text>
                                 <Text style={styles.itemSub}>
-                                    {formatCurrency(Number(item.pricePerKg || 0))} per kg
+                                    {formatCurrency(item.pricePerKg)} per {item.unit}
                                 </Text>
                             </View>
-                            <Text style={styles.itemPrice}>{formatCurrency(Number(item.total || 0))}</Text>
+                            <Text style={styles.itemPrice}>{formatCurrency(item.total)}</Text>
                         </View>
                     ))}
                 </ScrollView>

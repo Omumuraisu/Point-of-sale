@@ -2,12 +2,17 @@ import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatCurrency } from '../../lib/utils';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 
-const formatPeso = (value) => `P ${Number.isFinite(value) ? value.toFixed(2) : '0.00'}`;
+interface PaymentProps {
+    totalDue?: number;
+    onBack: () => void;
+    onConfirmPayment: (paidAmount: number, changeAmount: number) => void;
+}
 
-const Payment = ({ totalDue = 0, onBack, onConfirmPayment }) => {
+const Payment = ({ totalDue = 0, onBack, onConfirmPayment }: PaymentProps) => {
     const insets = useSafeAreaInsets();
     const [amountInput, setAmountInput] = useState('');
 
@@ -19,7 +24,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment }) => {
     const changeAmount = Math.max(paidAmount - Number(totalDue || 0), 0);
     const canConfirm = paidAmount >= Number(totalDue || 0) && Number(totalDue || 0) > 0;
 
-    const handleKeyPress = (key) => {
+    const handleKeyPress = (key: string) => {
         if (key === 'backspace') {
             setAmountInput((prev) => prev.slice(0, -1));
             return;
@@ -71,7 +76,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment }) => {
                 <View style={styles.summaryCard}>
                     <View>
                         <Text style={styles.summaryLabel}>Total Due</Text>
-                        <Text style={styles.summaryAmount}>{formatPeso(Number(totalDue || 0))}</Text>
+                        <Text style={styles.summaryAmount}>{formatCurrency(Number(totalDue || 0))}</Text>
                     </View>
                     <View style={styles.summaryRight}>
                         <View style={styles.cartBadge}>
@@ -85,11 +90,11 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment }) => {
                     <Text style={styles.paidTitle}>Amount Paid</Text>
 
                     <View style={styles.paidInputBox}>
-                        <Text style={styles.paidInputText}>{formatPeso(paidAmount)}</Text>
+                        <Text style={styles.paidInputText}>{formatCurrency(paidAmount)}</Text>
                     </View>
 
                     <View style={styles.changeBox}>
-                        <Text style={styles.changeText}>{formatPeso(changeAmount)}</Text>
+                        <Text style={styles.changeText}>{formatCurrency(changeAmount)}</Text>
                     </View>
                 </View>
 

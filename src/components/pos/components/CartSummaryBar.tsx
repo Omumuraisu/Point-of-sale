@@ -1,6 +1,13 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 
-const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress }) => (
+interface CartSummaryBarProps {
+    count: number;
+    total: string;
+    bottomOffset?: number;
+    onPress?: () => void;
+}
+
+const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress }: CartSummaryBarProps) => (
     <Pressable style={[styles.cartBar, { bottom: bottomOffset }]} onPress={onPress}>
         <View style={styles.cartPill}>
             <Text style={styles.cartPillText}>{count} items in cart</Text>

@@ -1,10 +1,18 @@
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { CartItem } from '../../lib/types';
+import { formatCurrency } from '../../lib/utils';
 
-const formatCurrency = (value) => `P ${Number.isFinite(value) ? value.toFixed(2) : '0.00'}`;
+interface ReceiptProps {
+    cartItems?: CartItem[];
+    onBack: () => void;
+    onAddMore: () => void;
+    onClearAll: () => void;
+    onConfirm: () => void;
+}
 
-const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm }) => {
+const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm }: ReceiptProps) => {
     const insets = useSafeAreaInsets();
     const totalAmount = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -42,11 +50,11 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm }) =
                             <View style={styles.itemMain}>
                                 <Text style={styles.itemName}>{item.name}</Text>
                                 <Text style={styles.itemSub}>
-                                    {formatCurrency(Number(item.pricePerKg || 0))} per kg
+                                    {formatCurrency(item.pricePerKg)} per {item.unit}
                                 </Text>
                             </View>
                             <View style={styles.itemRight}>
-                                <Text style={styles.itemPrice}>{formatCurrency(Number(item.total || 0))}</Text>
+                                <Text style={styles.itemPrice}>{formatCurrency(item.total)}</Text>
                                 <View style={styles.rowActions}>
                                     <Ionicons name="trash-outline" size={14} color="#8f9196" />
                                     <Ionicons name="create-outline" size={14} color="#8f9196" />

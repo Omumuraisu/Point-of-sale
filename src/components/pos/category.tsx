@@ -4,6 +4,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import CategoryRow from './components/CategoryRow';
 import CartSummaryBar from './components/CartSummaryBar';
 
+interface CategoryScreenProps {
+    categoryLabel: string;
+    products: string[];
+    tintColor: string;
+    onBack: () => void;
+    onProductPress: (product: string) => void;
+    cartCount?: number;
+    cartTotal?: string;
+}
+
 const CategoryScreen = ({
     categoryLabel,
     products,
@@ -12,7 +22,7 @@ const CategoryScreen = ({
     onProductPress,
     cartCount = 0,
     cartTotal = 'P 00.00',
-}) => {
+}: CategoryScreenProps) => {
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.header}>

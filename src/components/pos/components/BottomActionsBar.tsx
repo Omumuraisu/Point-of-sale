@@ -1,6 +1,11 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-const BottomActionsBar = ({ onPress, bottomInset }) => (
+interface BottomActionsBarProps {
+    onPress: () => void;
+    bottomInset: number;
+}
+
+const BottomActionsBar = ({ onPress, bottomInset }: BottomActionsBarProps) => (
     <View style={[styles.ctaWrap, { paddingBottom: Math.max(bottomInset, 10) }]}>
         <TouchableOpacity style={styles.ctaButton} onPress={onPress}>
             <Text style={styles.ctaText}>Add New Products</Text>

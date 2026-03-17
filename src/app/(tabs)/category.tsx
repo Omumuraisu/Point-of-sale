@@ -1,37 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import CategoryScreen from "../../components/pos/category";
 import { CATEGORY_PRODUCTS, getCategoryById } from "../../components/pos/data";
-
-const parseCart = (rawCart) => {
-  if (typeof rawCart !== "string" || !rawCart.trim()) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(rawCart);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const formatCurrency = (value) => `P ${value.toFixed(2)}`;
-
-const inferPricePerKg = (productName) => {
-  const lowerName = productName.toLowerCase();
-
-  if (lowerName.includes("thigh")) {
-    return 170;
-  }
-  if (lowerName.includes("whole chicken")) {
-    return 195;
-  }
-  if (lowerName.includes("wings")) {
-    return 165;
-  }
-
-  return 150;
-};
+import { formatCurrency, inferPricePerKg, parseCart } from '../../lib/utils';
 
 const CategoryRoute = () => {
   const router = useRouter();
@@ -46,7 +16,7 @@ const CategoryRoute = () => {
     0,
   );
 
-  const handleProductPress = (product) => {
+  const handleProductPress = (product: string) => {
     router.push({
       pathname: "/add-item",
       params: {

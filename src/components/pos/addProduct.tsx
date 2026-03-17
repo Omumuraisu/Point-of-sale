@@ -21,7 +21,17 @@ const CATEGORIES = [
   'Others',
 ];
 
-const AddProductScreen = ({ onCancel, onSave }) => {
+interface AddProductPayload {
+  name: string;
+  category: string;
+}
+
+interface AddProductScreenProps {
+  onCancel: () => void;
+  onSave: (payload: AddProductPayload) => void;
+}
+
+const AddProductScreen = ({ onCancel, onSave }: AddProductScreenProps) => {
   const insets = useSafeAreaInsets();
   const [productName, setProductName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Dry Goods');

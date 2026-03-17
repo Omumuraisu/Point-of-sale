@@ -1,18 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AddItemScreen from '../components/pos/AddItem';
-
-const parseCart = (rawCart) => {
-    if (typeof rawCart !== 'string' || !rawCart.trim()) {
-        return [];
-    }
-
-    try {
-        const parsed = JSON.parse(rawCart);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
-};
+import { AddCartItemPayload } from '../lib/types';
+import { parseCart } from '../lib/utils';
 
 const AddItemRoute = () => {
     const router = useRouter();
@@ -20,7 +9,7 @@ const AddItemRoute = () => {
 
     const numericPrice = Number.parseFloat(typeof pricePerKg === 'string' ? pricePerKg : '0');
 
-    const handleAdd = (itemPayload) => {
+    const handleAdd = (itemPayload: AddCartItemPayload) => {
         const previousCart = parseCart(typeof cart === 'string' ? cart : '');
 
         const newItem = {

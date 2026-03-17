@@ -1,7 +1,13 @@
 import { Pressable, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { CategoryType } from '../../../lib/types';
 
-const CategoryCard = ({ item, onPress }) => (
+interface CategoryCardProps {
+    item: CategoryType;
+    onPress: (item: CategoryType) => void;
+}
+
+const CategoryCard = ({ item, onPress }: CategoryCardProps) => (
     <Pressable
         style={[
             styles.card,
@@ -9,7 +15,7 @@ const CategoryCard = ({ item, onPress }) => (
         ]}
         onPress={() => onPress(item)}
     >
-        <MaterialCommunityIcons name={item.icon} size={58} color={item.textColor} />
+        <MaterialCommunityIcons name={item.icon as any} size={58} color={item.textColor} />
         <Text style={[styles.cardText, { color: item.textColor }]}>{item.label}</Text>
     </Pressable>
 );

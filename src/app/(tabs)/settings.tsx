@@ -25,20 +25,38 @@ const SETTINGS_ITEMS = [
         iconSet: 'ionicons',
         iconName: 'information-circle',
     },
-];
+] as const;
 
-const SettingsIcon = ({ iconSet, iconName }) => {
+type IconSet = 'ionicons' | 'material';
+type SettingId = 'profile' | 'security' | 'app-details';
+
+interface SettingItem {
+    id: SettingId;
+    title: string;
+    subtitle: string;
+    iconSet: IconSet;
+    iconName: string;
+}
+
+interface SettingsIconProps {
+    iconSet: IconSet;
+    iconName: string;
+}
+
+const typedSettingsItems: readonly SettingItem[] = SETTINGS_ITEMS;
+
+const SettingsIcon = ({ iconSet, iconName }: SettingsIconProps) => {
     if (iconSet === 'material') {
-        return <MaterialCommunityIcons name={iconName} size={28} color="#1f2b3a" />;
+        return <MaterialCommunityIcons name={iconName as any} size={28} color="#1f2b3a" />;
     }
 
-    return <Ionicons name={iconName} size={28} color="#1f2b3a" />;
+    return <Ionicons name={iconName as any} size={28} color="#1f2b3a" />;
 };
 
 const Settings = () => {
     const router = useRouter();
 
-    const handleSettingPress = (id) => {
+    const handleSettingPress = (id: SettingId) => {
         if (id === 'profile') {
             router.push('/profile');
         }
@@ -50,7 +68,7 @@ const Settings = () => {
                 <Text style={styles.pageTitle}>Settings</Text>
 
                 <View style={styles.cardsWrap}>
-                    {SETTINGS_ITEMS.map((item) => (
+                    {typedSettingsItems.map((item) => (
                         <Pressable key={item.id} style={styles.itemCard} onPress={() => handleSettingPress(item.id)}>
                             <View style={styles.itemRow}>
                                 <View style={styles.iconCircle}>

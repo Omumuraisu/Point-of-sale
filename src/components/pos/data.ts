@@ -1,4 +1,6 @@
-export const CATEGORY_ITEMS = [
+import { CategoryProductsMap, CategoryType } from '../../lib/types';
+
+export const CATEGORY_ITEMS: CategoryType[] = [
     {
         id: 'frozen',
         label: 'Frozen',
@@ -65,7 +67,7 @@ export const CATEGORY_ITEMS = [
     },
 ];
 
-export const CATEGORY_PRODUCTS = {
+export const CATEGORY_PRODUCTS: CategoryProductsMap = {
     frozen: ['Ice Cream', 'Frozen Peas', 'Frozen Corn'],
     'dry-goods': ['Rice', 'Pasta', 'Oats'],
     meat: ['Chicken', 'Pork', 'Beef'],
@@ -76,5 +78,5 @@ export const CATEGORY_PRODUCTS = {
     seafood: ['Tilapia', 'Shrimp', 'Crab'],
 };
 
-export const getCategoryById = (categoryId) =>
+export const getCategoryById = (categoryId: string): CategoryType | undefined =>
     CATEGORY_ITEMS.find((item) => item.id === categoryId);

@@ -2,21 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
 import POS from "../../components/pos/pos";
-
-const parseCart = (rawCart) => {
-  if (typeof rawCart !== "string" || !rawCart.trim()) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(rawCart);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const formatCurrency = (value) => `P ${value.toFixed(2)}`;
+import { formatCurrency, parseCart } from '../../lib/utils';
 
 export default function App() {
   const { cart } = useLocalSearchParams();
