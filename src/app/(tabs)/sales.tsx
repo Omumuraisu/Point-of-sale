@@ -118,6 +118,12 @@ const Sales = () => {
         }, []),
     );
 
+    useEffect(() => {
+        if (__DEV__ && viewMode === 'transactions') {
+            console.log('[TRANSACTIONS_DEBUG] Saved transactions:', savedTransactions);
+        }
+    }, [viewMode, savedTransactions]);
+
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.container}>

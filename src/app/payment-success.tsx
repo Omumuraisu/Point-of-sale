@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { clearPersistedCartItems } from '../components/pos/cartStore';
 import PaymentSuccess from '../components/pos/PaymentSuccess';
 import { parseCart } from '../lib/utils';
 
@@ -11,7 +12,9 @@ const PaymentSuccessRoute = () => {
         typeof paidAmount === 'string' ? paidAmount : '0',
     );
 
-    const handleBackHome = () => {
+    const handleBackHome = async () => {
+        await clearPersistedCartItems();
+
         router.replace({
             pathname: '/(tabs)/pos',
             params: {

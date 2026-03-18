@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AddItemScreen from '../components/pos/AddItem';
+import { savePersistedCartItems } from '../components/pos/cartStore';
 import { AddCartItemPayload } from '../lib/types';
 import { parseCart } from '../lib/utils';
 
@@ -9,7 +10,7 @@ const AddItemRoute = () => {
 
     const numericPrice = Number.parseFloat(typeof pricePerKg === 'string' ? pricePerKg : '0');
 
-    const handleAdd = (itemPayload: AddCartItemPayload) => {
+    const handleAdd = async (itemPayload: AddCartItemPayload) => {
         const previousCart = parseCart(typeof cart === 'string' ? cart : '');
 
         const newItem = {
@@ -20,10 +21,12 @@ const AddItemRoute = () => {
 
         const updatedCart = [...previousCart, newItem];
 
+        await savePersistedCartItems(updatedCart);
+
         router.replace({
             pathname: '/(tabs)/pos',
             params: {
-                cart: JSON.stringify([]),
+                cart: JSON.stringify(updatedCart),
                 updatedAt: Date.now().toString(),
             },
         });

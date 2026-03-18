@@ -111,9 +111,9 @@ const AddItemScreen = ({
                     <Text style={styles.categoryText}>{categoryLabel.toUpperCase()}</Text>
                     <Text style={styles.productText}>{productName}</Text>
 
-                    <Text style={styles.sectionLabel}>Price per kg</Text>
+                    <Text style={styles.sectionLabel}>Quantity (kg)</Text>
                     <View style={styles.priceBox}>
-                        <Text style={styles.priceText}>{formatCurrency(Number(pricePerKg || 0))}</Text>
+                        <Text style={styles.priceText}>{quantityInput || '0'}</Text>
                     </View>
 
                     <View style={styles.totalBox}>
@@ -123,7 +123,7 @@ const AddItemScreen = ({
                 </View>
 
                 <View style={styles.keyboardWrap}>
-                    <Text style={styles.qtyHint}>Quantity (kg): {quantityInput || '0'}</Text>
+                    <Text style={styles.qtyHint}>Price per kg: {formatCurrency(Number(pricePerKg || 0))}</Text>
 
                     <View style={styles.keyGrid}>
                         {KEYS.map((key) => {

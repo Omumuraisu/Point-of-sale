@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { clearPersistedCartItems, savePersistedCartItems } from '../components/pos/cartStore';
 import Receipt from '../components/pos/Receipt';
 import { parseCart } from '../lib/utils';
 
@@ -7,12 +8,25 @@ const ReceiptRoute = () => {
     const { cart } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
 
-    const handleClearAll = () => {
+    const handleClearAll = async () => {
+        await clearPersistedCartItems();
+
         router.replace({
             pathname: '/(tabs)/pos',
             params: {
                 cart: JSON.stringify([]),
                 updatedAt: Date.now().toString(),
+            },
+        });
+    };
+
+    const handleAddMore = async () => {
+        await savePersistedCartItems(cartItems);
+
+        router.replace({
+            pathname: '/(tabs)/pos',
+            params: {
+                cart: JSON.stringify(cartItems),
             },
         });
     };
@@ -31,7 +45,7 @@ const ReceiptRoute = () => {
         <Receipt
             cartItems={cartItems}
             onBack={() => router.back()}
-            onAddMore={() => router.replace({ pathname: '/(tabs)/pos', params: { cart: JSON.stringify(cartItems) } })}
+            onAddMore={handleAddMore}
             onClearAll={handleClearAll}
             onConfirm={handleConfirm}
         />

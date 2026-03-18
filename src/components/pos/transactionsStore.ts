@@ -3,12 +3,14 @@ import { CartItem, SaveReceiptTransactionInput, TransactionRecord } from '../../
 import { isTransactionRecord, toTransaction } from '../../lib/utils';
 
 const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
+const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
 const MAX_SAVED_TRANSACTIONS = 100;
 const DEV_SEED_FLAG_KEY = '@pos/dev-seeded-transactions-v1';
 
 export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
     try {
-        const raw = await AsyncStorage.getItem(SALES_TRANSACTIONS_KEY);
+        const raw = await AsyncStorage.getItem(SALES_TRANSACTIONS_KEY)
+            ?? await AsyncStorage.getItem(SALES_TRANSACTIONS_FALLBACK_KEY);
 
         if (!raw) {
             return [];
@@ -22,7 +24,11 @@ export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
 
         // Keep only records that satisfy the strict typed shape.
         return parsed.filter(isTransactionRecord);
-    } catch {
+    } catch (error) {
+        if (__DEV__) {
+            console.error('[TRANSACTIONS_DEBUG] Failed to load saved transactions:', error);
+        }
+
         return [];
     }
 };
@@ -45,8 +51,20 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
 
     try {
         await AsyncStorage.setItem(SALES_TRANSACTIONS_KEY, JSON.stringify(updated));
-    } catch {
-        return null;
+    } catch (primaryError) {
+        if (__DEV__) {
+            console.error('[TRANSACTIONS_DEBUG] Primary transaction save failed, trying fallback key:', primaryError);
+        }
+
+        try {
+            await AsyncStorage.setItem(SALES_TRANSACTIONS_FALLBACK_KEY, JSON.stringify(updated));
+        } catch (fallbackError) {
+            if (__DEV__) {
+                console.error('[TRANSACTIONS_DEBUG] Fallback transaction save failed:', fallbackError);
+            }
+
+            return null;
+        }
     }
 
     return transaction;

@@ -14,11 +14,20 @@ const PaymentRoute = () => {
     );
 
     const handleConfirmPayment = async (paidAmount: number) => {
-        await saveReceiptTransaction({
+        const savedTransaction = await saveReceiptTransaction({
             cartItems,
             paidAmount,
             totalDue,
         });
+
+        if (__DEV__) {
+            console.log('[PAYMENT_DEBUG] Saved transaction:', {
+                savedTransaction,
+                paidAmount,
+                totalDue,
+                cartItemsCount: cartItems.length,
+            });
+        }
 
         router.replace({
             pathname: '/payment-success',
