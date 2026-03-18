@@ -13,7 +13,7 @@ const PaymentSuccessRoute = () => {
 
     const handleBackHome = () => {
         router.replace({
-            pathname: '/',
+            pathname: '/(tabs)/pos',
             params: {
                 cart: JSON.stringify([]),
                 updatedAt: Date.now().toString(),

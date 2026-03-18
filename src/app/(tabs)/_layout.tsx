@@ -1,7 +1,11 @@
 import { Tabs } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const tabBarBottomPadding = Math.max(insets.bottom, 8);
+
   return (
     <Tabs
       screenOptions={{
@@ -9,12 +13,12 @@ export default function TabsLayout() {
         tabBarActiveTintColor: "#ffffff",
         tabBarInactiveTintColor: "#8d919a",
         tabBarStyle: {
-          height: 70,
+          height: 62 + tabBarBottomPadding,
           borderTopWidth: 1,
           borderTopColor: "#d1d4de",
           backgroundColor: "#f8f8f8",
           paddingHorizontal: 12,
-          paddingBottom: 8,
+          paddingBottom: tabBarBottomPadding,
           paddingTop: 8,
         },
         tabBarItemStyle: {
@@ -29,10 +33,17 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="pos"
+        options={{
+          title: "POS",
+          tabBarIcon: ({ color, size }) => <Ionicons name="calculator-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -68,6 +79,18 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="profile"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="security"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
         options={{
           href: null,
         }}

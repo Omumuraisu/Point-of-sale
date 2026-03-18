@@ -59,6 +59,11 @@ const Settings = () => {
     const handleSettingPress = (id: SettingId) => {
         if (id === 'profile') {
             router.push('/profile');
+            return;
+        }
+
+        if (id === 'security') {
+            router.push('/security');
         }
     };
 

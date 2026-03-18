@@ -1,28 +1,33 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
-const POSHeader = () => (
-    <View style={styles.headerRow}>
-        <View style={styles.profileGroup}>
-            <View style={styles.avatarCircle}>
-                <Ionicons name="person" size={26} color="#40444f" />
+const POSHeader = () => {
+    const router = useRouter();
+
+    return (
+        <View style={styles.headerRow}>
+            <View style={styles.profileGroup}>
+                <View style={styles.avatarCircle}>
+                    <Ionicons name="person" size={26} color="#40444f" />
+                </View>
+                <View>
+                    <Text style={styles.profileName}>Mika Bini</Text>
+                    <Text style={styles.profileDate}>Mon, Feb 6, 2026</Text>
+                </View>
             </View>
-            <View>
-                <Text style={styles.profileName}>Mika Bini</Text>
-                <Text style={styles.profileDate}>Mon, Feb 6, 2026</Text>
+            <View style={styles.headerActions}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/notifications')}>
+                    <Ionicons name="notifications" size={20} color="#f0cc42" />
+                    <View style={styles.badgeDot} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.primaryActionBtn]}>
+                    <MaterialCommunityIcons name="cash-register" size={20} color="#ffffff" />
+                </TouchableOpacity>
             </View>
         </View>
-        <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.actionBtn}>
-                <Ionicons name="notifications" size={20} color="#f0cc42" />
-                <View style={styles.badgeDot} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, styles.primaryActionBtn]}>
-                <MaterialCommunityIcons name="cash-register" size={20} color="#ffffff" />
-            </TouchableOpacity>
-        </View>
-    </View>
-);
+    );
+};
 
 export default POSHeader;
 

@@ -21,9 +21,9 @@ const AddItemRoute = () => {
         const updatedCart = [...previousCart, newItem];
 
         router.replace({
-            pathname: '/',
+            pathname: '/(tabs)/pos',
             params: {
-                cart: JSON.stringify(updatedCart),
+                cart: JSON.stringify([]),
                 updatedAt: Date.now().toString(),
             },
         });

@@ -5,7 +5,7 @@
     "scheme": "pos-scheme",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/iconp.webp",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",

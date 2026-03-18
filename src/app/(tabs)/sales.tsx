@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -9,8 +9,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import POSHeader from '../../components/pos/components/POSHeader';
-import { loadSavedTransactions } from '../../components/pos/transactionsStore';
+import { loadSavedTransactions, seedPrebuiltTransactionsIfEmpty } from '../../components/pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
 
 const CHART_PERIODS = {
@@ -80,16 +81,29 @@ interface TransactionsViewProps {
 }
 
 const Sales = () => {
-    const [viewMode, setViewMode] = useState<'chart' | 'transactions'>('chart');
+    const { view } = useLocalSearchParams<{ view?: string | string[] }>();
+    const requestedView = typeof view === 'string' ? view : Array.isArray(view) ? view[0] : undefined;
+    const initialViewMode: 'chart' | 'transactions' = requestedView === 'transactions' ? 'transactions' : 'chart';
+    const [viewMode, setViewMode] = useState<'chart' | 'transactions'>(initialViewMode);
     const [period, setPeriod] = useState<PeriodOption>('daily');
     const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
+
+    useEffect(() => {
+        if (requestedView === 'transactions' || requestedView === 'chart') {
+            setViewMode(requestedView);
+        }
+    }, [requestedView]);
 
     useFocusEffect(
         useCallback(() => {
             let isMounted = true;
 
             const hydrateTransactions = async () => {
-                const stored = await loadSavedTransactions();
+                let stored = await loadSavedTransactions();
+
+                if (stored.length === 0) {
+                    stored = await seedPrebuiltTransactionsIfEmpty(3);
+                }
 
                 if (isMounted) {
                     setSavedTransactions(stored);
@@ -103,8 +117,6 @@ const Sales = () => {
             };
         }, []),
     );
-
-    const transactions = savedTransactions;
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -140,7 +152,7 @@ const Sales = () => {
 
                 {viewMode === 'chart'
                     ? <ChartView period={period} onPeriodChange={setPeriod} />
-                    : <TransactionsView transactions={transactions} />}
+                    : <TransactionsView transactions={savedTransactions} />}
             </View>
         </SafeAreaView>
     );
@@ -342,6 +354,7 @@ const styles = StyleSheet.create({
     },
     chartCard: {
         marginTop: 14,
+        minHeight: 306,
         borderRadius: 14,
         backgroundColor: '#f4f4f5',
         padding: 16,
@@ -395,6 +408,9 @@ const styles = StyleSheet.create({
     monthText: {
         marginTop: 8,
         fontSize: 14,
+        lineHeight: 14,
+        height: 30,
+        textAlign: 'center',
         fontWeight: '700',
         color: '#8b8f98',
     },

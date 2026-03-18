@@ -1,8 +1,20 @@
+import { useEffect } from 'react';
 import { Stack } from "expo-router";
+import { seedDevTransactionsOnce } from '../components/pos/transactionsStore';
 
 export default function Layout() {
+  useEffect(() => {
+    void seedDevTransactionsOnce(3);
+  }, []);
+
   return (
-    <Stack>
+    <Stack initialRouteName="index">
+      <Stack.Screen
+        name="index"
+        options={{
+          headerShown: false,
+        }}
+      />
       <Stack.Screen
         name="(tabs)"
         options={{

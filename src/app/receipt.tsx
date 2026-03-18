@@ -9,7 +9,7 @@ const ReceiptRoute = () => {
 
     const handleClearAll = () => {
         router.replace({
-            pathname: '/',
+            pathname: '/(tabs)/pos',
             params: {
                 cart: JSON.stringify([]),
                 updatedAt: Date.now().toString(),
@@ -31,7 +31,7 @@ const ReceiptRoute = () => {
         <Receipt
             cartItems={cartItems}
             onBack={() => router.back()}
-            onAddMore={() => router.replace({ pathname: '/', params: { cart: JSON.stringify(cartItems) } })}
+            onAddMore={() => router.replace({ pathname: '/(tabs)/pos', params: { cart: JSON.stringify(cartItems) } })}
             onClearAll={handleClearAll}
             onConfirm={handleConfirm}
         />
