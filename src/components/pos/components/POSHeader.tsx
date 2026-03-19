@@ -2,8 +2,16 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+});
+
 const POSHeader = () => {
     const router = useRouter();
+    const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
 
     return (
         <View style={styles.headerRow}>
@@ -13,7 +21,7 @@ const POSHeader = () => {
                 </View>
                 <View>
                     <Text style={styles.profileName}>Mika Bini</Text>
-                    <Text style={styles.profileDate}>Mon, Feb 6, 2026</Text>
+                    <Text style={styles.profileDate}>{currentDateLabel}</Text>
                 </View>
             </View>
             <View style={styles.headerActions}>

@@ -67,5 +67,8 @@ export const toTransaction = ({ cartItems, paidAmount, totalDue, createdAt }: Sa
         categoryType: getCategoryType(category),
         dateLabel: formatTransactionDate(createdAt),
         createdAt,
+        cartItems,
+        paidAmount: paidValue,
+        totalDue: settledAmount,
     };
 };

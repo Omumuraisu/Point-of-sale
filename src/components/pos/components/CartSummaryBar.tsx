@@ -10,7 +10,7 @@ interface CartSummaryBarProps {
 const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress }: CartSummaryBarProps) => (
     <Pressable style={[styles.cartBar, { bottom: bottomOffset }]} onPress={onPress}>
         <View style={styles.cartPill}>
-            <Text style={styles.cartPillText}>{count} items in cart</Text>
+            <Text style={styles.cartPillText}>{count} items added</Text>
         </View>
         <Text style={styles.cartTotal}>{total}</Text>
     </Pressable>

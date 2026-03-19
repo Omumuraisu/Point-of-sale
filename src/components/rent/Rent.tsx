@@ -1,9 +1,32 @@
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    Pressable,
+    LayoutAnimation,
+    Platform,
+    UIManager,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../pos/components/POSHeader';
 
 const Rent = () => {
+    const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
+
+    useEffect(() => {
+        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+            UIManager.setLayoutAnimationEnabledExperimental(true);
+        }
+    }, []);
+
+    const handleToggleDueDetails = () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setDueDetailsExpanded((previous) => !previous);
+    };
+
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.container}>
@@ -41,13 +64,41 @@ const Rent = () => {
                         <Text style={styles.subLabel}>Total Amount Due</Text>
                         <Text style={styles.totalAmount}>P 1,500.00</Text>
 
-                        <View style={styles.rowBetween}>
+                        <Pressable
+                            style={styles.rowBetween}
+                            onPress={handleToggleDueDetails}
+                        >
                             <View style={styles.dueRow}>
                                 <Ionicons name="calendar-outline" size={20} color="#2f5ada" />
                                 <Text style={styles.dueText}>Due: March 24, 2026</Text>
                             </View>
-                            <Ionicons name="chevron-down" size={22} color="#8d919a" />
-                        </View>
+                            <Ionicons
+                                name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
+                                size={22}
+                                color="#8d919a"
+                            />
+                        </Pressable>
+
+                        {isDueDetailsExpanded ? (
+                            <View style={styles.extraDetailsWrap}>
+                                <View style={styles.extraDetailsRow}>
+                                    <Text style={styles.extraDetailsLabel}>Last Month</Text>
+                                    <Text style={styles.extraDetailsLabel}>This Month</Text>
+                                </View>
+                                <View style={[styles.extraDetailsRow, styles.extraDetailsAmountRow]}>
+                                    <Text style={styles.extraDetailsAmount}>P 0.00</Text>
+                                    <Text style={styles.extraDetailsAmount}>P 1,500.00</Text>
+                                </View>
+                                <View style={[styles.extraDetailsRow, styles.violationsRow]}>
+                                    <Text style={styles.extraDetailsLabel}>Violations</Text>
+                                    <Text style={styles.violationsValue}>0</Text>
+                                </View>
+                                <View style={styles.extraDetailsNoteRow}>
+                                    <Ionicons name="document-text-outline" size={18} color="#7a808e" />
+                                    <Text style={styles.extraDetailsNote}>Penalty starts after due date.</Text>
+                                </View>
+                            </View>
+                        ) : null}
                     </View>
 
                     <Text style={styles.personnelTitle}>Other Personnel</Text>
@@ -199,6 +250,51 @@ const styles = StyleSheet.create({
         fontSize: 40 / 2,
         fontWeight: '700',
         color: '#313640',
+    },
+    extraDetailsWrap: {
+        marginTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#d4d8e2',
+        paddingTop: 12,
+    },
+    extraDetailsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    extraDetailsLabel: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#7b8089',
+    },
+    extraDetailsAmountRow: {
+        marginTop: 6,
+    },
+    extraDetailsAmount: {
+        fontSize: 30 / 2,
+        fontWeight: '800',
+        color: '#232833',
+    },
+    violationsRow: {
+        marginTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#e1e5ee',
+        paddingTop: 10,
+    },
+    violationsValue: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#2f5ada',
+    },
+    extraDetailsNoteRow: {
+        marginTop: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    extraDetailsNote: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#7a808e',
     },
     personnelTitle: {
         marginTop: 10,

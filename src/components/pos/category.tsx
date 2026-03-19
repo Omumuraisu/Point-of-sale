@@ -40,6 +40,14 @@ const CategoryScreen = ({
                 renderItem={({ item }) => (
                     <CategoryRow item={item} tintColor={tintColor} onPress={onProductPress} />
                 )}
+                ListEmptyComponent={(
+                    <View style={styles.emptyStateWrap}>
+                        <Text style={styles.emptyStateTitle}>No products yet</Text>
+                        <Text style={styles.emptyStateText}>
+                            Add products to this category from the Add Product screen.
+                        </Text>
+                    </View>
+                )}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
             />
@@ -89,5 +97,27 @@ const styles = StyleSheet.create({
     listContent: {
         paddingHorizontal: 18,
         paddingBottom: 92,
+    },
+    emptyStateWrap: {
+        marginTop: 24,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#cad0de',
+        backgroundColor: '#edf1f8',
+        paddingHorizontal: 14,
+        paddingVertical: 16,
+        alignItems: 'center',
+    },
+    emptyStateTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#1f2531',
+    },
+    emptyStateText: {
+        marginTop: 6,
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#6a7282',
+        textAlign: 'center',
     },
 });

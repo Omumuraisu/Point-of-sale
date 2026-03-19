@@ -71,12 +71,78 @@ export const CATEGORY_PRODUCTS: CategoryProductsMap = {
     frozen: ['Ice Cream', 'Frozen Peas', 'Frozen Corn'],
     'dry-goods': ['Rice', 'Pasta', 'Oats'],
     meat: ['Chicken', 'Pork', 'Beef'],
-    veggies: ['Whole Chicken', 'Chicken Thigh', 'Chicken Wings'],
+    veggies: ['Carrots', 'Broccoli', 'Spinach'],
     fruits: ['Apple', 'Orange', 'Banana'],
     eggs: ['Small Eggs', 'Medium Eggs', 'Large Eggs'],
     grains: ['Corn Grits', 'Barley', 'Millet'],
     seafood: ['Tilapia', 'Shrimp', 'Crab'],
 };
 
-export const getCategoryById = (categoryId: string): CategoryType | undefined =>
-    CATEGORY_ITEMS.find((item) => item.id === categoryId);
+const DEFAULT_CUSTOM_CATEGORY_STYLE = {
+    icon: 'shape-outline',
+    bgColor: '#e2e6ef',
+    borderColor: '#a6afc0',
+    textColor: '#2f3746',
+} as const;
+
+export const normalizeCategoryLabel = (label: string): string =>
+    label
+        .trim()
+        .replace(/\s+/g, ' ');
+
+export const createCategoryIdFromLabel = (label: string): string => {
+    const normalizedLabel = normalizeCategoryLabel(label).toLowerCase();
+    const slug = normalizedLabel
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+
+    return slug || 'custom-category';
+};
+
+export const createCustomCategory = (label: string): CategoryType => {
+    const normalizedLabel = normalizeCategoryLabel(label);
+
+    return {
+        id: createCategoryIdFromLabel(normalizedLabel),
+        label: normalizedLabel,
+        ...DEFAULT_CUSTOM_CATEGORY_STYLE,
+    };
+};
+
+export const categoryExistsByLabel = (categories: CategoryType[], label: string): boolean => {
+    const normalizedLabel = normalizeCategoryLabel(label).toLowerCase();
+
+    return categories.some((category) => category.label.toLowerCase() === normalizedLabel);
+};
+
+export const getCategoryByLabel = (
+    categories: CategoryType[],
+    label: string,
+): CategoryType | undefined => {
+    const normalizedLabel = normalizeCategoryLabel(label).toLowerCase();
+
+    return categories.find((category) => category.label.toLowerCase() === normalizedLabel);
+};
+
+export const mergeCategoriesWithDefaults = (customCategories: CategoryType[]): CategoryType[] => {
+    const mergedById = new Map<string, CategoryType>();
+
+    CATEGORY_ITEMS.forEach((item) => {
+        mergedById.set(item.id, item);
+    });
+
+    customCategories.forEach((item) => {
+        if (!mergedById.has(item.id)) {
+            mergedById.set(item.id, item);
+        }
+    });
+
+    return Array.from(mergedById.values());
+};
+
+export const getCategoryById = (
+    categoryId: string,
+    categories: CategoryType[] = CATEGORY_ITEMS,
+): CategoryType | undefined => categories.find((item) => item.id === categoryId);

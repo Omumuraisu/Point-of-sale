@@ -90,7 +90,7 @@ const Settings = () => {
                         </Pressable>
                     ))}
 
-                    <Pressable style={styles.logoutButton}>
+                    <Pressable style={styles.logoutButton} onPress={() => router.replace('/')}>
                         <Text style={styles.logoutText}>Logout</Text>
                     </Pressable>
                 </View>

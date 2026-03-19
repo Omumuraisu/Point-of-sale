@@ -61,6 +61,14 @@ export default function Layout() {
           animation: "slide_from_right",
         }}
       />
+      <Stack.Screen
+        name="transaction-detail"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
     </Stack>
   );
 }

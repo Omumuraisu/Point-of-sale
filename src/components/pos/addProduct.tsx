@@ -1,44 +1,51 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-const CATEGORIES = [
-  'Frozen',
-  'Dry Goods',
-  'Meat',
-  'Veggies',
-  'Fruits',
-  'Eggs',
-  'Rice',
-  'Seafood',
-  'Others',
-];
+type ProductUnit = 'pieces' | 'kg' | 'g' | 'mg' | 'L' | 'mL';
 
 interface AddProductPayload {
   name: string;
   category: string;
+  pricePerUnit: number;
+  unit: ProductUnit;
 }
 
 interface AddProductScreenProps {
+  categoryOptions?: string[];
   onCancel: () => void;
   onSave: (payload: AddProductPayload) => void;
 }
 
-const AddProductScreen = ({ onCancel, onSave }: AddProductScreenProps) => {
+const AddProductScreen = ({ categoryOptions = [], onCancel, onSave }: AddProductScreenProps) => {
   const insets = useSafeAreaInsets();
   const [productName, setProductName] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Dry Goods');
+  const [selectedCategory, setSelectedCategory] = useState(categoryOptions[0] || '');
+  const [productPrice, setProductPrice] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState<ProductUnit>('pieces');
+
+  useEffect(() => {
+    if (selectedCategory.trim().length === 0 && categoryOptions.length > 0) {
+      setSelectedCategory(categoryOptions[0]);
+    }
+  }, [categoryOptions, selectedCategory]);
+
+  const parsedPricePerUnit = Number(productPrice.trim());
+  const hasValidPricePerUnit = Number.isFinite(parsedPricePerUnit) && parsedPricePerUnit > 0;
 
   const canSave = useMemo(
-    () => productName.trim().length > 0 && selectedCategory.length > 0,
-    [productName, selectedCategory],
+    () => productName.trim().length > 0
+      && selectedCategory.trim().length > 0
+      && hasValidPricePerUnit,
+    [productName, selectedCategory, hasValidPricePerUnit],
   );
 
   const handleSave = () => {
@@ -48,7 +55,9 @@ const AddProductScreen = ({ onCancel, onSave }: AddProductScreenProps) => {
 
     onSave?.({
       name: productName.trim(),
-      category: selectedCategory,
+      category: selectedCategory.trim(),
+      pricePerUnit: parsedPricePerUnit,
+      unit: selectedUnit,
     });
   };
 
@@ -58,7 +67,12 @@ const AddProductScreen = ({ onCancel, onSave }: AddProductScreenProps) => {
         <Text style={styles.topTitle}>Add New Product</Text>
       </View>
 
-      <View style={styles.contentArea}>
+      <ScrollView
+        style={styles.contentArea}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.label}>Product Name</Text>
         <View style={styles.inputWrap}>
           <TextInput
@@ -72,8 +86,54 @@ const AddProductScreen = ({ onCancel, onSave }: AddProductScreenProps) => {
         </View>
 
         <Text style={[styles.label, styles.categoryLabel]}>Category</Text>
+        <View style={styles.inputWrap}>
+          <TextInput
+            value={selectedCategory}
+            onChangeText={setSelectedCategory}
+            placeholder="e.g, Dairy"
+            placeholderTextColor="#8b8b8b"
+            style={styles.input}
+          />
+          <Ionicons name="pricetag-outline" size={22} color="#8a8a8a" />
+        </View>
+
+        <Text style={[styles.label, styles.priceLabel]}>Price per Unit</Text>
+        <View style={styles.inputWrap}>
+          <TextInput
+            value={productPrice}
+            onChangeText={setProductPrice}
+            placeholder="e.g, 120"
+            placeholderTextColor="#8b8b8b"
+            style={styles.input}
+            keyboardType="decimal-pad"
+          />
+          <Ionicons name="cash-outline" size={22} color="#8a8a8a" />
+        </View>
+
+        <Text style={[styles.label, styles.unitLabel]}>Unit</Text>
+        <View style={styles.unitRow}>
+          <Pressable
+            style={[styles.unitPill, selectedUnit === 'pieces' && styles.unitPillActive]}
+            onPress={() => setSelectedUnit('pieces')}
+          >
+            <Text style={[styles.unitText, selectedUnit === 'pieces' && styles.unitTextActive]}>
+              Pieces
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.unitPill, selectedUnit === 'kg' && styles.unitPillActive]}
+            onPress={() => setSelectedUnit('kg')}
+          >
+            <Text style={[styles.unitText, selectedUnit === 'kg' && styles.unitTextActive]}>
+              Kg
+            </Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.helperText}>Tap an existing category or type a new one.</Text>
+
         <View style={styles.categoryGrid}>
-          {CATEGORIES.map((category) => {
+          {categoryOptions.map((category) => {
             const isActive = selectedCategory === category;
 
             return (
@@ -89,7 +149,7 @@ const AddProductScreen = ({ onCancel, onSave }: AddProductScreenProps) => {
             );
           })}
         </View>
-      </View>
+      </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <Pressable style={[styles.actionButton, styles.cancelButton]} onPress={onCancel}>
@@ -134,6 +194,9 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingHorizontal: 20,
   },
+  contentContainer: {
+    paddingBottom: 20,
+  },
   label: {
     fontSize: 42 / 2,
     fontWeight: '700',
@@ -159,7 +222,49 @@ const styles = StyleSheet.create({
   },
   categoryLabel: {
     marginTop: 24,
-    marginBottom: 14,
+    marginBottom: 10,
+  },
+  priceLabel: {
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  unitLabel: {
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  unitRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  unitPill: {
+    flex: 1,
+    height: 54,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#9ea2ad',
+    backgroundColor: '#efefef',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unitPillActive: {
+    borderColor: '#3b66f0',
+    backgroundColor: '#d8dbe7',
+  },
+  unitText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#14151a',
+  },
+  unitTextActive: {
+    color: '#11151f',
+  },
+  helperText: {
+    marginTop: 8,
+    marginBottom: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#5d6677',
   },
   categoryGrid: {
     flexDirection: 'row',

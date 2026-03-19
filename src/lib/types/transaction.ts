@@ -10,6 +10,9 @@ export interface TransactionRecord {
     categoryType: TransactionCategoryType;
     dateLabel: string;
     createdAt: number;
+    cartItems?: CartItem[];
+    paidAmount?: number;
+    totalDue?: number;
 }
 
 export interface SaveReceiptTransactionInput {

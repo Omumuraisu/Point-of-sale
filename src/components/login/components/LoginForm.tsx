@@ -21,12 +21,12 @@ const LoginForm = () => {
 
     return (
         <View style={styles.formCard}>
-            <Text style={styles.label}>Username</Text>
+            <Text style={styles.label}>Phone Number</Text>
             <View style={styles.inputWrapper}>
                 <Ionicons name="person-outline" size={20} color="#272c33" />
                 <TextInput
                     style={styles.input}
-                    placeholder="e.g., VEN-ST11"
+                    placeholder="e.g., 09171234567"
                     placeholderTextColor="#8e939e"
                     value={username}
                     onChangeText={setUsername}

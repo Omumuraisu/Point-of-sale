@@ -1,18 +1,44 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Switch, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { loadSavedTransactions } from '../pos/transactionsStore';
+import { TransactionRecord } from '../../lib/types';
 
-const RECENT_SALES = [
-    { id: '1', product: 'Rice (5kg)', time: '10:45 AM', amount: 'P275.00' },
-    { id: '2', product: 'Cooking Oil', time: '10:30 AM', amount: 'P85.00' },
-    { id: '3', product: 'Fresh Eggs (Doz)', time: '09:15 AM', amount: 'P120.00' },
-] as const;
+const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+});
 
 export default function Home() {
     const router = useRouter();
     const [isOpen, setIsOpen] = useState(true);
+    const [recentSales, setRecentSales] = useState<TransactionRecord[]>([]);
+    const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
+
+    useFocusEffect(
+        useCallback(() => {
+            let isMounted = true;
+
+            const hydrateRecentSales = async () => {
+                const savedTransactions = await loadSavedTransactions();
+
+                if (isMounted) {
+                    setRecentSales(savedTransactions.slice(0, 3));
+                }
+            };
+
+            hydrateRecentSales();
+
+            return () => {
+                isMounted = false;
+            };
+        }, []),
+    );
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -28,7 +54,7 @@ export default function Home() {
                         </View>
                         <View>
                             <Text style={styles.name}>Mika Bini</Text>
-                            <Text style={styles.date}>Mon, Feb 6, 2026</Text>
+                            <Text style={styles.date}>{currentDateLabel}</Text>
                         </View>
                     </View>
 
@@ -84,16 +110,25 @@ export default function Home() {
                 </View>
 
                 <View style={styles.salesWrap}>
-                    {RECENT_SALES.map((item) => (
-                        <View style={styles.saleCard} key={item.id}>
-                            <View style={styles.saleAccent} />
-                            <View style={styles.saleInfo}>
-                                <Text style={styles.saleName}>{item.product}</Text>
-                                <Text style={styles.saleTime}>{item.time}</Text>
-                            </View>
-                            <Text style={styles.saleAmount}>{item.amount}</Text>
+                    {recentSales.length === 0 ? (
+                        <View style={styles.emptyRecentSalesCard}>
+                            <Text style={styles.emptyRecentSalesTitle}>No recent sales yet</Text>
+                            <Text style={styles.emptyRecentSalesText}>
+                                Complete a payment to see your latest transactions here.
+                            </Text>
                         </View>
-                    ))}
+                    ) : (
+                        recentSales.map((item) => (
+                            <View style={styles.saleCard} key={item.id}>
+                                <View style={styles.saleAccent} />
+                                <View style={styles.saleInfo}>
+                                    <Text style={styles.saleName}>{item.item}</Text>
+                                    <Text style={styles.saleTime}>{item.dateLabel}</Text>
+                                </View>
+                                <Text style={styles.saleAmount}>{item.amount}</Text>
+                            </View>
+                        ))
+                    )}
                 </View>
             </ScrollView>
         </SafeAreaView>
@@ -326,5 +361,28 @@ const styles = StyleSheet.create({
         fontSize: 34 / 2,
         fontWeight: '800',
         color: '#141925',
+    },
+    emptyRecentSalesCard: {
+        minHeight: 84,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#d0d5e0',
+        backgroundColor: '#f1f3f8',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    emptyRecentSalesTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#1f2530',
+    },
+    emptyRecentSalesText: {
+        marginTop: 4,
+        textAlign: 'center',
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#687285',
     },
 });

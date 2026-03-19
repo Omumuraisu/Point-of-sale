@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     View,
     Text,
@@ -9,8 +9,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import POSHeader from '../../components/pos/components/POSHeader';
+import { CATEGORY_ITEMS } from '../../components/pos/data';
 import { loadSavedTransactions, seedPrebuiltTransactionsIfEmpty } from '../../components/pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
 
@@ -71,6 +72,16 @@ const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'] as const;
 type PeriodOption = (typeof PERIOD_OPTIONS)[number];
 const CHART_PERIODS_TYPED: Record<PeriodOption, ChartPeriodConfig> = CHART_PERIODS;
 
+const CATEGORY_COLOR_MAP = CATEGORY_ITEMS.reduce((accumulator, category) => {
+    accumulator[category.label.trim().toLowerCase()] = {
+        backgroundColor: category.bgColor,
+        borderColor: category.borderColor,
+        textColor: category.textColor,
+    };
+
+    return accumulator;
+}, {} as Record<string, { backgroundColor: string; borderColor: string; textColor: string }>);
+
 interface ChartViewProps {
     period: PeriodOption;
     onPeriodChange: (period: PeriodOption) => void;
@@ -78,9 +89,11 @@ interface ChartViewProps {
 
 interface TransactionsViewProps {
     transactions: TransactionRecord[];
+    onTransactionPress: (transactionId: string) => void;
 }
 
 const Sales = () => {
+    const router = useRouter();
     const { view } = useLocalSearchParams<{ view?: string | string[] }>();
     const requestedView = typeof view === 'string' ? view : Array.isArray(view) ? view[0] : undefined;
     const initialViewMode: 'chart' | 'transactions' = requestedView === 'transactions' ? 'transactions' : 'chart';
@@ -158,7 +171,17 @@ const Sales = () => {
 
                 {viewMode === 'chart'
                     ? <ChartView period={period} onPeriodChange={setPeriod} />
-                    : <TransactionsView transactions={savedTransactions} />}
+                    : (
+                        <TransactionsView
+                            transactions={savedTransactions}
+                            onTransactionPress={(transactionId) => {
+                                router.push({
+                                    pathname: '/transaction-detail',
+                                    params: { id: transactionId },
+                                });
+                            }}
+                        />
+                    )}
             </View>
         </SafeAreaView>
     );
@@ -222,71 +245,161 @@ const ChartView = ({ period, onPeriodChange }: ChartViewProps) => {
     );
 };
 
-const TransactionsView = ({ transactions = [] }: TransactionsViewProps) => (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.filtersRow}>
-            <View style={styles.filterPill}>
-                <Ionicons name="calendar" size={16} color="#2a2d34" />
-                <Text style={styles.filterText}>mm/dd/yyyy</Text>
-            </View>
-            <View style={styles.filterPill}>
-                <Text style={styles.filterText}>Category</Text>
-                <Ionicons name="chevron-down" size={16} color="#6a6e77" />
-            </View>
-            <View style={[styles.filterPill, styles.exportPill]}>
-                <MaterialCommunityIcons name="tray-arrow-down" size={16} color="#d85647" />
-                <Text style={styles.exportText}>Export</Text>
-            </View>
-        </View>
+const TransactionsView = ({ transactions = [], onTransactionPress }: TransactionsViewProps) => {
+    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [isCategoryMenuOpen, setCategoryMenuOpen] = useState(false);
 
-        {transactions.length === 0 ? (
-            <View style={styles.emptyTransactionsWrap}>
-                <Text style={styles.emptyTransactionsTitle}>No transactions yet</Text>
-                <Text style={styles.emptyTransactionsText}>
-                    Confirm a payment to save a transaction record.
-                </Text>
-            </View>
-        ) : null}
+    const categoryOptions = useMemo(() => {
+        const uniqueCategories = Array.from(
+            new Set(
+                transactions
+                    .map((transaction) => transaction.category.trim())
+                    .filter(Boolean),
+            ),
+        );
 
-        {transactions.map((transaction) => (
-            <View key={transaction.id} style={styles.transactionCard}>
-                <View style={styles.transactionTopRow}>
-                    <Text style={styles.transactionTitle}>{transaction.item}</Text>
-                    <Text style={styles.transactionAmount}>{transaction.amount}</Text>
+        return ['All', ...uniqueCategories];
+    }, [transactions]);
+
+    const filteredTransactions = useMemo(() => {
+        if (selectedCategory === 'All') {
+            return transactions;
+        }
+
+        return transactions.filter((transaction) => transaction.category === selectedCategory);
+    }, [selectedCategory, transactions]);
+
+    useEffect(() => {
+        if (!categoryOptions.includes(selectedCategory)) {
+            setSelectedCategory('All');
+        }
+    }, [categoryOptions, selectedCategory]);
+
+    return (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.filtersRow}>
+                <View style={styles.filterPill}>
+                    <Ionicons name="calendar" size={16} color="#2a2d34" />
+                    <Text style={styles.filterText}>mm/dd/yyyy</Text>
                 </View>
+                <Pressable
+                    style={[styles.filterPill, isCategoryMenuOpen && styles.filterPillActive]}
+                    onPress={() => setCategoryMenuOpen((previous) => !previous)}
+                >
+                    <Text style={styles.filterText}>{selectedCategory}</Text>
+                    <Ionicons
+                        name={isCategoryMenuOpen ? 'chevron-up' : 'chevron-down'}
+                        size={16}
+                        color="#6a6e77"
+                    />
+                </Pressable>
+                <View style={[styles.filterPill, styles.exportPill]}>
+                    <MaterialCommunityIcons name="tray-arrow-down" size={16} color="#d85647" />
+                    <Text style={styles.exportText}>Export</Text>
+                </View>
+            </View>
 
-                <View style={styles.transactionMetaRow}>
-                    <View
-                        style={[
-                            styles.categoryPill,
-                            transaction.categoryType.key === 'meat'
-                                ? styles.categoryPillMeat
-                                : (transaction.categoryType.key === 'dry' ? styles.categoryPillDry : styles.categoryPillNeutral),
-                        ]}
-                    >
-                        <Text
-                            style={[
-                                styles.categoryPillText,
-                                transaction.categoryType.key === 'meat'
-                                    ? styles.categoryPillTextMeat
-                                    : (transaction.categoryType.key === 'dry' ? styles.categoryPillTextDry : styles.categoryPillTextNeutral),
-                            ]}
+            {isCategoryMenuOpen ? (
+                <View style={styles.categoryMenuCard}>
+                    {categoryOptions.map((option) => {
+                        const isSelected = selectedCategory === option;
+
+                        return (
+                            <Pressable
+                                key={option}
+                                style={[styles.categoryMenuItem, isSelected && styles.categoryMenuItemSelected]}
+                                onPress={() => {
+                                    setSelectedCategory(option);
+                                    setCategoryMenuOpen(false);
+                                }}
+                            >
+                                <Text
+                                    style={[
+                                        styles.categoryMenuItemText,
+                                        isSelected && styles.categoryMenuItemTextSelected,
+                                    ]}
+                                >
+                                    {option}
+                                </Text>
+                                {isSelected ? <Ionicons name="checkmark" size={16} color="#2f5ada" /> : null}
+                            </Pressable>
+                        );
+                    })}
+                </View>
+            ) : null}
+
+            {transactions.length === 0 ? (
+                <View style={styles.emptyTransactionsWrap}>
+                    <Text style={styles.emptyTransactionsTitle}>No transactions yet</Text>
+                    <Text style={styles.emptyTransactionsText}>
+                        Confirm a payment to save a transaction record.
+                    </Text>
+                </View>
+            ) : null}
+
+            {transactions.length > 0 && filteredTransactions.length === 0 ? (
+                <View style={styles.emptyTransactionsWrap}>
+                    <Text style={styles.emptyTransactionsTitle}>No matching transactions</Text>
+                    <Text style={styles.emptyTransactionsText}>
+                        No transactions found for the selected category.
+                    </Text>
+                </View>
+            ) : null}
+
+            {filteredTransactions.map((transaction) => (
+                (() => {
+                    const colorTheme = CATEGORY_COLOR_MAP[transaction.category.trim().toLowerCase()];
+
+                    return (
+                        <Pressable
+                            key={transaction.id}
+                            style={styles.transactionCard}
+                            onPress={() => onTransactionPress(transaction.id)}
                         >
-                            {transaction.category}
-                        </Text>
-                    </View>
+                            <View style={styles.transactionTopRow}>
+                                <Text style={styles.transactionTitle}>{transaction.item}</Text>
+                                <Text style={styles.transactionAmount}>{transaction.amount}</Text>
+                            </View>
 
-                    <Text style={styles.transactionSub}>{transaction.subtitle}</Text>
-                </View>
+                            <View style={styles.transactionMetaRow}>
+                                <View
+                                    style={[
+                                        styles.categoryPill,
+                                        colorTheme
+                                            ? {
+                                                backgroundColor: colorTheme.backgroundColor,
+                                                borderWidth: 1,
+                                                borderColor: colorTheme.borderColor,
+                                            }
+                                            : styles.categoryPillNeutral,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.categoryPillText,
+                                            colorTheme
+                                                ? { color: colorTheme.textColor }
+                                                : styles.categoryPillTextNeutral,
+                                        ]}
+                                    >
+                                        {transaction.category}
+                                    </Text>
+                                </View>
 
-                <View style={styles.transactionFooterRow}>
-                    <Text style={styles.transactionFooterBold}>Transaction ID: {transaction.id}</Text>
-                    <Text style={styles.transactionFooter}>{transaction.dateLabel || 'Feb. 12, 2026 | 11:24AM'}</Text>
-                </View>
-            </View>
-        ))}
-    </ScrollView>
-);
+                                <Text style={styles.transactionSub}>{transaction.subtitle}</Text>
+                            </View>
+
+                            <View style={styles.transactionFooterRow}>
+                                <Text style={styles.transactionFooterBold}>Transaction ID: {transaction.id}</Text>
+                                <Text style={styles.transactionFooter}>{transaction.dateLabel || 'Feb. 12, 2026 | 11:24AM'}</Text>
+                            </View>
+                        </Pressable>
+                    );
+                })()
+            ))}
+        </ScrollView>
+    );
+};
 
 export default Sales;
 
@@ -466,10 +579,40 @@ const styles = StyleSheet.create({
         gap: 6,
         flex: 1,
     },
+    filterPillActive: {
+        borderColor: '#2f5ada',
+        backgroundColor: '#eef2ff',
+    },
     filterText: {
         fontSize: 14,
         fontWeight: '600',
         color: '#6a6e77',
+    },
+    categoryMenuCard: {
+        marginTop: 8,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#cfd4df',
+        backgroundColor: '#f8f9fc',
+        paddingVertical: 4,
+    },
+    categoryMenuItem: {
+        minHeight: 36,
+        paddingHorizontal: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    categoryMenuItemSelected: {
+        backgroundColor: '#e9efff',
+    },
+    categoryMenuItemText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#475067',
+    },
+    categoryMenuItemTextSelected: {
+        color: '#2f5ada',
     },
     exportPill: {
         borderColor: '#e16b5f',
