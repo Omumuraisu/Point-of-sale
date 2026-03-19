@@ -68,9 +68,36 @@ type ChartPeriodConfig = {
     activeIndex: number;
 };
 
+type TopSoldProductBar = {
+    label: string;
+    value: number;
+    quantity: number;
+    categoryKey: string;
+};
+
 const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'] as const;
 type PeriodOption = (typeof PERIOD_OPTIONS)[number];
 const CHART_PERIODS_TYPED: Record<PeriodOption, ChartPeriodConfig> = CHART_PERIODS;
+
+const formatTopProductLabel = (rawLabel: string): string => {
+    const label = rawLabel.trim().replace(/\s+/g, ' ');
+
+    if (!label) {
+        return '';
+    }
+
+    const words = label.split(' ');
+
+    if (words.length === 1) {
+        return label.length > 10 ? `${label.slice(0, 10)}...` : label;
+    }
+
+    const firstLine = words[0].slice(0, 7);
+    const remaining = words.slice(1).join(' ');
+    const secondLine = remaining.length > 7 ? `${remaining.slice(0, 7)}...` : remaining;
+
+    return `${firstLine}\n${secondLine}`;
+};
 
 const CATEGORY_COLOR_MAP = CATEGORY_ITEMS.reduce((accumulator, category) => {
     accumulator[category.label.trim().toLowerCase()] = {
@@ -85,6 +112,7 @@ const CATEGORY_COLOR_MAP = CATEGORY_ITEMS.reduce((accumulator, category) => {
 interface ChartViewProps {
     period: PeriodOption;
     onPeriodChange: (period: PeriodOption) => void;
+    topSoldProducts: TopSoldProductBar[];
 }
 
 interface TransactionsViewProps {
@@ -100,6 +128,81 @@ const Sales = () => {
     const [viewMode, setViewMode] = useState<'chart' | 'transactions'>(initialViewMode);
     const [period, setPeriod] = useState<PeriodOption>('daily');
     const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
+
+    const topSoldProducts = useMemo<TopSoldProductBar[]>(() => {
+        const quantityByProduct = new Map<string, {
+            label: string;
+            quantity: number;
+            categoryTotals: Map<string, number>;
+        }>();
+
+        savedTransactions.forEach((transaction) => {
+            transaction.cartItems?.forEach((item) => {
+                const normalizedName = item.name.trim().toLowerCase();
+                const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
+
+                if (!normalizedName || quantity <= 0) {
+                    return;
+                }
+
+                const existing = quantityByProduct.get(normalizedName);
+
+                if (existing) {
+                    existing.quantity += quantity;
+
+                    const normalizedCategory = item.category.trim().toLowerCase();
+
+                    if (normalizedCategory) {
+                        const previous = existing.categoryTotals.get(normalizedCategory) ?? 0;
+                        existing.categoryTotals.set(normalizedCategory, previous + quantity);
+                    }
+
+                    return;
+                }
+
+                const initialCategoryTotals = new Map<string, number>();
+                const normalizedCategory = item.category.trim().toLowerCase();
+
+                if (normalizedCategory) {
+                    initialCategoryTotals.set(normalizedCategory, quantity);
+                }
+
+                quantityByProduct.set(normalizedName, {
+                    label: item.name.trim(),
+                    quantity,
+                    categoryTotals: initialCategoryTotals,
+                });
+            });
+        });
+
+        const rankedProducts = Array.from(quantityByProduct.values())
+            .sort((first, second) => (
+                second.quantity - first.quantity
+                || first.label.localeCompare(second.label)
+            ))
+            .slice(0, 7);
+
+        if (rankedProducts.length === 0) {
+            return [];
+        }
+
+        const highestQuantity = rankedProducts[0].quantity;
+
+        return rankedProducts.map((product) => {
+            const label = formatTopProductLabel(product.label);
+            const dominantCategory = Array.from(product.categoryTotals.entries())
+                .sort((first, second) => second[1] - first[1])[0]?.[0] ?? 'neutral';
+
+            return {
+                label,
+                quantity: Number(product.quantity.toFixed(2)),
+                categoryKey: dominantCategory,
+                value: highestQuantity > 0
+                    ? Math.max(12, Math.round((product.quantity / highestQuantity) * 100))
+                    : 0,
+            };
+        });
+    }, [savedTransactions]);
 
     useEffect(() => {
         if (requestedView === 'transactions' || requestedView === 'chart') {
@@ -170,7 +273,7 @@ const Sales = () => {
                 </View>
 
                 {viewMode === 'chart'
-                    ? <ChartView period={period} onPeriodChange={setPeriod} />
+                    ? <ChartView period={period} onPeriodChange={setPeriod} topSoldProducts={topSoldProducts} />
                     : (
                         <TransactionsView
                             transactions={savedTransactions}
@@ -187,7 +290,7 @@ const Sales = () => {
     );
 };
 
-const ChartView = ({ period, onPeriodChange }: ChartViewProps) => {
+const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) => {
     const activePeriod = CHART_PERIODS_TYPED[period] ?? CHART_PERIODS_TYPED.daily;
 
     return (
@@ -240,6 +343,60 @@ const ChartView = ({ period, onPeriodChange }: ChartViewProps) => {
                         );
                     })}
                 </View>
+            </View>
+
+            <View style={styles.chartCard}>
+                <Text style={styles.cardTitle}>Top Sold Products</Text>
+
+                {topSoldProducts.length > 0 ? (
+                    <View style={styles.barsWrap}>
+                        {topSoldProducts.map((bar, index) => {
+                            const isActive = index === 0;
+                            const colorTheme = CATEGORY_COLOR_MAP[bar.categoryKey];
+                            const barColor = colorTheme?.textColor ?? '#6f8be0';
+
+                            const barFillStyle = {
+                                backgroundColor: isActive ? barColor : `${barColor}cc`,
+                            };
+
+                            return (
+                                <View key={`top-${bar.label}-${index}`} style={styles.barCol}>
+                                    <View style={styles.barTrack}>
+                                        <View
+                                            style={[
+                                                styles.barFill,
+                                                { height: `${bar.value}%` },
+                                                barFillStyle,
+                                                isActive && styles.barFillActive,
+                                            ]}
+                                        >
+                                            {isActive ? (
+                                                <View style={styles.activeMarker}>
+                                                    <Ionicons name="chevron-up" size={14} color="#ffffff" />
+                                                </View>
+                                            ) : null}
+                                        </View>
+                                    </View>
+                                    <Text
+                                        style={[styles.topProductText, isActive && styles.topProductTextActive]}
+                                        numberOfLines={2}
+                                        adjustsFontSizeToFit
+                                        minimumFontScale={0.8}
+                                    >
+                                        {bar.label}
+                                    </Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                ) : (
+                    <View style={styles.topProductsEmptyWrap}>
+                        <Text style={styles.emptyTransactionsTitle}>No sold products yet</Text>
+                        <Text style={styles.emptyTransactionsText}>
+                            Confirm transactions to see top sold products.
+                        </Text>
+                    </View>
+                )}
             </View>
         </ScrollView>
     );
@@ -536,6 +693,19 @@ const styles = StyleSheet.create({
     monthTextActive: {
         color: '#11151f',
     },
+    topProductText: {
+        marginTop: 8,
+        fontSize: 12,
+        lineHeight: 12,
+        height: 28,
+        textAlign: 'center',
+        fontWeight: '700',
+        color: '#8b8f98',
+        width: '100%',
+    },
+    topProductTextActive: {
+        color: '#11151f',
+    },
     periodSwitchWrap: {
         marginTop: 18,
         backgroundColor: '#d2daee',
@@ -560,6 +730,14 @@ const styles = StyleSheet.create({
     },
     periodTextActive: {
         color: '#ffffff',
+    },
+    topProductsEmptyWrap: {
+        marginTop: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#d1d5df',
+        backgroundColor: '#f4f4f5',
+        padding: 14,
     },
     filtersRow: {
         marginTop: 2,

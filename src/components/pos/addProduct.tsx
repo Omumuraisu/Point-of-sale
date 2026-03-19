@@ -12,6 +12,17 @@ import { Ionicons } from '@expo/vector-icons';
 
 type ProductUnit = 'pieces' | 'kg' | 'g' | 'mg' | 'L' | 'mL';
 
+const PRODUCT_UNITS: ProductUnit[] = ['pieces', 'kg', 'g', 'mg', 'L', 'mL'];
+
+const UNIT_LABELS: Record<ProductUnit, string> = {
+  pieces: 'Pieces',
+  kg: 'Kg',
+  g: 'G',
+  mg: 'Mg',
+  L: 'L',
+  mL: 'mL',
+};
+
 interface AddProductPayload {
   name: string;
   category: string;
@@ -112,22 +123,21 @@ const AddProductScreen = ({ categoryOptions = [], onCancel, onSave }: AddProduct
 
         <Text style={[styles.label, styles.unitLabel]}>Unit</Text>
         <View style={styles.unitRow}>
-          <Pressable
-            style={[styles.unitPill, selectedUnit === 'pieces' && styles.unitPillActive]}
-            onPress={() => setSelectedUnit('pieces')}
-          >
-            <Text style={[styles.unitText, selectedUnit === 'pieces' && styles.unitTextActive]}>
-              Pieces
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.unitPill, selectedUnit === 'kg' && styles.unitPillActive]}
-            onPress={() => setSelectedUnit('kg')}
-          >
-            <Text style={[styles.unitText, selectedUnit === 'kg' && styles.unitTextActive]}>
-              Kg
-            </Text>
-          </Pressable>
+          {PRODUCT_UNITS.map((unit) => {
+            const isSelected = selectedUnit === unit;
+
+            return (
+              <Pressable
+                key={unit}
+                style={[styles.unitPill, isSelected && styles.unitPillActive]}
+                onPress={() => setSelectedUnit(unit)}
+              >
+                <Text style={[styles.unitText, isSelected && styles.unitTextActive]}>
+                  {UNIT_LABELS[unit]}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         <Text style={styles.helperText}>Tap an existing category or type a new one.</Text>
@@ -234,11 +244,12 @@ const styles = StyleSheet.create({
   },
   unitRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: 12,
+    rowGap: 12,
   },
   unitPill: {
-    flex: 1,
+    width: '31%',
     height: 54,
     borderRadius: 26,
     borderWidth: 1,
