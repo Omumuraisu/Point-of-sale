@@ -7,6 +7,47 @@ const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
 const MAX_SAVED_TRANSACTIONS = 100;
 const DEV_SEED_FLAG_KEY = '@pos/dev-seeded-transactions-v1';
 
+const withSyncDefaults = (transaction: TransactionRecord): TransactionRecord => ({
+    ...transaction,
+    synced: transaction.synced ?? false,
+    syncAttempts: transaction.syncAttempts ?? 0,
+});
+
+const trimTransactions = (transactions: TransactionRecord[]): TransactionRecord[] => {
+    if (transactions.length <= MAX_SAVED_TRANSACTIONS) {
+        return transactions;
+    }
+
+    const unsynced = transactions.filter((transaction) => !transaction.synced);
+    const synced = transactions.filter((transaction) => transaction.synced);
+
+    return [...unsynced, ...synced].slice(0, MAX_SAVED_TRANSACTIONS);
+};
+
+const saveTransactions = async (transactions: TransactionRecord[]): Promise<boolean> => {
+    const normalized = trimTransactions(transactions.map(withSyncDefaults));
+
+    try {
+        await AsyncStorage.setItem(SALES_TRANSACTIONS_KEY, JSON.stringify(normalized));
+        return true;
+    } catch (primaryError) {
+        if (__DEV__) {
+            console.error('[TRANSACTIONS_DEBUG] Primary transaction save failed, trying fallback key:', primaryError);
+        }
+
+        try {
+            await AsyncStorage.setItem(SALES_TRANSACTIONS_FALLBACK_KEY, JSON.stringify(normalized));
+            return true;
+        } catch (fallbackError) {
+            if (__DEV__) {
+                console.error('[TRANSACTIONS_DEBUG] Fallback transaction save failed:', fallbackError);
+            }
+
+            return false;
+        }
+    }
+};
+
 export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
     try {
         const raw = await AsyncStorage.getItem(SALES_TRANSACTIONS_KEY)
@@ -23,7 +64,7 @@ export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
         }
 
         // Keep only records that satisfy the strict typed shape.
-        return parsed.filter(isTransactionRecord);
+        return parsed.filter(isTransactionRecord).map(withSyncDefaults);
     } catch (error) {
         if (__DEV__) {
             console.error('[TRANSACTIONS_DEBUG] Failed to load saved transactions:', error);
@@ -39,35 +80,51 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
     }
 
     const createdAt = Date.now();
-    const transaction = toTransaction({
+    const transaction = withSyncDefaults(toTransaction({
         cartItems,
         paidAmount,
         totalDue,
         createdAt,
-    });
+    }));
 
     const existing = await loadSavedTransactions();
-    const updated = [transaction, ...existing].slice(0, MAX_SAVED_TRANSACTIONS);
+    const updated = [transaction, ...existing];
 
-    try {
-        await AsyncStorage.setItem(SALES_TRANSACTIONS_KEY, JSON.stringify(updated));
-    } catch (primaryError) {
-        if (__DEV__) {
-            console.error('[TRANSACTIONS_DEBUG] Primary transaction save failed, trying fallback key:', primaryError);
-        }
+    const didSave = await saveTransactions(updated);
 
-        try {
-            await AsyncStorage.setItem(SALES_TRANSACTIONS_FALLBACK_KEY, JSON.stringify(updated));
-        } catch (fallbackError) {
-            if (__DEV__) {
-                console.error('[TRANSACTIONS_DEBUG] Fallback transaction save failed:', fallbackError);
-            }
-
-            return null;
-        }
+    if (!didSave) {
+        return null;
     }
 
     return transaction;
+};
+
+export const updateTransactionSyncState = async (
+    transactionId: string,
+    patch: Pick<TransactionRecord, 'synced' | 'syncedAt' | 'syncError' | 'syncAttempts'>,
+): Promise<void> => {
+    const existing = await loadSavedTransactions();
+    const index = existing.findIndex((transaction) => transaction.id === transactionId);
+
+    if (index < 0) {
+        return;
+    }
+
+    const current = existing[index];
+    const updatedTransaction: TransactionRecord = withSyncDefaults({
+        ...current,
+        ...patch,
+    });
+
+    const updated = [...existing];
+    updated[index] = updatedTransaction;
+    await saveTransactions(updated);
+};
+
+export const getUnsyncedTransactions = async (): Promise<TransactionRecord[]> => {
+    const transactions = await loadSavedTransactions();
+
+    return transactions.filter((transaction) => !transaction.synced);
 };
 
 const buildSampleCartItems = (seedOffset: number): CartItem[] => {

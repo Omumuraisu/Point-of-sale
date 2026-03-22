@@ -56,6 +56,16 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
     const hasValidTotalDue = value.totalDue === undefined
         || (typeof value.totalDue === 'number' && Number.isFinite(value.totalDue));
 
+    const hasValidSynced = value.synced === undefined || typeof value.synced === 'boolean';
+
+    const hasValidSyncedAt = value.syncedAt === undefined
+        || (typeof value.syncedAt === 'number' && Number.isFinite(value.syncedAt));
+
+    const hasValidSyncError = value.syncError === undefined || typeof value.syncError === 'string';
+
+    const hasValidSyncAttempts = value.syncAttempts === undefined
+        || (typeof value.syncAttempts === 'number' && Number.isFinite(value.syncAttempts));
+
     return typeof value.id === 'string'
         && typeof value.item === 'string'
         && typeof value.amount === 'string'
@@ -67,5 +77,9 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
         && Number.isFinite(value.createdAt)
         && hasValidCartItems
         && hasValidPaidAmount
-        && hasValidTotalDue;
+        && hasValidTotalDue
+        && hasValidSynced
+        && hasValidSyncedAt
+        && hasValidSyncError
+        && hasValidSyncAttempts;
 };

@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import POSHeader from '../../components/pos/components/POSHeader';
 import { CATEGORY_ITEMS } from '../../components/pos/data';
 import { loadSavedTransactions, seedPrebuiltTransactionsIfEmpty } from '../../components/pos/transactionsStore';
+import { syncUnsyncedTransactions } from '../../lib/transactionsSync';
 import { TransactionRecord } from '../../lib/types';
 
 const CHART_PERIODS = {
@@ -118,6 +119,8 @@ interface ChartViewProps {
 interface TransactionsViewProps {
     transactions: TransactionRecord[];
     onTransactionPress: (transactionId: string) => void;
+    unsyncedCount: number;
+    latestSyncError?: string;
 }
 
 const Sales = () => {
@@ -128,6 +131,16 @@ const Sales = () => {
     const [viewMode, setViewMode] = useState<'chart' | 'transactions'>(initialViewMode);
     const [period, setPeriod] = useState<PeriodOption>('daily');
     const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
+
+    const unsyncedCount = useMemo(
+        () => savedTransactions.filter((transaction) => !transaction.synced).length,
+        [savedTransactions],
+    );
+
+    const latestSyncError = useMemo(
+        () => savedTransactions.find((transaction) => !!transaction.syncError)?.syncError,
+        [savedTransactions],
+    );
 
     const topSoldProducts = useMemo<TopSoldProductBar[]>(() => {
         const quantityByProduct = new Map<string, {
@@ -215,6 +228,7 @@ const Sales = () => {
             let isMounted = true;
 
             const hydrateTransactions = async () => {
+                await syncUnsyncedTransactions(1, 10);
                 let stored = await loadSavedTransactions();
 
                 if (stored.length === 0) {
@@ -277,6 +291,8 @@ const Sales = () => {
                     : (
                         <TransactionsView
                             transactions={savedTransactions}
+                            unsyncedCount={unsyncedCount}
+                            latestSyncError={latestSyncError}
                             onTransactionPress={(transactionId) => {
                                 router.push({
                                     pathname: '/transaction-detail',
@@ -402,7 +418,12 @@ const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) 
     );
 };
 
-const TransactionsView = ({ transactions = [], onTransactionPress }: TransactionsViewProps) => {
+const TransactionsView = ({
+    transactions = [],
+    onTransactionPress,
+    unsyncedCount,
+    latestSyncError,
+}: TransactionsViewProps) => {
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [isCategoryMenuOpen, setCategoryMenuOpen] = useState(false);
 
@@ -455,6 +476,22 @@ const TransactionsView = ({ transactions = [], onTransactionPress }: Transaction
                     <Text style={styles.exportText}>Export</Text>
                 </View>
             </View>
+
+            {unsyncedCount > 0 ? (
+                <View style={styles.syncStatusCard}>
+                    <Text style={styles.syncStatusTitle}>
+                        {unsyncedCount} transaction{unsyncedCount > 1 ? 's' : ''} pending sync
+                    </Text>
+                    <Text style={styles.syncStatusText}>
+                        Keep the app online to upload saved transactions to the backend.
+                    </Text>
+                    {latestSyncError ? (
+                        <Text style={styles.syncStatusError} numberOfLines={2}>
+                            Last error: {latestSyncError}
+                        </Text>
+                    ) : null}
+                </View>
+            ) : null}
 
             {isCategoryMenuOpen ? (
                 <View style={styles.categoryMenuCard}>
@@ -809,6 +846,31 @@ const styles = StyleSheet.create({
         borderColor: '#d1d5df',
         backgroundColor: '#f4f4f5',
         padding: 14,
+    },
+    syncStatusCard: {
+        marginTop: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e3a45c',
+        backgroundColor: '#fef3e8',
+        padding: 12,
+    },
+    syncStatusTitle: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#7f4414',
+    },
+    syncStatusText: {
+        marginTop: 4,
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#8e5b2c',
+    },
+    syncStatusError: {
+        marginTop: 6,
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#a5332a',
     },
     emptyTransactionsTitle: {
         fontSize: 18,

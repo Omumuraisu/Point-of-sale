@@ -13,6 +13,10 @@ export interface TransactionRecord {
     cartItems?: CartItem[];
     paidAmount?: number;
     totalDue?: number;
+    synced?: boolean;
+    syncedAt?: number;
+    syncError?: string;
+    syncAttempts?: number;
 }
 
 export interface SaveReceiptTransactionInput {

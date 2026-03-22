@@ -56,5 +56,6 @@ export const saveCustomCategories = async (categories: CategoryType[]): Promise<
 
 export const loadMergedCategories = async (): Promise<CategoryType[]> => {
     const custom = await loadCustomCategories();
+
     return mergeCategoriesWithDefaults(custom);
 };

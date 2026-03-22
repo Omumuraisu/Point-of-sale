@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas  = ["public", "auth"]
+}
+
+enum BusinessType {
+  Produce
+  Services
+  Food_Stall 
+  Clothing
+  Electronics
+  Vendor_Stall
+}
+
+enum AdminRole {
+  Head_Admin
+  Administration_Staff
+  Market_in_Charge
+}
+
+enum AccountStatus {
+  Pending_activation
+  Active
+  Disabled
+}
+
+enum RentStatus {
+  Paid
+  Unpaid
+  Overdue
+}
+
+enum Role {
+  Admin
+  Business_Owner
+  Vendor
+  Delivery_Operator
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+
+model Account {
+  account_id      BigInt @id @default(autoincrement())
+  phone           String   @unique
+  email           String
+  password        String
+  role            Role
+  created_at      DateTime @db.Timestamp(0)
+
+  businessOwner businessOwner?
+  vendor        vendor?
+  hubStaff     hub_staff?
+  leeoAdmin    leeo_admin?
+}
+
+model businessOwner {
+  business_owner_id BigInt @id @default(autoincrement())
+  account_id        BigInt @unique
+  first_name         String
+  last_name          String
+  contact_number     String
+  email              String
+  created_at         DateTime @db.Timestamp(0)
+
+  account   Account @relation(fields: [account_id], references: [account_id])
+  businesses business[]
+}
+
+model business {
+  business_id       BigInt @id @default(autoincrement())
+  business_owner_id BigInt
+  stall_id          BigInt
+  business_name     String
+  business_type     BusinessType
+  lease_date        String
+
+  owner   businessOwner @relation(fields: [business_owner_id], references: [business_owner_id])
+  vendors vendor[]
+
+  // optional back-reference for "this business is active in these stalls" (normally 0 or 1)
+  active_in_stalls stall[] @relation("stall_active_business")
+
+  // products offered by this business
+  products product[]
+
+  @@index([business_owner_id])
+  @@index([stall_id])
+}
+
+model stall {
+  stall_id     BigInt @id @default(autoincrement())
+  name         String
+  stall_number Int
+  stall_width  Float
+  stall_height Float
+  // violations?
+  monthly_rent Float
+  rent_status  RentStatus
+  // vendor_list?
+
+  // the single active business for this stall
+  active_business_id BigInt
+  active_business    business @relation("stall_active_business", fields: [active_business_id], references: [business_id])
+
+  // violations for this stall
+  violations violation[]
+
+  @@index([active_business_id])
+}
+
+model vendor {
+  vendor_id         BigInt @id @default(autoincrement())
+  account_id        BigInt @unique
+  business_id       BigInt
+  first_name        String
+  last_name         String
+  contact_number    String
+  created_at      DateTime @db.Timestamp(0)
+
+  business business @relation(fields: [business_id], references: [business_id])
+  account   Account @relation(fields: [account_id], references: [account_id])
+
+  @@index([business_id])
+}
+
+model zone {
+  zone_id      BigInt @id @default(autoincrement())
+  name         String
+  no_of_stalls Int
+
+  @@index([name])
+}
+
+model violation {
+  violation_id BigInt @id @default(autoincrement())
+  stall_id     BigInt
+  interest     Float
+
+  stall stall @relation(fields: [stall_id], references: [stall_id])
+
+  @@index([stall_id])
+}
+
+model transactions {
+  transaction_id BigInt   @id @default(autoincrement())
+  owner_id       BigInt
+  external_id    String
+  sale_datetime  DateTime @db.Timestamp(0)
+  total_amount   Float    @db.Real
+  paid_amount    Float?   @db.Real
+
+  items transaction_items[]
+
+  user users @relation(fields: [owner_id], references: [id])
+
+  @@index([owner_id])
+  @@unique([owner_id, external_id])
+}
+
+model transaction_items {
+  transaction_item_id BigInt   @id @default(autoincrement())
+  transaction_id      BigInt
+  product_name        String
+  category            String?
+  quantity            Float    @db.Real
+  unit                String?
+  price_per_unit      Float?   @db.Real
+  line_total          Float    @db.Real
+  created_at          DateTime @default(now()) @db.Timestamp(0)
+
+  transaction transactions @relation(fields: [transaction_id], references: [transaction_id], onDelete: Cascade)
+
+  @@index([transaction_id])
+}
+
+model product {
+  product_id BigInt @id @default(autoincrement())
+  name       String
+  price      Float
+
+  business_id BigInt
+  business    business @relation(fields: [business_id], references: [business_id])
+
+  tarrif_id BigInt
+  tariff    tarrif @relation(fields: [tarrif_id], references: [tarrif_id])
+
+  @@index([name])
+}
+
+model tarrif {
+  tarrif_id   BigInt @id @default(autoincrement())
+  name        String
+  tarrif_rate Float
+
+  products product[]
+
+  @@index([name])
+}
+
+model delivery_ticket_fee {
+  ticket_id BigInt @id @default(autoincrement())
+  // Im not sure about this....
+}
+
+model hub_staff {
+  hubstaff_id     BigInt   @id @default(autoincrement())
+  account_id      BigInt   @unique
+  first_name      String
+  last_name       String
+  contact_number  String
+  created_at      DateTime @db.Timestamp(0)
+  
+
+  account Account @relation(fields: [account_id], references: [account_id])
+}
+
+model queueing_ticket {
+  ticket_id       BigInt     @id @default(autoincrement())
+  vehicle_type    String
+  time_of_arrival DateTime   @db.Timestamp(0)
+  waiting_time    Int
+  status          String
+  issued_by       BigInt
+  
+}
+
+model leeo_admin {
+  admin_id        BigInt   @id @default(autoincrement())
+  account_id      BigInt   @unique
+  full_name       String
+  contact_number  String
+  account_status  String
+  created_at      DateTime @db.Timestamp(0)
+
+  account         Account          @relation(fields: [account_id], references: [account_id])
+  
+}
+
+model users {
+  id           BigInt         @id @default(autoincrement())
+  name         String
+  transactions transactions[]
+}
