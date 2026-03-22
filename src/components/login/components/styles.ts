@@ -85,7 +85,9 @@ export const styles = StyleSheet.create({
         color: '#333',
     },
     forgotRow: {
-        alignItems: 'flex-end',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         marginBottom: 20,
         marginTop: -6,
     },

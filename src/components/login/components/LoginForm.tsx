@@ -60,6 +60,10 @@ const LoginForm = () => {
                 <TouchableOpacity>
                     <Text style={styles.forgotLink}>Forgot password?</Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => router.push('/activate-account')}>
+                    <Text style={styles.forgotLink}>Activate account</Text>
+                </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>

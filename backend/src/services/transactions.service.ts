@@ -73,7 +73,7 @@ export async function createOrUpdateTransaction(input: CreateTransactionInput) {
                     sale_datetime: input.saleDatetime,
                     total_amount: input.totalAmount,
                     paid_amount: input.paidAmount ?? null,
-                    items: input.cartItems && input.cartItems.length > 0
+                    transaction_items: input.cartItems && input.cartItems.length > 0
                         ? {
                             create: input.cartItems.map((item) => ({
                                 product_name: item.productName,
@@ -87,7 +87,7 @@ export async function createOrUpdateTransaction(input: CreateTransactionInput) {
                         : undefined
                 },
                 include: {
-                    items: true
+                    transaction_items: true
                 }
             });
         }
@@ -106,7 +106,7 @@ export async function createOrUpdateTransaction(input: CreateTransactionInput) {
                 sale_datetime: input.saleDatetime,
                 total_amount: input.totalAmount,
                 paid_amount: input.paidAmount ?? null,
-                items: input.cartItems && input.cartItems.length > 0
+                transaction_items: input.cartItems && input.cartItems.length > 0
                     ? {
                         create: input.cartItems.map((item) => ({
                             product_name: item.productName,
@@ -120,7 +120,7 @@ export async function createOrUpdateTransaction(input: CreateTransactionInput) {
                     : undefined
             },
             include: {
-                items: true
+                transaction_items: true
             }
         });
     });
@@ -130,7 +130,7 @@ export async function listTransactions(ownerId?: bigint) {
     return prisma.transactions.findMany({
         where: ownerId ? { owner_id: ownerId } : undefined,
         include: {
-            items: true
+            transaction_items: true
         },
         orderBy: {
             sale_datetime: "desc"
@@ -150,7 +150,7 @@ export async function listTransactionSyncStatus(ownerId?: bigint) {
             paid_amount: true,
             _count: {
                 select: {
-                    items: true
+                    transaction_items: true
                 }
             }
         },
@@ -166,6 +166,6 @@ export async function listTransactionSyncStatus(ownerId?: bigint) {
         saleDatetime: row.sale_datetime,
         totalAmount: row.total_amount,
         paidAmount: row.paid_amount,
-        itemCount: row._count.items
+        itemCount: row._count.transaction_items
     }));
 }
