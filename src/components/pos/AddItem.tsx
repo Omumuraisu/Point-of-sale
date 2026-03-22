@@ -16,7 +16,8 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'
 interface AddItemScreenProps {
     productName?: string;
     categoryLabel?: string;
-    pricePerKg?: number;
+    pricePerUnit?: number;
+    unit?: string;
     onBack: () => void;
     onAdd: (payload: AddCartItemPayload) => void;
 }
@@ -24,7 +25,8 @@ interface AddItemScreenProps {
 const AddItemScreen = ({
     productName = 'Product',
     categoryLabel = 'Category',
-    pricePerKg = 0,
+    pricePerUnit = 0,
+    unit = 'kg',
     onBack,
     onAdd,
 }: AddItemScreenProps) => {
@@ -37,8 +39,8 @@ const AddItemScreen = ({
     }, [quantityInput]);
 
     const totalAmount = useMemo(
-        () => quantityValue * Number(pricePerKg || 0),
-        [pricePerKg, quantityValue],
+        () => quantityValue * Number(pricePerUnit || 0),
+        [pricePerUnit, quantityValue],
     );
 
     const canAdd = quantityValue > 0;
@@ -83,8 +85,8 @@ const AddItemScreen = ({
             name: productName,
             category: categoryLabel,
             quantity: quantityValue,
-            unit: 'kg',
-            pricePerKg: Number(pricePerKg || 0),
+            unit,
+            pricePerKg: Number(pricePerUnit || 0),
             total: totalAmount,
         });
     };
@@ -111,7 +113,7 @@ const AddItemScreen = ({
                     <Text style={styles.categoryText}>{categoryLabel.toUpperCase()}</Text>
                     <Text style={styles.productText}>{productName}</Text>
 
-                    <Text style={styles.sectionLabel}>Quantity (kg)</Text>
+                    <Text style={styles.sectionLabel}>Quantity ({unit})</Text>
                     <View style={styles.priceBox}>
                         <Text style={styles.priceText}>{quantityInput || '0'}</Text>
                     </View>
@@ -123,7 +125,7 @@ const AddItemScreen = ({
                 </View>
 
                 <View style={styles.keyboardWrap}>
-                    <Text style={styles.qtyHint}>Price per kg: {formatCurrency(Number(pricePerKg || 0))}</Text>
+                    <Text style={styles.qtyHint}>Price per {unit}: {formatCurrency(Number(pricePerUnit || 0))}</Text>
 
                     <View style={styles.keyGrid}>
                         {KEYS.map((key) => {

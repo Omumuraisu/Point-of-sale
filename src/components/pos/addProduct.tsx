@@ -43,6 +43,8 @@ const AddProductScreen = ({ categoryOptions = [], onCancel, onSave }: AddProduct
   const [productPrice, setProductPrice] = useState('');
   const [selectedUnit, setSelectedUnit] = useState<ProductUnit>('pieces');
 
+  const normalizeCategory = (value: string) => value.trim().toLowerCase();
+
   useEffect(() => {
     if (selectedCategory.trim().length === 0 && categoryOptions.length > 0) {
       setSelectedCategory(categoryOptions[0]);
@@ -55,8 +57,9 @@ const AddProductScreen = ({ categoryOptions = [], onCancel, onSave }: AddProduct
   const canSave = useMemo(
     () => productName.trim().length > 0
       && selectedCategory.trim().length > 0
-      && hasValidPricePerUnit,
-    [productName, selectedCategory, hasValidPricePerUnit],
+      && hasValidPricePerUnit
+      && categoryOptions.length > 0,
+    [productName, selectedCategory, hasValidPricePerUnit, categoryOptions.length],
   );
 
   const handleSave = () => {
@@ -96,18 +99,6 @@ const AddProductScreen = ({ categoryOptions = [], onCancel, onSave }: AddProduct
           <Ionicons name="create-outline" size={22} color="#8a8a8a" />
         </View>
 
-        <Text style={[styles.label, styles.categoryLabel]}>Category</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            value={selectedCategory}
-            onChangeText={setSelectedCategory}
-            placeholder="e.g, Dairy"
-            placeholderTextColor="#8b8b8b"
-            style={styles.input}
-          />
-          <Ionicons name="pricetag-outline" size={22} color="#8a8a8a" />
-        </View>
-
         <Text style={[styles.label, styles.priceLabel]}>Price per Unit</Text>
         <View style={styles.inputWrap}>
           <TextInput
@@ -140,25 +131,32 @@ const AddProductScreen = ({ categoryOptions = [], onCancel, onSave }: AddProduct
           })}
         </View>
 
-        <Text style={styles.helperText}>Tap an existing category or type a new one.</Text>
+        <Text style={[styles.label, styles.categoryLabel]}>Category</Text>
+        <Text style={styles.helperText}>Select one category.</Text>
 
-        <View style={styles.categoryGrid}>
-          {categoryOptions.map((category) => {
-            const isActive = selectedCategory === category;
+        {categoryOptions.length > 0 ? (
+          <View style={styles.categoryGrid}>
+            {categoryOptions.map((category) => {
+              const isActive = normalizeCategory(selectedCategory) === normalizeCategory(category);
 
-            return (
-              <Pressable
-                key={category}
-                style={[styles.categoryPill, isActive && styles.categoryPillActive]}
-                onPress={() => setSelectedCategory(category)}
-              >
-                <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
-                  {category}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+              return (
+                <Pressable
+                  key={category}
+                  style={[styles.categoryPill, isActive && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategory(category)}
+                >
+                  <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
+                    {category}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.emptyCategoryWrap}>
+            <Text style={styles.emptyCategoryText}>No categories available yet.</Text>
+          </View>
+        )}
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -274,6 +272,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
     fontSize: 13,
+    fontWeight: '600',
+    color: '#5d6677',
+  },
+  emptyCategoryWrap: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#c3c8d7',
+    backgroundColor: '#eceff6',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyCategoryText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#5d6677',
   },

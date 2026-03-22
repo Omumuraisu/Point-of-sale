@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
 import { CATEGORY_ITEMS, getCategoryById } from '../../components/pos/data';
 import { loadMergedCategories } from '../../components/pos/categoriesStore';
-import { loadMergedProductNamesByCategory } from '../../components/pos/productsStore';
+import { loadMergedProductNamesByCategory, loadSavedProducts } from '../../components/pos/productsStore';
 import { CategoryType } from '../../lib/types';
 import { formatCurrency, inferPricePerKg, parseCart } from '../../lib/utils';
 
@@ -14,6 +14,7 @@ const CategoryRoute = () => {
 
   const [categories, setCategories] = useState<CategoryType[]>(CATEGORY_ITEMS);
   const [products, setProducts] = useState<string[]>([]);
+  const [savedProducts, setSavedProducts] = useState<Awaited<ReturnType<typeof loadSavedProducts>>>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -24,10 +25,12 @@ const CategoryRoute = () => {
         const mergedProducts = typeof categoryId === 'string'
           ? await loadMergedProductNamesByCategory(categoryId)
           : [];
+        const storedProducts = await loadSavedProducts();
 
         if (isMounted) {
           setCategories(mergedCategories);
           setProducts(mergedProducts);
+          setSavedProducts(storedProducts);
         }
       };
 
@@ -49,13 +52,27 @@ const CategoryRoute = () => {
   );
 
   const handleProductPress = (product: string) => {
+    const savedProduct = savedProducts.find((item) => {
+      if (typeof categoryId !== 'string') {
+        return false;
+      }
+
+      return item.categoryId === categoryId
+        && item.name.trim().toLowerCase() === product.trim().toLowerCase();
+    });
+
+    const resolvedPricePerUnit = savedProduct?.pricePerUnit ?? inferPricePerKg(product);
+    const resolvedUnit = savedProduct?.unit ?? 'kg';
+
     router.push({
       pathname: '/add-item',
       params: {
         categoryId: typeof categoryId === 'string' ? categoryId : '',
         categoryLabel: selectedCategory?.label || 'Category',
         productName: product,
-        pricePerKg: inferPricePerKg(product).toString(),
+        pricePerUnit: resolvedPricePerUnit.toString(),
+        unit: resolvedUnit,
+        pricePerKg: resolvedPricePerUnit.toString(),
         cart: JSON.stringify(cartItems),
       },
     });

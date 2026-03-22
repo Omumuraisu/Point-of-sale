@@ -6,9 +6,14 @@ import { parseCart } from '../lib/utils';
 
 const AddItemRoute = () => {
     const router = useRouter();
-    const { productName, categoryLabel, pricePerKg, cart } = useLocalSearchParams();
+    const { productName, categoryLabel, pricePerKg, pricePerUnit, unit, cart } = useLocalSearchParams();
 
-    const numericPrice = Number.parseFloat(typeof pricePerKg === 'string' ? pricePerKg : '0');
+    const resolvedPrice = Number.parseFloat(
+        typeof pricePerUnit === 'string'
+            ? pricePerUnit
+            : (typeof pricePerKg === 'string' ? pricePerKg : '0'),
+    );
+    const resolvedUnit = typeof unit === 'string' && unit.trim().length > 0 ? unit : 'kg';
 
     const handleAdd = async (itemPayload: AddCartItemPayload) => {
         const previousCart = parseCart(typeof cart === 'string' ? cart : '');
@@ -36,7 +41,8 @@ const AddItemRoute = () => {
         <AddItemScreen
             productName={typeof productName === 'string' ? productName : 'Product'}
             categoryLabel={typeof categoryLabel === 'string' ? categoryLabel : 'Category'}
-            pricePerKg={Number.isFinite(numericPrice) ? numericPrice : 0}
+            pricePerUnit={Number.isFinite(resolvedPrice) ? resolvedPrice : 0}
+            unit={resolvedUnit}
             onBack={() => router.back()}
             onAdd={handleAdd}
         />
