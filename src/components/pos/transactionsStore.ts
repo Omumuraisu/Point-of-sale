@@ -96,7 +96,59 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
         return null;
     }
 
-    return transaction;
+    try {
+        const { syncTransactionRecordWithResult } = await import('../../lib/transactionsSync');
+        const result = await syncTransactionRecordWithResult(transaction);
+        const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
+
+        if (result.success) {
+            const syncedAt = Date.now();
+
+            await updateTransactionSyncState(transaction.id, {
+                synced: true,
+                syncedAt,
+                syncError: undefined,
+                syncAttempts,
+            });
+
+            return {
+                ...transaction,
+                synced: true,
+                syncedAt,
+                syncError: undefined,
+                syncAttempts,
+            };
+        }
+
+        await updateTransactionSyncState(transaction.id, {
+            synced: false,
+            syncError: result.error,
+            syncAttempts,
+        });
+
+        return {
+            ...transaction,
+            synced: false,
+            syncError: result.error,
+            syncAttempts,
+        };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to start Supabase transaction sync';
+        const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
+
+        await updateTransactionSyncState(transaction.id, {
+            synced: false,
+            syncError: message,
+            syncAttempts,
+        });
+
+        return {
+            ...transaction,
+            synced: false,
+            syncError: message,
+            syncAttempts,
+        };
+    }
 };
 
 export const updateTransactionSyncState = async (

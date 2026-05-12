@@ -30,6 +30,14 @@ export default function Layout() {
         }}
       />
       <Stack.Screen
+        name="add-personnel"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+          animation: "slide_from_bottom",
+        }}
+      />
+      <Stack.Screen
         name="add-item"
         options={{
           headerShown: false,

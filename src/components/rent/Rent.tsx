@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -10,11 +10,29 @@ import {
     UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../pos/components/POSHeader';
+import { loadPersonnelRecords, PersonnelRecord } from './personnelStore';
+
+const DEFAULT_PERSONNEL: PersonnelRecord[] = [
+    {
+        id: 'personnel-juan',
+        firstName: 'Juan',
+        lastName: 'Dela Cruz',
+        birthday: '',
+        address: '',
+        phoneNumber: '',
+        email: '',
+        status: 'approved',
+        createdAt: 0,
+    },
+];
 
 const Rent = () => {
+    const router = useRouter();
     const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
+    const [personnelRecords, setPersonnelRecords] = useState<PersonnelRecord[]>([]);
 
     useEffect(() => {
         if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -22,10 +40,36 @@ const Rent = () => {
         }
     }, []);
 
+    useFocusEffect(
+        useCallback(() => {
+            let isActive = true;
+
+            const loadPersonnel = async () => {
+                const saved = await loadPersonnelRecords();
+
+                if (isActive) {
+                    setPersonnelRecords(saved);
+                }
+            };
+
+            loadPersonnel();
+
+            return () => {
+                isActive = false;
+            };
+        }, [])
+    );
+
     const handleToggleDueDetails = () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setDueDetailsExpanded((previous) => !previous);
     };
+
+    const handleAddPersonnel = () => {
+        router.push({ pathname: 'add-personnel' });
+    };
+
+    const personnelList = [...DEFAULT_PERSONNEL, ...personnelRecords];
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -103,12 +147,44 @@ const Rent = () => {
 
                     <Text style={styles.personnelTitle}>Other Personnel</Text>
 
-                    <View style={styles.personnelCard}>
-                        <View style={styles.personnelAvatar}>
-                            <Ionicons name="person" size={24} color="#ffffff" />
-                        </View>
-                        <Text style={styles.personnelName}>Juan Dela Cruz</Text>
-                    </View>
+                    {personnelList.map((personnel) => {
+                        const fullName = `${personnel.firstName} ${personnel.lastName}`.trim();
+                        const statusLabel = personnel.status?.toUpperCase();
+                        const isPending = personnel.status === 'pending approval';
+
+                        return (
+                            <View style={styles.personnelCard} key={personnel.id}>
+                                <View style={styles.personnelAvatar}>
+                                    <Ionicons name="person" size={24} color="#ffffff" />
+                                </View>
+                                <Text style={styles.personnelName}>{fullName || 'Unnamed'}</Text>
+                                {statusLabel ? (
+                                    <View
+                                        style={[
+                                            styles.statusPill,
+                                            isPending ? styles.statusPillPending : styles.statusPillApproved,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.statusText,
+                                                isPending ? styles.statusTextPending : styles.statusTextApproved,
+                                            ]}
+                                        >
+                                            {statusLabel}
+                                        </Text>
+                                    </View>
+                                ) : null}
+                            </View>
+                        );
+                    })}
+
+                    <Pressable
+                        style={styles.addPersonnelButton}
+                        onPress={handleAddPersonnel}
+                    >
+                        <Text style={styles.addPersonnelText}>Add Personnel</Text>
+                    </Pressable>
 
                     <View style={styles.card}>
                         <Text style={styles.leaseTitle}>LEASE AGREEMENT</Text>
@@ -325,6 +401,46 @@ const styles = StyleSheet.create({
         fontSize: 42 / 2,
         fontWeight: '700',
         color: '#11131a',
+        flexShrink: 1,
+    },
+    statusPill: {
+        marginLeft: 'auto',
+        borderRadius: 16,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+    },
+    statusPillPending: {
+        backgroundColor: '#ffe8d4',
+    },
+    statusPillApproved: {
+        backgroundColor: '#d9f1dc',
+    },
+    statusText: {
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.4,
+    },
+    statusTextPending: {
+        color: '#c0661b',
+    },
+    statusTextApproved: {
+        color: '#2f7a40',
+    },
+    addPersonnelButton: {
+        alignSelf: 'center',
+        minWidth: 190,
+        borderRadius: 24,
+        backgroundColor: '#1f63e6',
+        paddingVertical: 10,
+        paddingHorizontal: 26,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    addPersonnelText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#ffffff',
     },
     leaseTitle: {
         fontSize: 22,

@@ -5,7 +5,6 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { loadSavedTransactions } from '../pos/transactionsStore';
-import { syncUnsyncedTransactions } from '../../lib/transactionsSync';
 import { TransactionRecord } from '../../lib/types';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -26,7 +25,6 @@ export default function Home() {
             let isMounted = true;
 
             const hydrateRecentSales = async () => {
-                await syncUnsyncedTransactions(1, 5);
                 const savedTransactions = await loadSavedTransactions();
 
                 if (isMounted) {

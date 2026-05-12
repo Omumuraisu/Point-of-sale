@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
 import { CATEGORY_ITEMS, getCategoryById } from '../../components/pos/data';
 import { loadMergedCategories } from '../../components/pos/categoriesStore';
-import { loadMergedProductNamesByCategory, loadSavedProducts } from '../../components/pos/productsStore';
+import { ProductCatalogItem, loadMergedProductsByCategory } from '../../components/pos/productsStore';
 import { CategoryType } from '../../lib/types';
 import { formatCurrency, inferPricePerKg, parseCart } from '../../lib/utils';
 
@@ -14,7 +14,7 @@ const CategoryRoute = () => {
 
   const [categories, setCategories] = useState<CategoryType[]>(CATEGORY_ITEMS);
   const [products, setProducts] = useState<string[]>([]);
-  const [savedProducts, setSavedProducts] = useState<Awaited<ReturnType<typeof loadSavedProducts>>>([]);
+  const [catalogProducts, setCatalogProducts] = useState<ProductCatalogItem[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -22,15 +22,17 @@ const CategoryRoute = () => {
 
       const hydrateCategoryContext = async () => {
         const mergedCategories = await loadMergedCategories();
+        const selectedCategory = typeof categoryId === 'string'
+          ? getCategoryById(categoryId, mergedCategories)
+          : undefined;
         const mergedProducts = typeof categoryId === 'string'
-          ? await loadMergedProductNamesByCategory(categoryId)
+          ? await loadMergedProductsByCategory(categoryId, selectedCategory?.label || 'Category')
           : [];
-        const storedProducts = await loadSavedProducts();
 
         if (isMounted) {
           setCategories(mergedCategories);
-          setProducts(mergedProducts);
-          setSavedProducts(storedProducts);
+          setCatalogProducts(mergedProducts);
+          setProducts(mergedProducts.map((product) => product.name));
         }
       };
 
@@ -52,23 +54,24 @@ const CategoryRoute = () => {
   );
 
   const handleProductPress = (product: string) => {
-    const savedProduct = savedProducts.find((item) => {
-      if (typeof categoryId !== 'string') {
-        return false;
-      }
+    const catalogProduct = catalogProducts.find((item) => (
+      item.name.trim().toLowerCase() === product.trim().toLowerCase()
+    ));
 
-      return item.categoryId === categoryId
-        && item.name.trim().toLowerCase() === product.trim().toLowerCase();
-    });
-
-    const resolvedPricePerUnit = savedProduct?.pricePerUnit ?? inferPricePerKg(product);
-    const resolvedUnit = savedProduct?.unit ?? 'kg';
+    const resolvedPricePerUnit = catalogProduct?.source === 'saved'
+      ? catalogProduct.pricePerUnit
+      : inferPricePerKg(product);
+    const resolvedUnit = catalogProduct?.unit ?? 'kg';
 
     router.push({
       pathname: '/add-item',
       params: {
         categoryId: typeof categoryId === 'string' ? categoryId : '',
         categoryLabel: selectedCategory?.label || 'Category',
+        productId: catalogProduct?.id || '',
+        productSource: catalogProduct?.source || 'default',
+        defaultKey: catalogProduct?.defaultKey || '',
+        originalProductName: catalogProduct?.originalName || product,
         productName: product,
         pricePerUnit: resolvedPricePerUnit.toString(),
         unit: resolvedUnit,

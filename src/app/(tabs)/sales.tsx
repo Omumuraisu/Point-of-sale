@@ -13,7 +13,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import POSHeader from '../../components/pos/components/POSHeader';
 import { CATEGORY_ITEMS } from '../../components/pos/data';
 import { loadSavedTransactions, seedPrebuiltTransactionsIfEmpty } from '../../components/pos/transactionsStore';
-import { syncUnsyncedTransactions } from '../../lib/transactionsSync';
 import { TransactionRecord } from '../../lib/types';
 
 const CHART_PERIODS = {
@@ -119,8 +118,6 @@ interface ChartViewProps {
 interface TransactionsViewProps {
     transactions: TransactionRecord[];
     onTransactionPress: (transactionId: string) => void;
-    unsyncedCount: number;
-    latestSyncError?: string;
 }
 
 const Sales = () => {
@@ -131,16 +128,6 @@ const Sales = () => {
     const [viewMode, setViewMode] = useState<'chart' | 'transactions'>(initialViewMode);
     const [period, setPeriod] = useState<PeriodOption>('daily');
     const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
-
-    const unsyncedCount = useMemo(
-        () => savedTransactions.filter((transaction) => !transaction.synced).length,
-        [savedTransactions],
-    );
-
-    const latestSyncError = useMemo(
-        () => savedTransactions.find((transaction) => !!transaction.syncError)?.syncError,
-        [savedTransactions],
-    );
 
     const topSoldProducts = useMemo<TopSoldProductBar[]>(() => {
         const quantityByProduct = new Map<string, {
@@ -228,7 +215,6 @@ const Sales = () => {
             let isMounted = true;
 
             const hydrateTransactions = async () => {
-                await syncUnsyncedTransactions(1, 10);
                 let stored = await loadSavedTransactions();
 
                 if (stored.length === 0) {
@@ -291,8 +277,6 @@ const Sales = () => {
                     : (
                         <TransactionsView
                             transactions={savedTransactions}
-                            unsyncedCount={unsyncedCount}
-                            latestSyncError={latestSyncError}
                             onTransactionPress={(transactionId) => {
                                 router.push({
                                     pathname: '/transaction-detail',
@@ -365,7 +349,7 @@ const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) 
                 <Text style={styles.cardTitle}>Top Sold Products</Text>
 
                 {topSoldProducts.length > 0 ? (
-                    <View style={styles.barsWrap}>
+                    <View style={styles.topProductsList}>
                         {topSoldProducts.map((bar, index) => {
                             const isActive = index === 0;
                             const colorTheme = CATEGORY_COLOR_MAP[bar.categoryKey];
@@ -376,31 +360,27 @@ const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) 
                             };
 
                             return (
-                                <View key={`top-${bar.label}-${index}`} style={styles.barCol}>
-                                    <View style={styles.barTrack}>
-                                        <View
-                                            style={[
-                                                styles.barFill,
-                                                { height: `${bar.value}%` },
-                                                barFillStyle,
-                                                isActive && styles.barFillActive,
-                                            ]}
-                                        >
-                                            {isActive ? (
-                                                <View style={styles.activeMarker}>
-                                                    <Ionicons name="chevron-up" size={14} color="#ffffff" />
-                                                </View>
-                                            ) : null}
-                                        </View>
-                                    </View>
+                                <View key={`top-${bar.label}-${index}`} style={styles.topProductRow}>
                                     <Text
-                                        style={[styles.topProductText, isActive && styles.topProductTextActive]}
+                                        style={[styles.topProductLabel, isActive && styles.topProductLabelActive]}
                                         numberOfLines={2}
                                         adjustsFontSizeToFit
                                         minimumFontScale={0.8}
                                     >
                                         {bar.label}
                                     </Text>
+                                    <View style={[styles.topProductBarTrack, isActive && styles.topProductBarTrackActive]}>
+                                        <View
+                                            style={[
+                                                styles.topProductBarFill,
+                                                { width: `${bar.value}%` },
+                                                barFillStyle,
+                                                isActive && styles.topProductBarFillActive,
+                                            ]}
+                                        >
+                                            <Text style={styles.topProductValue}>{bar.quantity}</Text>
+                                        </View>
+                                    </View>
                                 </View>
                             );
                         })}
@@ -421,8 +401,6 @@ const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) 
 const TransactionsView = ({
     transactions = [],
     onTransactionPress,
-    unsyncedCount,
-    latestSyncError,
 }: TransactionsViewProps) => {
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [isCategoryMenuOpen, setCategoryMenuOpen] = useState(false);
@@ -476,22 +454,6 @@ const TransactionsView = ({
                     <Text style={styles.exportText}>Export</Text>
                 </View>
             </View>
-
-            {unsyncedCount > 0 ? (
-                <View style={styles.syncStatusCard}>
-                    <Text style={styles.syncStatusTitle}>
-                        {unsyncedCount} transaction{unsyncedCount > 1 ? 's' : ''} pending sync
-                    </Text>
-                    <Text style={styles.syncStatusText}>
-                        Keep the app online to upload saved transactions to the backend.
-                    </Text>
-                    {latestSyncError ? (
-                        <Text style={styles.syncStatusError} numberOfLines={2}>
-                            Last error: {latestSyncError}
-                        </Text>
-                    ) : null}
-                </View>
-            ) : null}
 
             {isCategoryMenuOpen ? (
                 <View style={styles.categoryMenuCard}>
@@ -730,18 +692,53 @@ const styles = StyleSheet.create({
     monthTextActive: {
         color: '#11151f',
     },
-    topProductText: {
-        marginTop: 8,
-        fontSize: 12,
-        lineHeight: 12,
-        height: 28,
-        textAlign: 'center',
-        fontWeight: '700',
-        color: '#8b8f98',
-        width: '100%',
+    topProductsList: {
+        marginTop: 14,
+        gap: 12,
     },
-    topProductTextActive: {
+    topProductRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    topProductLabel: {
+        width: 96,
+        fontSize: 12,
+        lineHeight: 14,
+        fontWeight: '700',
+        color: '#6b7280',
+    },
+    topProductLabelActive: {
         color: '#11151f',
+    },
+    topProductBarTrack: {
+        flex: 1,
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: '#c2d0f2',
+        overflow: 'hidden',
+        justifyContent: 'center',
+    },
+    topProductBarTrackActive: {
+        backgroundColor: '#b7c8f5',
+    },
+    topProductBarFill: {
+        height: '100%',
+        borderRadius: 13,
+        paddingHorizontal: 10,
+        justifyContent: 'center',
+    },
+    topProductBarFillActive: {
+        shadowColor: '#1f2d4d',
+        shadowOpacity: 0.22,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 3,
+    },
+    topProductValue: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#ffffff',
     },
     periodSwitchWrap: {
         marginTop: 18,
@@ -846,31 +843,6 @@ const styles = StyleSheet.create({
         borderColor: '#d1d5df',
         backgroundColor: '#f4f4f5',
         padding: 14,
-    },
-    syncStatusCard: {
-        marginTop: 10,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#e3a45c',
-        backgroundColor: '#fef3e8',
-        padding: 12,
-    },
-    syncStatusTitle: {
-        fontSize: 15,
-        fontWeight: '800',
-        color: '#7f4414',
-    },
-    syncStatusText: {
-        marginTop: 4,
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#8e5b2c',
-    },
-    syncStatusError: {
-        marginTop: 6,
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#a5332a',
     },
     emptyTransactionsTitle: {
         fontSize: 18,

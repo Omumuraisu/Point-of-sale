@@ -1,7 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Payment from '../components/pos/Payment';
 import { saveReceiptTransaction } from '../components/pos/transactionsStore';
-import { syncTransactionRecord } from '../lib/transactionsSync';
 import { parseCart } from '../lib/utils';
 
 const PaymentRoute = () => {
@@ -28,10 +27,6 @@ const PaymentRoute = () => {
                 totalDue,
                 cartItemsCount: cartItems.length,
             });
-        }
-
-        if (savedTransaction) {
-            void syncTransactionRecord(savedTransaction);
         }
 
         router.replace({

@@ -1,3 +1,4 @@
+// @ts-ignore: suppress missing declaration file for 'react' in some environments
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import AddProductScreen from '../components/pos/addProduct';
