@@ -25,10 +25,17 @@ const SETTINGS_ITEMS = [
         iconSet: 'ionicons',
         iconName: 'information-circle',
     },
+    {
+        id: 'system-evaluation',
+        title: 'System Evaluation',
+        subtitle: 'Page for system evaluation',
+        iconSet: 'material',
+        iconName: 'clipboard-text-search-outline',
+    },
 ] as const;
 
 type IconSet = 'ionicons' | 'material';
-type SettingId = 'profile' | 'security' | 'app-details';
+type SettingId = 'profile' | 'security' | 'app-details' | 'system-evaluation';
 
 interface SettingItem {
     id: SettingId;
@@ -64,6 +71,11 @@ const Settings = () => {
 
         if (id === 'security') {
             router.push('/security');
+            return;
+        }
+
+        if (id === 'system-evaluation') {
+            router.push('/system-evaluation');
         }
     };
 

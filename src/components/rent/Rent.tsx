@@ -13,21 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../pos/components/POSHeader';
-import { loadPersonnelRecords, PersonnelRecord } from './personnelStore';
-
-const DEFAULT_PERSONNEL: PersonnelRecord[] = [
-    {
-        id: 'personnel-juan',
-        firstName: 'Juan',
-        lastName: 'Dela Cruz',
-        birthday: '',
-        address: '',
-        phoneNumber: '',
-        email: '',
-        status: 'approved',
-        createdAt: 0,
-    },
-];
+import { DEFAULT_PERSONNEL, loadPersonnelRecords, PersonnelRecord } from './personnelStore';
 
 const Rent = () => {
     const router = useRouter();
@@ -67,6 +53,13 @@ const Rent = () => {
 
     const handleAddPersonnel = () => {
         router.push({ pathname: 'add-personnel' });
+    };
+
+    const handlePersonnelPress = (personnelId: string) => {
+        router.push({
+            pathname: '/personnel-detail',
+            params: { id: personnelId },
+        });
     };
 
     const personnelList = [...DEFAULT_PERSONNEL, ...personnelRecords];
@@ -153,7 +146,11 @@ const Rent = () => {
                         const isPending = personnel.status === 'pending approval';
 
                         return (
-                            <View style={styles.personnelCard} key={personnel.id}>
+                            <Pressable
+                                style={styles.personnelCard}
+                                key={personnel.id}
+                                onPress={() => handlePersonnelPress(personnel.id)}
+                            >
                                 <View style={styles.personnelAvatar}>
                                     <Ionicons name="person" size={24} color="#ffffff" />
                                 </View>
@@ -175,7 +172,8 @@ const Rent = () => {
                                         </Text>
                                     </View>
                                 ) : null}
-                            </View>
+                                <Ionicons name="chevron-forward" size={20} color="#7a808e" />
+                            </Pressable>
                         );
                     })}
 

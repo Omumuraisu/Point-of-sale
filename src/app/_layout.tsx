@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { Stack } from "expo-router";
 import { seedDevTransactionsOnce } from '../components/pos/transactionsStore';
+import { syncAllSupabaseData } from '../lib/supabaseSync';
 
 export default function Layout() {
   useEffect(() => {
     void seedDevTransactionsOnce(3);
+    void syncAllSupabaseData();
   }, []);
 
   return (
@@ -71,6 +73,14 @@ export default function Layout() {
       />
       <Stack.Screen
         name="transaction-detail"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="personnel-detail"
         options={{
           headerShown: false,
           presentation: "card",

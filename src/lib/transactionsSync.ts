@@ -88,6 +88,10 @@ export const syncTransactionRecord = async (
 };
 
 export const syncUnsyncedTransactions = async (): Promise<{ attempted: number; synced: number }> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { attempted: 0, synced: 0 };
+    }
+
     const unsyncedTransactions = await getUnsyncedTransactions();
     let synced = 0;
 

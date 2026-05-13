@@ -139,6 +139,16 @@ const AddPersonnel = () => {
         setIsSaving(false);
 
         if (saved) {
+            if (__DEV__) {
+                console.log('[PERSONNEL_DEBUG] Personnel saved locally', {
+                    id: saved.id,
+                    fullName: `${saved.firstName} ${saved.lastName}`.trim(),
+                    status: saved.status,
+                    documentCount: saved.documents?.length ?? 0,
+                    createdAt: saved.createdAt,
+                });
+            }
+
             router.back();
             return;
         }

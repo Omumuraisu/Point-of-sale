@@ -75,6 +75,11 @@ type TopSoldProductBar = {
     categoryKey: string;
 };
 
+type TopProductGroup = {
+    key: string;
+    label: string;
+};
+
 const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'] as const;
 type PeriodOption = (typeof PERIOD_OPTIONS)[number];
 const CHART_PERIODS_TYPED: Record<PeriodOption, ChartPeriodConfig> = CHART_PERIODS;
@@ -86,17 +91,62 @@ const formatTopProductLabel = (rawLabel: string): string => {
         return '';
     }
 
-    const words = label.split(' ');
+    return label.length > 14 ? `${label.slice(0, 14)}...` : label;
+};
 
-    if (words.length === 1) {
-        return label.length > 10 ? `${label.slice(0, 10)}...` : label;
+const interpolateColor = (startColor: string, endColor: string, progress: number): string => {
+    const normalizedProgress = Math.min(1, Math.max(0, progress));
+    const startValue = startColor.replace('#', '');
+    const endValue = endColor.replace('#', '');
+
+    const startRgb = [
+        parseInt(startValue.slice(0, 2), 16),
+        parseInt(startValue.slice(2, 4), 16),
+        parseInt(startValue.slice(4, 6), 16),
+    ];
+    const endRgb = [
+        parseInt(endValue.slice(0, 2), 16),
+        parseInt(endValue.slice(2, 4), 16),
+        parseInt(endValue.slice(4, 6), 16),
+    ];
+
+    const mixedRgb = startRgb.map((channel, index) => (
+        Math.round(channel + (endRgb[index] - channel) * normalizedProgress)
+    ));
+
+    return `#${mixedRgb.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+};
+
+const getTopProductBarColor = (index: number, total: number): string => {
+    const blue = '#6f8be0';
+    const green = '#57c36a';
+
+    if (total <= 1) {
+        return green;
     }
 
-    const firstLine = words[0].slice(0, 7);
-    const remaining = words.slice(1).join(' ');
-    const secondLine = remaining.length > 7 ? `${remaining.slice(0, 7)}...` : remaining;
+    return interpolateColor(blue, green, 1 - (index / (total - 1)));
+};
 
-    return `${firstLine}\n${secondLine}`;
+const getTopProductGroup = (rawLabel: string): TopProductGroup => {
+    const cleanedLabel = rawLabel.trim().replace(/\s+/g, ' ');
+    const normalizedKey = cleanedLabel
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (normalizedKey.includes('chicken')) {
+        return {
+            key: 'chicken',
+            label: 'Chicken',
+        };
+    }
+
+    return {
+        key: normalizedKey,
+        label: cleanedLabel,
+    };
 };
 
 const CATEGORY_COLOR_MAP = CATEGORY_ITEMS.reduce((accumulator, category) => {
@@ -138,14 +188,14 @@ const Sales = () => {
 
         savedTransactions.forEach((transaction) => {
             transaction.cartItems?.forEach((item) => {
-                const normalizedName = item.name.trim().toLowerCase();
+                const productGroup = getTopProductGroup(item.name);
                 const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
 
-                if (!normalizedName || quantity <= 0) {
+                if (!productGroup.key || quantity <= 0) {
                     return;
                 }
 
-                const existing = quantityByProduct.get(normalizedName);
+                const existing = quantityByProduct.get(productGroup.key);
 
                 if (existing) {
                     existing.quantity += quantity;
@@ -167,8 +217,8 @@ const Sales = () => {
                     initialCategoryTotals.set(normalizedCategory, quantity);
                 }
 
-                quantityByProduct.set(normalizedName, {
-                    label: item.name.trim(),
+                quantityByProduct.set(productGroup.key, {
+                    label: productGroup.label,
                     quantity,
                     categoryTotals: initialCategoryTotals,
                 });
@@ -352,34 +402,36 @@ const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) 
                     <View style={styles.topProductsList}>
                         {topSoldProducts.map((bar, index) => {
                             const isActive = index === 0;
-                            const colorTheme = CATEGORY_COLOR_MAP[bar.categoryKey];
-                            const barColor = colorTheme?.textColor ?? '#6f8be0';
+                            const barColor = getTopProductBarColor(index, topSoldProducts.length);
 
                             const barFillStyle = {
                                 backgroundColor: isActive ? barColor : `${barColor}cc`,
                             };
 
                             return (
-                                <View key={`top-${bar.label}-${index}`} style={styles.topProductRow}>
+                                <View key={`top-${bar.label}-${index}`} style={[styles.topProductRow, isActive && styles.topProductRowActive]}>
                                     <Text
                                         style={[styles.topProductLabel, isActive && styles.topProductLabelActive]}
-                                        numberOfLines={2}
-                                        adjustsFontSizeToFit
-                                        minimumFontScale={0.8}
+                                        numberOfLines={1}
                                     >
                                         {bar.label}
                                     </Text>
-                                    <View style={[styles.topProductBarTrack, isActive && styles.topProductBarTrackActive]}>
-                                        <View
-                                            style={[
-                                                styles.topProductBarFill,
-                                                { width: `${bar.value}%` },
-                                                barFillStyle,
-                                                isActive && styles.topProductBarFillActive,
-                                            ]}
-                                        >
-                                            <Text style={styles.topProductValue}>{bar.quantity}</Text>
+                                    <View style={styles.topProductGraphCell}>
+                                        <View style={[styles.topProductBarTrack, isActive && styles.topProductBarTrackActive]}>
+                                            <View
+                                                style={[
+                                                    styles.topProductBarFill,
+                                                    { width: `${bar.value}%` },
+                                                    barFillStyle,
+                                                    isActive && styles.topProductBarFillActive,
+                                                ]}
+                                            />
                                         </View>
+                                    </View>
+                                    <View style={styles.topProductValueCell}>
+                                        <Text style={[styles.topProductValue, isActive && styles.topProductValueActive]}>
+                                            {bar.quantity}
+                                        </Text>
                                     </View>
                                 </View>
                             );
@@ -693,40 +745,60 @@ const styles = StyleSheet.create({
         color: '#11151f',
     },
     topProductsList: {
-        marginTop: 14,
-        gap: 12,
+        marginTop: 16,
+        gap: 2,
     },
     topProductRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 6,
+        minHeight: 26,
+    },
+    topProductRowActive: {
+        // optional styling for active row
+    },
+    topProductRank: {
+        display: 'none',
+    },
+    topProductRankActive: {
+        display: 'none',
+    },
+    topProductRankText: {
+        display: 'none',
+    },
+    topProductRankTextActive: {
+        display: 'none',
     },
     topProductLabel: {
-        width: 96,
-        fontSize: 12,
-        lineHeight: 14,
+        width: 78,
+        fontSize: 13,
+        lineHeight: 15,
         fontWeight: '700',
         color: '#6b7280',
     },
     topProductLabelActive: {
         color: '#11151f',
     },
-    topProductBarTrack: {
+    topProductGraphCell: {
         flex: 1,
-        height: 26,
-        borderRadius: 13,
-        backgroundColor: '#c2d0f2',
+        height: 34,
+        justifyContent: 'center',
+        paddingHorizontal: 0,
+    },
+    topProductBarTrack: {
+        height: 22,
+        borderRadius: 5,
+        backgroundColor: '#dce4f7',
         overflow: 'hidden',
         justifyContent: 'center',
     },
     topProductBarTrackActive: {
-        backgroundColor: '#b7c8f5',
+        backgroundColor: '#ccd9f6',
     },
     topProductBarFill: {
         height: '100%',
-        borderRadius: 13,
-        paddingHorizontal: 10,
-        justifyContent: 'center',
+        borderRadius: 5,
+        minWidth: 6,
     },
     topProductBarFillActive: {
         shadowColor: '#1f2d4d',
@@ -735,10 +807,18 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 3 },
         elevation: 3,
     },
+    topProductValueCell: {
+        width: 48,
+        alignItems: 'flex-end',
+    },
     topProductValue: {
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: '800',
-        color: '#ffffff',
+        color: '#687085',
+    },
+    topProductValueActive: {
+        color: '#11151f',
+        fontSize: 14,
     },
     periodSwitchWrap: {
         marginTop: 18,

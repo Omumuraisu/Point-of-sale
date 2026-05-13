@@ -26,6 +26,20 @@ export interface PersonnelRecord {
     createdAt: number;
 }
 
+export const DEFAULT_PERSONNEL: PersonnelRecord[] = [
+    {
+        id: 'personnel-juan',
+        firstName: 'Juan',
+        lastName: 'Dela Cruz',
+        birthday: '',
+        address: '',
+        phoneNumber: '',
+        email: '',
+        status: 'approved',
+        createdAt: 0,
+    },
+];
+
 interface SavePersonnelInput {
     firstName: string;
     lastName: string;
