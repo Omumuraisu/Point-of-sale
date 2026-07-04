@@ -3,6 +3,11 @@ import { TransactionCategoryType } from './category';
 
 export interface TransactionRecord {
     id: string;
+    accountId?: number;
+    username?: string;
+    businessId?: number | null;
+    stallId?: string | null;
+    stallNumber?: string | null;
     item: string;
     amount: string;
     subtitle: string;
@@ -23,4 +28,9 @@ export interface SaveReceiptTransactionInput {
     cartItems: CartItem[];
     paidAmount: number;
     totalDue: number;
+    accountId: number;
+    username: string;
+    businessId?: number | null;
+    stallId?: string | null;
+    stallNumber?: string | null;
 }

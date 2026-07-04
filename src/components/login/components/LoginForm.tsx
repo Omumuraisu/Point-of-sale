@@ -8,14 +8,34 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { styles } from './styles';
+import { useAuthSession } from '../../../lib/authSession';
 
 const LoginForm = () => {
     const router = useRouter();
+    const { loginWithPhone } = useAuthSession();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
+        if (isLoggingIn) {
+            return;
+        }
+
+        setErrorMessage('');
+        setIsLoggingIn(true);
+
+        const result = await loginWithPhone(username);
+
+        setIsLoggingIn(false);
+
+        if (result.error || !result.user) {
+            setErrorMessage(result.error ?? 'Unable to login with this phone number.');
+            return;
+        }
+
         router.replace('/(tabs)/home');
     };
 
@@ -67,8 +87,9 @@ const LoginForm = () => {
             </View>
 
             <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-                <Text style={styles.loginBtnText}>Login</Text>
+                <Text style={styles.loginBtnText}>{isLoggingIn ? 'Checking...' : 'Login'}</Text>
             </TouchableOpacity>
+            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
         </View>
     );
 };

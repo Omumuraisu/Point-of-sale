@@ -50,6 +50,23 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
     const hasValidCartItems = value.cartItems === undefined
         || (Array.isArray(value.cartItems) && value.cartItems.every(isCartItem));
 
+    const hasValidAccountId = value.accountId === undefined
+        || (typeof value.accountId === 'number' && Number.isFinite(value.accountId));
+
+    const hasValidUsername = value.username === undefined || typeof value.username === 'string';
+
+    const hasValidBusinessId = value.businessId === undefined
+        || value.businessId === null
+        || (typeof value.businessId === 'number' && Number.isFinite(value.businessId));
+
+    const hasValidStallId = value.stallId === undefined
+        || value.stallId === null
+        || typeof value.stallId === 'string';
+
+    const hasValidStallNumber = value.stallNumber === undefined
+        || value.stallNumber === null
+        || typeof value.stallNumber === 'string';
+
     const hasValidPaidAmount = value.paidAmount === undefined
         || (typeof value.paidAmount === 'number' && Number.isFinite(value.paidAmount));
 
@@ -75,6 +92,11 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
         && typeof value.dateLabel === 'string'
         && typeof value.createdAt === 'number'
         && Number.isFinite(value.createdAt)
+        && hasValidAccountId
+        && hasValidUsername
+        && hasValidBusinessId
+        && hasValidStallId
+        && hasValidStallNumber
         && hasValidCartItems
         && hasValidPaidAmount
         && hasValidTotalDue

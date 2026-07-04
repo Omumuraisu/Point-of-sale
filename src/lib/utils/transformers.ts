@@ -33,7 +33,17 @@ export const inferPricePerKg = (productName: string): number => {
     return 150;
 };
 
-export const toTransaction = ({ cartItems, paidAmount, totalDue, createdAt }: SaveReceiptTransactionInput & { createdAt: number }): TransactionRecord => {
+export const toTransaction = ({
+    cartItems,
+    paidAmount,
+    totalDue,
+    createdAt,
+    accountId,
+    username,
+    businessId,
+    stallId,
+    stallNumber,
+}: SaveReceiptTransactionInput & { createdAt: number }): TransactionRecord => {
     const itemCount = cartItems.length;
     const firstItem = cartItems[0];
 
@@ -60,6 +70,11 @@ export const toTransaction = ({ cartItems, paidAmount, totalDue, createdAt }: Sa
 
     return {
         id: transactionId,
+        accountId,
+        username,
+        businessId: businessId ?? null,
+        stallId: stallId ?? stallNumber ?? null,
+        stallNumber: stallNumber ?? null,
         item: itemTitle,
         amount: formatCurrency(settledAmount),
         subtitle: `${itemCount} item${itemCount === 1 ? '' : 's'} • Paid ${formatCurrency(paidValue)}`,

@@ -2,9 +2,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Payment from '../components/pos/Payment';
 import { saveReceiptTransaction } from '../components/pos/transactionsStore';
 import { parseCart } from '../lib/utils';
+import { useAuthSession } from '../lib/authSession';
 
 const PaymentRoute = () => {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
     const { cart } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
 
@@ -14,10 +16,20 @@ const PaymentRoute = () => {
     );
 
     const handleConfirmPayment = async (paidAmount: number) => {
+        if (!currentUser) {
+            router.replace('/');
+            return;
+        }
+
         const savedTransaction = await saveReceiptTransaction({
             cartItems,
             paidAmount,
             totalDue,
+            accountId: currentUser.accountId,
+            username: currentUser.displayName,
+            businessId: currentUser.businessId,
+            stallId: currentUser.stallId,
+            stallNumber: currentUser.stallNumber,
         });
 
         if (__DEV__) {

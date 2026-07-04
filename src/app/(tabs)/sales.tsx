@@ -12,8 +12,11 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import POSHeader from '../../components/pos/components/POSHeader';
 import { CATEGORY_ITEMS } from '../../components/pos/data';
-import { loadSavedTransactions, seedPrebuiltTransactionsIfEmpty } from '../../components/pos/transactionsStore';
+import { loadSavedTransactions } from '../../components/pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
+import { useAuthSession } from '../../lib/authSession';
+import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
+import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
 
 const CHART_PERIODS = {
     daily: {
@@ -159,6 +162,30 @@ const CATEGORY_COLOR_MAP = CATEGORY_ITEMS.reduce((accumulator, category) => {
     return accumulator;
 }, {} as Record<string, { backgroundColor: string; borderColor: string; textColor: string }>);
 
+const getSyncStatus = (transaction: TransactionRecord) => {
+    if (transaction.synced) {
+        return {
+            label: 'Synced',
+            pillStyle: styles.syncPillSynced,
+            textStyle: styles.syncTextSynced,
+        };
+    }
+
+    if (transaction.syncError) {
+        return {
+            label: 'Sync failed',
+            pillStyle: styles.syncPillFailed,
+            textStyle: styles.syncTextFailed,
+        };
+    }
+
+    return {
+        label: 'Not synced yet',
+        pillStyle: styles.syncPillPending,
+        textStyle: styles.syncTextPending,
+    };
+};
+
 interface ChartViewProps {
     period: PeriodOption;
     onPeriodChange: (period: PeriodOption) => void;
@@ -172,6 +199,7 @@ interface TransactionsViewProps {
 
 const Sales = () => {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
     const { view } = useLocalSearchParams<{ view?: string | string[] }>();
     const requestedView = typeof view === 'string' ? view : Array.isArray(view) ? view[0] : undefined;
     const initialViewMode: 'chart' | 'transactions' = requestedView === 'transactions' ? 'transactions' : 'chart';
@@ -265,11 +293,11 @@ const Sales = () => {
             let isMounted = true;
 
             const hydrateTransactions = async () => {
-                let stored = await loadSavedTransactions();
-
-                if (stored.length === 0) {
-                    stored = await seedPrebuiltTransactionsIfEmpty(3);
-                }
+                const remoteTransactions = await loadRemoteSalesTransactions(currentUser?.accountId);
+                const localTransactions = await loadSavedTransactions(currentUser?.accountId);
+                const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
+                const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
+                    .sort((first, second) => second.createdAt - first.createdAt);
 
                 if (isMounted) {
                     setSavedTransactions(stored);
@@ -277,11 +305,15 @@ const Sales = () => {
             };
 
             hydrateTransactions();
+            const unsubscribe = subscribeToTransactionSyncEvents(() => {
+                void hydrateTransactions();
+            });
 
             return () => {
                 isMounted = false;
+                unsubscribe();
             };
-        }, []),
+        }, [currentUser?.accountId]),
     );
 
     useEffect(() => {
@@ -557,6 +589,7 @@ const TransactionsView = ({
             {filteredTransactions.map((transaction) => (
                 (() => {
                     const colorTheme = CATEGORY_COLOR_MAP[transaction.category.trim().toLowerCase()];
+                    const syncStatus = getSyncStatus(transaction);
 
                     return (
                         <Pressable
@@ -598,7 +631,17 @@ const TransactionsView = ({
                             </View>
 
                             <View style={styles.transactionFooterRow}>
-                                <Text style={styles.transactionFooterBold}>Transaction ID: {transaction.id}</Text>
+                                <View style={styles.transactionFooterLeft}>
+                                    <Text style={styles.transactionFooterBold}>Transaction ID: {transaction.id}</Text>
+                                    <View style={[styles.syncPill, syncStatus.pillStyle]}>
+                                        <Text style={[styles.syncText, syncStatus.textStyle]}>{syncStatus.label}</Text>
+                                    </View>
+                                    {transaction.syncError ? (
+                                        <Text style={styles.syncErrorText} numberOfLines={3}>
+                                            {transaction.syncError}
+                                        </Text>
+                                    ) : null}
+                                </View>
                                 <Text style={styles.transactionFooter}>{transaction.dateLabel || 'Feb. 12, 2026 | 11:24AM'}</Text>
                             </View>
                         </Pressable>
@@ -1009,6 +1052,12 @@ const styles = StyleSheet.create({
         marginTop: 8,
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        gap: 10,
+    },
+    transactionFooterLeft: {
+        flex: 1,
+        gap: 6,
     },
     transactionFooterBold: {
         fontSize: 14,
@@ -1019,5 +1068,47 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         color: '#80848e',
+        textAlign: 'right',
+        flexShrink: 0,
+    },
+    syncPill: {
+        alignSelf: 'flex-start',
+        minHeight: 24,
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+    },
+    syncPillSynced: {
+        backgroundColor: '#ddf4e4',
+        borderColor: '#70bf83',
+    },
+    syncPillPending: {
+        backgroundColor: '#fff2cc',
+        borderColor: '#d5a923',
+    },
+    syncPillFailed: {
+        backgroundColor: '#fde4e1',
+        borderColor: '#d96b5f',
+    },
+    syncText: {
+        fontSize: 12,
+        fontWeight: '800',
+    },
+    syncTextSynced: {
+        color: '#27723a',
+    },
+    syncTextPending: {
+        color: '#8a6810',
+    },
+    syncTextFailed: {
+        color: '#b9463b',
+    },
+    syncErrorText: {
+        fontSize: 12,
+        lineHeight: 16,
+        fontWeight: '600',
+        color: '#9d3f36',
     },
 });

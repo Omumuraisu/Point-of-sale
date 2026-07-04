@@ -1,16 +1,16 @@
 import { useEffect } from 'react';
 import { Stack } from "expo-router";
-import { seedDevTransactionsOnce } from '../components/pos/transactionsStore';
 import { syncAllSupabaseData } from '../lib/supabaseSync';
+import { AuthSessionProvider } from '../lib/authSession';
 
 export default function Layout() {
   useEffect(() => {
-    void seedDevTransactionsOnce(3);
     void syncAllSupabaseData();
   }, []);
 
   return (
-    <Stack initialRouteName="index">
+    <AuthSessionProvider>
+      <Stack initialRouteName="index">
       <Stack.Screen
         name="index"
         options={{
@@ -111,6 +111,7 @@ export default function Layout() {
           animation: "slide_from_right",
         }}
       />
-    </Stack>
+      </Stack>
+    </AuthSessionProvider>
   );
 }

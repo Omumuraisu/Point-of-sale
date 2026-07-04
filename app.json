@@ -5,7 +5,7 @@
     "scheme": "pos-scheme",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/iconn.webp",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -28,8 +28,8 @@
     },
     "plugins": [
       "expo-router",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ]
-  },
-  "scheme": "pos-scheme"
+  }
 }

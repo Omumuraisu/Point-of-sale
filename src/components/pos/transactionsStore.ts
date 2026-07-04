@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CartItem, SaveReceiptTransactionInput, TransactionRecord } from '../../lib/types';
+import { SaveReceiptTransactionInput, TransactionRecord } from '../../lib/types';
 import { isTransactionRecord, toTransaction } from '../../lib/utils';
 
 const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
 const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
 const MAX_SAVED_TRANSACTIONS = 100;
-const DEV_SEED_FLAG_KEY = '@pos/dev-seeded-transactions-v1';
+
+const getAccountTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_KEY}:${accountId}`;
+const getAccountFallbackTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}`;
 
 const withSyncDefaults = (transaction: TransactionRecord): TransactionRecord => ({
     ...transaction,
@@ -24,11 +26,11 @@ const trimTransactions = (transactions: TransactionRecord[]): TransactionRecord[
     return [...unsynced, ...synced].slice(0, MAX_SAVED_TRANSACTIONS);
 };
 
-const saveTransactions = async (transactions: TransactionRecord[]): Promise<boolean> => {
+const saveTransactions = async (accountId: number, transactions: TransactionRecord[]): Promise<boolean> => {
     const normalized = trimTransactions(transactions.map(withSyncDefaults));
 
     try {
-        await AsyncStorage.setItem(SALES_TRANSACTIONS_KEY, JSON.stringify(normalized));
+        await AsyncStorage.setItem(getAccountTransactionsKey(accountId), JSON.stringify(normalized));
         return true;
     } catch (primaryError) {
         if (__DEV__) {
@@ -36,7 +38,7 @@ const saveTransactions = async (transactions: TransactionRecord[]): Promise<bool
         }
 
         try {
-            await AsyncStorage.setItem(SALES_TRANSACTIONS_FALLBACK_KEY, JSON.stringify(normalized));
+            await AsyncStorage.setItem(getAccountFallbackTransactionsKey(accountId), JSON.stringify(normalized));
             return true;
         } catch (fallbackError) {
             if (__DEV__) {
@@ -48,10 +50,14 @@ const saveTransactions = async (transactions: TransactionRecord[]): Promise<bool
     }
 };
 
-export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
+export const loadSavedTransactions = async (accountId?: number): Promise<TransactionRecord[]> => {
+    if (!accountId) {
+        return [];
+    }
+
     try {
-        const raw = await AsyncStorage.getItem(SALES_TRANSACTIONS_KEY)
-            ?? await AsyncStorage.getItem(SALES_TRANSACTIONS_FALLBACK_KEY);
+        const raw = await AsyncStorage.getItem(getAccountTransactionsKey(accountId))
+            ?? await AsyncStorage.getItem(getAccountFallbackTransactionsKey(accountId));
 
         if (!raw) {
             return [];
@@ -64,7 +70,10 @@ export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
         }
 
         // Keep only records that satisfy the strict typed shape.
-        return parsed.filter(isTransactionRecord).map(withSyncDefaults);
+        return parsed
+            .filter(isTransactionRecord)
+            .map(withSyncDefaults)
+            .filter((transaction) => transaction.accountId === undefined || transaction.accountId === accountId);
     } catch (error) {
         if (__DEV__) {
             console.error('[TRANSACTIONS_DEBUG] Failed to load saved transactions:', error);
@@ -74,23 +83,23 @@ export const loadSavedTransactions = async (): Promise<TransactionRecord[]> => {
     }
 };
 
-export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }: SaveReceiptTransactionInput): Promise<TransactionRecord | null> => {
+export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput): Promise<TransactionRecord | null> => {
+    const { cartItems, paidAmount, totalDue, accountId } = input;
+
     if (cartItems.length === 0) {
         return null;
     }
 
     const createdAt = Date.now();
     const transaction = withSyncDefaults(toTransaction({
-        cartItems,
-        paidAmount,
-        totalDue,
+        ...input,
         createdAt,
     }));
 
-    const existing = await loadSavedTransactions();
+    const existing = await loadSavedTransactions(transaction.accountId);
     const updated = [transaction, ...existing];
 
-    const didSave = await saveTransactions(updated);
+    const didSave = await saveTransactions(transaction.accountId ?? 0, updated);
 
     if (!didSave) {
         return null;
@@ -104,7 +113,7 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
         if (result.success) {
             const syncedAt = Date.now();
 
-            await updateTransactionSyncState(transaction.id, {
+            await updateTransactionSyncState(accountId, transaction.id, {
                 synced: true,
                 syncedAt,
                 syncError: undefined,
@@ -120,7 +129,7 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
             };
         }
 
-        await updateTransactionSyncState(transaction.id, {
+        await updateTransactionSyncState(accountId, transaction.id, {
             synced: false,
             syncError: result.error,
             syncAttempts,
@@ -136,7 +145,7 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
         const message = error instanceof Error ? error.message : 'Unable to start Supabase transaction sync';
         const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
 
-        await updateTransactionSyncState(transaction.id, {
+        await updateTransactionSyncState(accountId, transaction.id, {
             synced: false,
             syncError: message,
             syncAttempts,
@@ -152,10 +161,11 @@ export const saveReceiptTransaction = async ({ cartItems, paidAmount, totalDue }
 };
 
 export const updateTransactionSyncState = async (
+    accountId: number,
     transactionId: string,
     patch: Pick<TransactionRecord, 'synced' | 'syncedAt' | 'syncError' | 'syncAttempts'>,
 ): Promise<void> => {
-    const existing = await loadSavedTransactions();
+    const existing = await loadSavedTransactions(accountId);
     const index = existing.findIndex((transaction) => transaction.id === transactionId);
 
     if (index < 0) {
@@ -170,92 +180,11 @@ export const updateTransactionSyncState = async (
 
     const updated = [...existing];
     updated[index] = updatedTransaction;
-    await saveTransactions(updated);
+    await saveTransactions(accountId, updated);
 };
 
-export const getUnsyncedTransactions = async (): Promise<TransactionRecord[]> => {
-    const transactions = await loadSavedTransactions();
+export const getUnsyncedTransactions = async (accountId: number): Promise<TransactionRecord[]> => {
+    const transactions = await loadSavedTransactions(accountId);
 
     return transactions.filter((transaction) => !transaction.synced);
-};
-
-const buildSampleCartItems = (seedOffset: number): CartItem[] => {
-    const baseTime = Date.now() - seedOffset * 60_000;
-
-    return [
-        {
-            id: `seed-item-${seedOffset}-1`,
-            name: 'Chicken Breast',
-            category: 'Meat',
-            quantity: 1.5,
-            unit: 'kg',
-            pricePerKg: 190,
-            total: 285,
-            createdAt: baseTime,
-        },
-        {
-            id: `seed-item-${seedOffset}-2`,
-            name: 'Rice',
-            category: 'Dry Goods',
-            quantity: 2,
-            unit: 'kg',
-            pricePerKg: 58,
-            total: 116,
-            createdAt: baseTime + 1,
-        },
-    ];
-};
-
-export const seedPrebuiltTransactionsIfEmpty = async (count = 3): Promise<TransactionRecord[]> => {
-    const existing = await loadSavedTransactions();
-
-    if (existing.length > 0) {
-        return existing;
-    }
-
-    const totalToSeed = Math.max(1, Math.floor(count));
-
-    for (let index = 0; index < totalToSeed; index += 1) {
-        const cartItems = buildSampleCartItems(index);
-        const totalDue = cartItems.reduce((sum, item) => sum + item.total, 0);
-        const paidAmount = totalDue + 100;
-
-        await saveReceiptTransaction({
-            cartItems,
-            totalDue,
-            paidAmount,
-        });
-    }
-
-    return loadSavedTransactions();
-};
-
-export const seedDevTransactionsOnce = async (count = 3): Promise<void> => {
-    if (!__DEV__) {
-        return;
-    }
-
-    try {
-        const existing = await loadSavedTransactions();
-
-        if (existing.length > 0) {
-            await AsyncStorage.setItem(DEV_SEED_FLAG_KEY, '1');
-            return;
-        }
-
-        const alreadySeeded = await AsyncStorage.getItem(DEV_SEED_FLAG_KEY);
-
-        if (alreadySeeded) {
-            // If the seed flag exists but transaction storage is empty, reseed once.
-            await AsyncStorage.removeItem(DEV_SEED_FLAG_KEY);
-        }
-
-        const seeded = await seedPrebuiltTransactionsIfEmpty(count);
-
-        if (seeded.length > 0) {
-            await AsyncStorage.setItem(DEV_SEED_FLAG_KEY, '1');
-        }
-    } catch {
-        // Ignore seed failures to avoid blocking startup in development.
-    }
 };

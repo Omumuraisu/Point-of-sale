@@ -1,11 +1,15 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Switch, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Switch, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { loadSavedTransactions } from '../pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
+import { useAuthSession } from '../../lib/authSession';
+import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
+import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
+import { fetchUnreadNotificationCount } from '../../lib/mobileNotifications';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -16,28 +20,43 @@ const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 
 export default function Home() {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
     const [isOpen, setIsOpen] = useState(true);
     const [recentSales, setRecentSales] = useState<TransactionRecord[]>([]);
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
+    const stallLabel = currentUser?.stallNumber ? `Stall ${currentUser.stallNumber}` : 'No stall assigned';
 
     useFocusEffect(
         useCallback(() => {
             let isMounted = true;
 
             const hydrateRecentSales = async () => {
-                const savedTransactions = await loadSavedTransactions();
+                const [remoteTransactions, localTransactions, unreadCount] = await Promise.all([
+                    loadRemoteSalesTransactions(currentUser?.accountId),
+                    loadSavedTransactions(currentUser?.accountId),
+                    fetchUnreadNotificationCount(currentUser?.accountId),
+                ]);
+                const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
+                const savedTransactions = [...unsyncedLocalTransactions, ...remoteTransactions]
+                    .sort((first, second) => second.createdAt - first.createdAt);
 
                 if (isMounted) {
                     setRecentSales(savedTransactions.slice(0, 3));
+                    setUnreadNotificationCount(unreadCount);
                 }
             };
 
             hydrateRecentSales();
+            const unsubscribe = subscribeToTransactionSyncEvents(() => {
+                void hydrateRecentSales();
+            });
 
             return () => {
                 isMounted = false;
+                unsubscribe();
             };
-        }, []),
+        }, [currentUser?.accountId]),
     );
 
     return (
@@ -50,10 +69,14 @@ export default function Home() {
                 <View style={styles.headerRow}>
                     <View style={styles.profileGroup}>
                         <View style={styles.avatar}>
-                            <Ionicons name="person" size={26} color="#40444f" />
+                            {currentUser?.profilePictureUrl ? (
+                                <Image source={{ uri: currentUser.profilePictureUrl }} style={styles.avatarImage} />
+                            ) : (
+                                <Ionicons name="person" size={26} color="#40444f" />
+                            )}
                         </View>
                         <View>
-                            <Text style={styles.name}>Mika Bini</Text>
+                            <Text style={styles.name}>{currentUser?.displayName ?? 'Loading...'}</Text>
                             <Text style={styles.date}>{currentDateLabel}</Text>
                         </View>
                     </View>
@@ -61,7 +84,13 @@ export default function Home() {
                     <View style={styles.headerActions}>
                         <Pressable style={[styles.actionBtn, styles.lightBtn]} onPress={() => router.push('/notifications')}>
                             <Ionicons name="notifications" size={20} color="#f0cc42" />
-                            <View style={styles.dot} />
+                            {unreadNotificationCount > 0 ? (
+                                <View style={styles.dot}>
+                                    <Text style={styles.dotText}>
+                                        {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                                    </Text>
+                                </View>
+                            ) : null}
                         </Pressable>
                         <Pressable style={[styles.actionBtn, styles.primaryBtn]}>
                             <Ionicons name="print-outline" size={18} color="#ffffff" />
@@ -75,7 +104,7 @@ export default function Home() {
                             <MaterialCommunityIcons name="storefront" size={28} color="#2f5ada" />
                         </View>
                         <View>
-                            <Text style={styles.stallTitle}>Stall #4</Text>
+                            <Text style={styles.stallTitle}>{stallLabel}</Text>
                             <View style={[styles.statusPill, !isOpen && styles.statusPillClosed]}>
                                 <Text style={[styles.statusText, !isOpen && styles.statusTextClosed]}>{isOpen ? 'Open' : 'Closed'}</Text>
                             </View>
@@ -168,6 +197,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#c3c8d8',
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
     },
     name: {
         fontSize: 16,
@@ -202,14 +236,23 @@ const styles = StyleSheet.create({
     },
     dot: {
         position: 'absolute',
-        top: 4,
-        right: 4,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        top: 2,
+        right: 1,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
         backgroundColor: '#d95b57',
         borderWidth: 1,
         borderColor: '#f3f3f3',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 3,
+    },
+    dotText: {
+        fontSize: 10,
+        lineHeight: 12,
+        fontWeight: '800',
+        color: '#ffffff',
     },
     stallCard: {
         minHeight: 74,

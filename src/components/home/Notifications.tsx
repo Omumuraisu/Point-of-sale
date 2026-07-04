@@ -1,37 +1,14 @@
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-
-const RECENT_NOTIFICATIONS = [
-    {
-        id: 'overdue',
-        title: 'Rent Overdue',
-        message: 'Your payment for Stall #4 is 2 days late. Kindly visit the office to settle your bill of Php 843.00',
-        time: '4 mins ago',
-        type: 'warning' as const,
-        actionLabel: 'View Bill',
-        actionType: 'danger' as const,
-    },
-    {
-        id: 'renewal',
-        title: 'Lease Renewal',
-        message: 'Your lease for the Stall #4 will end in 30 days. Kindly visit the office to review and renew your lease to keep your spot',
-        time: '7 mins ago',
-        type: 'alert' as const,
-        actionLabel: 'Mark as Read',
-        actionType: 'primary' as const,
-    },
-];
-
-const OLD_NOTIFICATIONS = [
-    {
-        id: 'payment',
-        title: 'Rent Payment',
-        message: 'Your rent payment of Php 843.00 has been successfully processed on 02-04-26 10:45AM.',
-        time: '1 month ago',
-        type: 'success' as const,
-    },
-];
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useAuthSession } from '../../lib/authSession';
+import {
+    fetchNotifications,
+    markNotificationAsRead,
+    MobileNotification,
+} from '../../lib/mobileNotifications';
 
 type NotificationType = 'warning' | 'alert' | 'success';
 
@@ -42,9 +19,20 @@ interface NotificationCardProps {
     type: NotificationType;
     actionLabel?: string;
     actionType?: 'danger' | 'primary';
+    isBusy?: boolean;
+    onActionPress?: () => void;
 }
 
-function NotificationCard({ title, message, time, type, actionLabel, actionType }: NotificationCardProps) {
+function NotificationCard({
+    title,
+    message,
+    time,
+    type,
+    actionLabel,
+    actionType,
+    isBusy,
+    onActionPress,
+}: NotificationCardProps) {
     const palette = NOTIFICATION_THEME[type];
 
     return (
@@ -66,9 +54,12 @@ function NotificationCard({ title, message, time, type, actionLabel, actionType 
                     {actionLabel ? (
                         <View style={styles.actionRow}>
                             <Pressable
+                                onPress={onActionPress}
+                                disabled={isBusy}
                                 style={[
                                     styles.actionPill,
                                     actionType === 'danger' ? styles.actionPillDanger : styles.actionPillPrimary,
+                                    isBusy ? styles.actionPillDisabled : null,
                                 ]}
                             >
                                 <Text
@@ -77,7 +68,7 @@ function NotificationCard({ title, message, time, type, actionLabel, actionType 
                                         actionType === 'danger' ? styles.actionLabelDanger : styles.actionLabelPrimary,
                                     ]}
                                 >
-                                    {actionLabel}
+                                    {isBusy ? 'Saving...' : actionLabel}
                                 </Text>
                             </Pressable>
                         </View>
@@ -106,35 +97,231 @@ const NOTIFICATION_THEME = {
     },
 } as const;
 
+const formatNotificationTitle = (notification: MobileNotification) => {
+    if (notification.notificationType === 'vendor_compliance_requested') {
+        return notification.title || 'Vendor compliance request';
+    }
+
+    if (notification.notificationType === 'billing_submitted') {
+        return 'Monthly Bill';
+    }
+
+    return notification.title;
+};
+
+const formatNotificationMessage = (notification: MobileNotification) => {
+    if (notification.notificationType !== 'vendor_compliance_requested') {
+        return notification.message;
+    }
+
+    const match = notification.message.match(/^(.*?:)\s*(.*?)\.\s*Notes:\s*(.*)$/i);
+
+    if (!match) {
+        return notification.message;
+    }
+
+    const [, intro, requirementsText, note] = match;
+    const requirements = requirementsText
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+    if (requirements.length === 0) {
+        return notification.message;
+    }
+
+    return [
+        intro,
+        ...requirements.map((requirement) => `- ${requirement}`),
+        '',
+        'Notes:',
+        note.trim(),
+    ].join('\n');
+};
+
+const getNotificationType = (notification: MobileNotification): NotificationType => {
+    if (notification.notificationType === 'vendor_compliance_requested') {
+        return 'warning';
+    }
+
+    if (notification.notificationType === 'billing_payment_reminder') {
+        return 'warning';
+    }
+
+    return 'alert';
+};
+
+const getReadNotificationAction = (notification: MobileNotification) => {
+    if (notification.notificationType === 'vendor_compliance_requested') {
+        return undefined;
+    }
+
+    if (
+        notification.notificationType === 'billing_submitted'
+        || notification.notificationType === 'billing_payment_reminder'
+    ) {
+        return 'View Bill';
+    }
+
+    return undefined;
+};
+
+const formatNotificationTime = (createdAt: string) => {
+    const timestamp = new Date(createdAt).getTime();
+
+    if (!Number.isFinite(timestamp)) {
+        return '';
+    }
+
+    const diffMs = Date.now() - timestamp;
+    const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+    if (diffMinutes < 1) {
+        return 'Just now';
+    }
+
+    if (diffMinutes < 60) {
+        return `${diffMinutes} min${diffMinutes === 1 ? '' : 's'} ago`;
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60);
+
+    if (diffHours < 24) {
+        return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+    }
+
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays < 30) {
+        return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+    }
+
+    const diffMonths = Math.floor(diffDays / 30);
+    return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`;
+};
+
 export default function Notifications() {
+    const router = useRouter();
+    const { currentUser } = useAuthSession();
+    const [recentNotifications, setRecentNotifications] = useState<MobileNotification[]>([]);
+    const [oldNotifications, setOldNotifications] = useState<MobileNotification[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [activeNotificationId, setActiveNotificationId] = useState<number | null>(null);
+
+    const loadNotifications = useCallback(async () => {
+        setIsLoading(true);
+
+        const [unread, read] = await Promise.all([
+            fetchNotifications(currentUser?.accountId, 'unread'),
+            fetchNotifications(currentUser?.accountId, 'read'),
+        ]);
+
+        setRecentNotifications(unread);
+        setOldNotifications(read);
+        setIsLoading(false);
+    }, [currentUser?.accountId]);
+
+    useFocusEffect(
+        useCallback(() => {
+            let isMounted = true;
+
+            const hydrate = async () => {
+                setIsLoading(true);
+
+                const [unread, read] = await Promise.all([
+                    fetchNotifications(currentUser?.accountId, 'unread'),
+                    fetchNotifications(currentUser?.accountId, 'read'),
+                ]);
+
+                if (isMounted) {
+                    setRecentNotifications(unread);
+                    setOldNotifications(read);
+                    setIsLoading(false);
+                }
+            };
+
+            void hydrate();
+
+            return () => {
+                isMounted = false;
+            };
+        }, [currentUser?.accountId]),
+    );
+
+    const handleMarkAsRead = async (notificationId: number) => {
+        setActiveNotificationId(notificationId);
+        const didUpdate = await markNotificationAsRead(notificationId, currentUser?.accountId);
+        setActiveNotificationId(null);
+
+        if (didUpdate) {
+            await loadNotifications();
+        }
+    };
+
+    const hasNotifications = recentNotifications.length > 0 || oldNotifications.length > 0;
+
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
             <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
                 <Text style={styles.pageTitle}>Notifications</Text>
 
-                <Text style={styles.sectionTitle}>Recent</Text>
-                {RECENT_NOTIFICATIONS.map((item) => (
-                    <NotificationCard
-                        key={item.id}
-                        title={item.title}
-                        message={item.message}
-                        time={item.time}
-                        type={item.type}
-                        actionLabel={item.actionLabel}
-                        actionType={item.actionType}
-                    />
-                ))}
+                {isLoading ? (
+                    <View style={styles.stateCard}>
+                        <ActivityIndicator color="#2f5ada" />
+                        <Text style={styles.stateText}>Loading notifications...</Text>
+                    </View>
+                ) : null}
 
-                <Text style={[styles.sectionTitle, styles.oldSectionTitle]}>Old</Text>
-                {OLD_NOTIFICATIONS.map((item) => (
-                    <NotificationCard
-                        key={item.id}
-                        title={item.title}
-                        message={item.message}
-                        time={item.time}
-                        type={item.type}
-                    />
-                ))}
+                {!isLoading && !hasNotifications ? (
+                    <View style={styles.stateCard}>
+                        <Ionicons name="notifications-outline" size={30} color="#687083" />
+                        <Text style={styles.stateTitle}>No notifications yet</Text>
+                        <Text style={styles.stateText}>Billing and compliance notices will appear here once available.</Text>
+                    </View>
+                ) : null}
+
+                {!isLoading && recentNotifications.length > 0 ? (
+                    <>
+                        <Text style={styles.sectionTitle}>Recent</Text>
+                        {recentNotifications.map((item) => (
+                            <NotificationCard
+                                key={item.notificationId}
+                                title={formatNotificationTitle(item)}
+                                message={formatNotificationMessage(item)}
+                                time={formatNotificationTime(item.createdAt)}
+                                type={getNotificationType(item)}
+                                actionLabel="Mark as Read"
+                                actionType="primary"
+                                isBusy={activeNotificationId === item.notificationId}
+                                onActionPress={() => void handleMarkAsRead(item.notificationId)}
+                            />
+                        ))}
+                    </>
+                ) : null}
+
+                {!isLoading && oldNotifications.length > 0 ? (
+                    <>
+                        <Text style={[styles.sectionTitle, recentNotifications.length > 0 ? styles.oldSectionTitle : null]}>
+                            Old
+                        </Text>
+                        {oldNotifications.map((item) => {
+                            const actionLabel = getReadNotificationAction(item);
+
+                            return (
+                                <NotificationCard
+                                    key={item.notificationId}
+                                    title={formatNotificationTitle(item)}
+                                    message={formatNotificationMessage(item)}
+                                    time={formatNotificationTime(item.createdAt)}
+                                    type="success"
+                                    actionLabel={actionLabel}
+                                    actionType="primary"
+                                    onActionPress={actionLabel ? () => router.push('/rent') : undefined}
+                                />
+                            );
+                        })}
+                    </>
+                ) : null}
             </ScrollView>
         </SafeAreaView>
     );
@@ -164,6 +351,31 @@ const styles = StyleSheet.create({
     },
     oldSectionTitle: {
         marginTop: 8,
+    },
+    stateCard: {
+        minHeight: 118,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#d5d9e3',
+        backgroundColor: '#f4f4f5',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 18,
+        marginTop: 8,
+    },
+    stateTitle: {
+        marginTop: 8,
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#171b22',
+    },
+    stateText: {
+        marginTop: 6,
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#687083',
+        textAlign: 'center',
     },
     card: {
         borderRadius: 18,
@@ -237,6 +449,9 @@ const styles = StyleSheet.create({
     },
     actionPillPrimary: {
         backgroundColor: '#cad7f7',
+    },
+    actionPillDisabled: {
+        opacity: 0.65,
     },
     actionLabel: {
         fontSize: 34 / 2,

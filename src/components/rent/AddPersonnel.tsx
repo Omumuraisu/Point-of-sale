@@ -8,22 +8,13 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
-    Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { savePersonnelRecord, PersonnelDocument } from './personnelStore';
-
-const formatDate = (date: Date) => {
-    const month = `${date.getMonth() + 1}`.padStart(2, '0');
-    const day = `${date.getDate()}`.padStart(2, '0');
-    const year = date.getFullYear();
-
-    return `${month}/${day}/${year}`;
-};
+import { createVendorApplication, PersonnelDocument } from './personnelStore';
+import { useAuthSession } from '../../lib/authSession';
 
 const formatFileSize = (size?: number) => {
     if (!size || size < 1) {
@@ -39,56 +30,25 @@ const formatFileSize = (size?: number) => {
 
 const AddPersonnel = () => {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
     const [firstName, setFirstName] = useState('');
+    const [middleInitial, setMiddleInitial] = useState('');
     const [lastName, setLastName] = useState('');
-    const [birthday, setBirthday] = useState('');
-    const [birthdayDate, setBirthdayDate] = useState<Date | null>(null);
-    const [pendingDate, setPendingDate] = useState(new Date());
-    const [isDatePickerVisible, setDatePickerVisible] = useState(false);
-    const [address, setAddress] = useState('');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [email, setEmail] = useState('');
     const [documents, setDocuments] = useState<PersonnelDocument[]>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [showValidation, setShowValidation] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     const isFormValid = useMemo(() => (
         firstName.trim().length > 0
         && lastName.trim().length > 0
-        && birthday.trim().length > 0
-        && address.trim().length > 0
         && phoneNumber.trim().length > 0
-    ), [firstName, lastName, birthday, address, phoneNumber]);
+    ), [firstName, lastName, phoneNumber]);
 
     const handleBack = () => {
         router.back();
-    };
-
-    const handleOpenDatePicker = () => {
-        const currentDate = birthdayDate ?? new Date();
-
-        if (Platform.OS === 'android') {
-            DateTimePickerAndroid.open({
-                mode: 'date',
-                value: currentDate,
-                onChange: (event, selectedDate) => {
-                    if (event.type === 'set' && selectedDate) {
-                        setBirthdayDate(selectedDate);
-                        setBirthday(formatDate(selectedDate));
-                    }
-                },
-            });
-            return;
-        }
-
-        setPendingDate(currentDate);
-        setDatePickerVisible(true);
-    };
-
-    const handleConfirmDate = () => {
-        setBirthdayDate(pendingDate);
-        setBirthday(formatDate(pendingDate));
-        setDatePickerVisible(false);
     };
 
     const handleUploadDocuments = async () => {
@@ -120,32 +80,33 @@ const AddPersonnel = () => {
     const handleSubmit = async () => {
         if (!isFormValid || isSaving) {
             setShowValidation(true);
+            setSubmitError('');
             return;
         }
 
         setIsSaving(true);
+        setShowValidation(false);
+        setSubmitError('');
 
-        const saved = await savePersonnelRecord({
+        const result = await createVendorApplication({
+            businessOwnerId: currentUser?.businessOwnerId,
             firstName,
+            middleInitial,
             lastName,
-            birthday,
-            address,
             phoneNumber,
             email: email.trim() ? email.trim() : undefined,
             documents,
-            status: 'pending approval',
         });
 
         setIsSaving(false);
 
-        if (saved) {
+        if (result.record) {
             if (__DEV__) {
-                console.log('[PERSONNEL_DEBUG] Personnel saved locally', {
-                    id: saved.id,
-                    fullName: `${saved.firstName} ${saved.lastName}`.trim(),
-                    status: saved.status,
-                    documentCount: saved.documents?.length ?? 0,
-                    createdAt: saved.createdAt,
+                console.log('[VENDOR_DEBUG] Vendor application created', {
+                    vendorId: result.record.vendorId,
+                    accountId: result.record.accountId,
+                    fullName: `${result.record.firstName} ${result.record.lastName}`.trim(),
+                    status: result.record.status,
                 });
             }
 
@@ -153,7 +114,7 @@ const AddPersonnel = () => {
             return;
         }
 
-        setShowValidation(true);
+        setSubmitError(result.error ?? 'Unable to create vendor application.');
     };
 
     return (
@@ -186,6 +147,18 @@ const AddPersonnel = () => {
                         </View>
 
                         <View style={styles.fieldBlock}>
+                            <Text style={styles.label}>Middle Initial (optional)</Text>
+                            <TextInput
+                                value={middleInitial}
+                                onChangeText={setMiddleInitial}
+                                placeholder="T"
+                                style={styles.input}
+                                autoCapitalize="characters"
+                                maxLength={1}
+                            />
+                        </View>
+
+                        <View style={styles.fieldBlock}>
                             <Text style={styles.label}>Last Name</Text>
                             <TextInput
                                 value={lastName}
@@ -193,28 +166,6 @@ const AddPersonnel = () => {
                                 placeholder="Dela Cruz"
                                 style={styles.input}
                                 autoCapitalize="words"
-                            />
-                        </View>
-
-                        <View style={styles.fieldBlock}>
-                            <Text style={styles.label}>Birthday</Text>
-                            <Pressable
-                                style={styles.inputPressable}
-                                onPress={handleOpenDatePicker}
-                            >
-                                <Text style={birthday ? styles.inputValue : styles.inputPlaceholder}>
-                                    {birthday || 'Select date'}
-                                </Text>
-                            </Pressable>
-                        </View>
-
-                        <View style={styles.fieldBlock}>
-                            <Text style={styles.label}>Address</Text>
-                            <TextInput
-                                value={address}
-                                onChangeText={setAddress}
-                                placeholder="Brgy. Mapayapa"
-                                style={styles.input}
                             />
                         </View>
 
@@ -244,10 +195,11 @@ const AddPersonnel = () => {
                         </View>
 
                         <View style={styles.fieldBlock}>
-                            <Text style={styles.label}>Documents</Text>
+                            <Text style={styles.label}>Documents (optional)</Text>
                             <Pressable
                                 style={styles.uploadButton}
                                 onPress={handleUploadDocuments}
+                                disabled={isSaving}
                             >
                                 <Ionicons name="cloud-upload-outline" size={20} color="#1f63e6" />
                                 <Text style={styles.uploadButtonText}>Upload Documents</Text>
@@ -286,6 +238,10 @@ const AddPersonnel = () => {
                             <Text style={styles.validationText}>Please fill out all required fields.</Text>
                         ) : null}
 
+                        {submitError ? (
+                            <Text style={styles.validationText}>{submitError}</Text>
+                        ) : null}
+
                         <Pressable
                             style={[
                                 styles.submitButton,
@@ -299,42 +255,6 @@ const AddPersonnel = () => {
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
-            <Modal
-                transparent
-                visible={isDatePickerVisible}
-                animationType="slide"
-                onRequestClose={() => setDatePickerVisible(false)}
-            >
-                <View style={styles.datePickerBackdrop}>
-                    <View style={styles.datePickerCard}>
-                        <Text style={styles.datePickerTitle}>Select Birthday</Text>
-                        <DateTimePicker
-                            value={pendingDate}
-                            mode="date"
-                            display="spinner"
-                            onChange={(_, selectedDate) => {
-                                if (selectedDate) {
-                                    setPendingDate(selectedDate);
-                                }
-                            }}
-                        />
-                        <View style={styles.datePickerActions}>
-                            <Pressable
-                                style={styles.dateActionButton}
-                                onPress={() => setDatePickerVisible(false)}
-                            >
-                                <Text style={styles.dateActionText}>Cancel</Text>
-                            </Pressable>
-                            <Pressable
-                                style={[styles.dateActionButton, styles.dateActionPrimary]}
-                                onPress={handleConfirmDate}
-                            >
-                                <Text style={[styles.dateActionText, styles.dateActionPrimaryText]}>Done</Text>
-                            </Pressable>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
         </SafeAreaView>
     );
 };

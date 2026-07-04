@@ -1,6 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useCallback, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuthSession } from '../../../lib/authSession';
+import { fetchUnreadNotificationCount } from '../../../lib/mobileNotifications';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -11,23 +15,55 @@ const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 
 const POSHeader = () => {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
+
+    useFocusEffect(
+        useCallback(() => {
+            let isMounted = true;
+
+            const hydrateUnreadCount = async () => {
+                const unreadCount = await fetchUnreadNotificationCount(currentUser?.accountId);
+
+                if (isMounted) {
+                    setUnreadNotificationCount(unreadCount);
+                }
+            };
+
+            void hydrateUnreadCount();
+
+            return () => {
+                isMounted = false;
+            };
+        }, [currentUser?.accountId]),
+    );
 
     return (
         <View style={styles.headerRow}>
             <View style={styles.profileGroup}>
                 <View style={styles.avatarCircle}>
-                    <Ionicons name="person" size={26} color="#40444f" />
+                    {currentUser?.profilePictureUrl ? (
+                        <Image source={{ uri: currentUser.profilePictureUrl }} style={styles.avatarImage} />
+                    ) : (
+                        <Ionicons name="person" size={26} color="#40444f" />
+                    )}
                 </View>
                 <View>
-                    <Text style={styles.profileName}>Mika Bini</Text>
+                    <Text style={styles.profileName}>{currentUser?.displayName ?? 'Loading...'}</Text>
                     <Text style={styles.profileDate}>{currentDateLabel}</Text>
                 </View>
             </View>
             <View style={styles.headerActions}>
                 <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/notifications')}>
                     <Ionicons name="notifications" size={20} color="#f0cc42" />
-                    <View style={styles.badgeDot} />
+                    {unreadNotificationCount > 0 ? (
+                        <View style={styles.badgeDot}>
+                            <Text style={styles.badgeText}>
+                                {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                            </Text>
+                        </View>
+                    ) : null}
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.actionBtn, styles.primaryActionBtn]}>
                     <MaterialCommunityIcons name="cash-register" size={20} color="#ffffff" />
@@ -60,6 +96,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#c3c8d8',
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
     },
     profileName: {
         fontSize: 16,
@@ -91,14 +132,23 @@ const styles = StyleSheet.create({
         borderColor: '#305ddf',
     },
     badgeDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
         backgroundColor: '#d95b57',
         position: 'absolute',
-        top: 4,
-        right: 4,
+        top: 2,
+        right: 1,
         borderWidth: 1,
         borderColor: '#f3f3f3',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 3,
+    },
+    badgeText: {
+        fontSize: 10,
+        lineHeight: 12,
+        fontWeight: '800',
+        color: '#ffffff',
     },
 });

@@ -13,12 +13,57 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../pos/components/POSHeader';
-import { DEFAULT_PERSONNEL, loadPersonnelRecords, PersonnelRecord } from './personnelStore';
+import { loadVendorApplications, PersonnelRecord } from './personnelStore';
+import { useAuthSession } from '../../lib/authSession';
+import { fetchBillingSummary, BillingSummary } from '../../lib/billing';
+import { formatCurrency } from '../../lib/utils';
+
+const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+});
+
+const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+});
+
+const formatDate = (value: string | null) => {
+    if (!value) {
+        return 'No due date yet';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return DATE_FORMATTER.format(date);
+};
+
+const formatBillingMonth = (value: string | null) => {
+    if (!value) {
+        return 'Current Bill';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return `${value} Bill`;
+    }
+
+    return `${MONTH_FORMATTER.format(date)} Bill`;
+};
 
 const Rent = () => {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
     const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
     const [personnelRecords, setPersonnelRecords] = useState<PersonnelRecord[]>([]);
+    const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+    const [isBillingLoading, setBillingLoading] = useState(true);
 
     useEffect(() => {
         if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -31,19 +76,25 @@ const Rent = () => {
             let isActive = true;
 
             const loadPersonnel = async () => {
-                const saved = await loadPersonnelRecords();
+                const [saved, summary] = await Promise.all([
+                    loadVendorApplications(currentUser?.businessOwnerId),
+                    fetchBillingSummary(currentUser?.businessId, currentUser?.stallNumber),
+                ]);
 
                 if (isActive) {
                     setPersonnelRecords(saved);
+                    setBillingSummary(summary);
+                    setBillingLoading(false);
                 }
             };
 
+            setBillingLoading(true);
             loadPersonnel();
 
             return () => {
                 isActive = false;
             };
-        }, [])
+        }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber])
     );
 
     const handleToggleDueDetails = () => {
@@ -62,7 +113,30 @@ const Rent = () => {
         });
     };
 
-    const personnelList = [...DEFAULT_PERSONNEL, ...personnelRecords];
+    const personnelList = personnelRecords;
+    const stallNumber = currentUser?.stallNumber ?? 'Not assigned';
+    const billingStatus = billingSummary?.status ?? 'UNPAID';
+    const billingStatusIsPaid = billingStatus === 'PAID';
+    const totalAmount = isBillingLoading
+        ? 'Loading...'
+        : formatCurrency(billingSummary?.totalAmount ?? 0);
+    const amountLabel = billingStatusIsPaid ? 'Total Amount Paid' : 'Total Amount Due';
+    const billingDateLabel = billingSummary
+        ? billingStatusIsPaid
+            ? `Paid: ${formatDate(billingSummary.paidAt)}`
+            : `Due: ${formatDate(billingSummary.dueDate)}`
+        : 'No billing record yet';
+    const billingDateIcon = billingStatusIsPaid ? 'checkmark-circle-outline' : 'calendar-outline';
+    const billBreakdown = billingSummary
+        ? [
+            { label: 'Rent', amount: billingSummary.rentAmount },
+            { label: 'Electricity', amount: billingSummary.electricityAmount },
+            { label: 'Water', amount: billingSummary.waterAmount },
+            ...(billingSummary.arrearsAmount > 0
+                ? [{ label: 'Arrears', amount: billingSummary.arrearsAmount }]
+                : []),
+        ]
+        : [];
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -80,34 +154,41 @@ const Rent = () => {
                             </View>
                             <View>
                                 <Text style={styles.stallName}>Stall</Text>
-                                <Text style={styles.stallNumber}>#42</Text>
+                                <Text style={styles.stallNumber}>{stallNumber}</Text>
                             </View>
                         </View>
 
                         <View style={styles.ownerWrap}>
-                            <Text style={styles.ownerName}>Mika Bini</Text>
+                            <Text style={styles.ownerName}>{currentUser?.displayName ?? 'Loading...'}</Text>
                             <Text style={styles.ownerRole}>STALL OWNER</Text>
                         </View>
                     </View>
 
                     <View style={styles.card}>
                         <View style={styles.rowBetween}>
-                            <Text style={styles.sectionTitle}>Rent Status</Text>
-                            <View style={styles.unpaidPill}>
-                                <Text style={styles.unpaidText}>UNPAID</Text>
+                            <View>
+                                <Text style={styles.sectionTitle}>Billing Status</Text>
+                                <Text style={styles.billingMonthTitle}>
+                                    {isBillingLoading ? 'Loading bill...' : formatBillingMonth(billingSummary?.billingMonth ?? null)}
+                                </Text>
+                            </View>
+                            <View style={[styles.unpaidPill, billingStatusIsPaid ? styles.paidPill : null]}>
+                                <Text style={[styles.unpaidText, billingStatusIsPaid ? styles.paidText : null]}>
+                                    {isBillingLoading ? 'LOADING' : billingStatus}
+                                </Text>
                             </View>
                         </View>
 
-                        <Text style={styles.subLabel}>Total Amount Due</Text>
-                        <Text style={styles.totalAmount}>P 1,500.00</Text>
+                        <Text style={styles.subLabel}>{amountLabel}</Text>
+                        <Text style={styles.totalAmount}>{totalAmount}</Text>
 
                         <Pressable
                             style={styles.rowBetween}
                             onPress={handleToggleDueDetails}
                         >
                             <View style={styles.dueRow}>
-                                <Ionicons name="calendar-outline" size={20} color="#2f5ada" />
-                                <Text style={styles.dueText}>Due: March 24, 2026</Text>
+                                <Ionicons name={billingDateIcon} size={20} color="#2f5ada" />
+                                <Text style={styles.dueText}>{billingDateLabel}</Text>
                             </View>
                             <Ionicons
                                 name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
@@ -118,21 +199,55 @@ const Rent = () => {
 
                         {isDueDetailsExpanded ? (
                             <View style={styles.extraDetailsWrap}>
-                                <View style={styles.extraDetailsRow}>
-                                    <Text style={styles.extraDetailsLabel}>Last Month</Text>
-                                    <Text style={styles.extraDetailsLabel}>This Month</Text>
-                                </View>
-                                <View style={[styles.extraDetailsRow, styles.extraDetailsAmountRow]}>
-                                    <Text style={styles.extraDetailsAmount}>P 0.00</Text>
-                                    <Text style={styles.extraDetailsAmount}>P 1,500.00</Text>
-                                </View>
-                                <View style={[styles.extraDetailsRow, styles.violationsRow]}>
-                                    <Text style={styles.extraDetailsLabel}>Violations</Text>
-                                    <Text style={styles.violationsValue}>0</Text>
-                                </View>
+                                <Text style={styles.extraDetailsTitle}>Bill Summary</Text>
+                                {billBreakdown.length > 0 ? (
+                                    <>
+                                        {billBreakdown
+                                            .filter((item) => item.label !== 'Arrears')
+                                            .map((item) => (
+                                                <View style={styles.breakdownRow} key={item.label}>
+                                                    <Text style={styles.extraDetailsLabel}>{item.label}</Text>
+                                                    <Text style={styles.extraDetailsAmount}>{formatCurrency(item.amount)}</Text>
+                                                </View>
+                                            ))}
+                                        <View style={[styles.breakdownRow, styles.subtotalRow]}>
+                                            <Text style={styles.subtotalLabel}>Current Period Subtotal</Text>
+                                            <Text style={styles.subtotalAmount}>
+                                                {formatCurrency(billingSummary?.currentMonthAmount ?? 0)}
+                                            </Text>
+                                        </View>
+                                        {billingSummary?.arrearsAmount ? (
+                                            <View style={styles.breakdownRow}>
+                                                <Text style={styles.extraDetailsLabel}>Arrears</Text>
+                                                <Text style={styles.extraDetailsAmount}>
+                                                    {formatCurrency(billingSummary.arrearsAmount)}
+                                                </Text>
+                                            </View>
+                                        ) : null}
+                                        <View style={[styles.breakdownRow, styles.overallRow]}>
+                                            <Text style={styles.overallLabel}>
+                                                {billingStatusIsPaid ? 'Overall Total Paid' : 'Overall Total Due'}
+                                            </Text>
+                                            <Text style={styles.overallAmount}>
+                                                {formatCurrency(billingSummary?.totalAmount ?? 0)}
+                                            </Text>
+                                        </View>
+                                    </>
+                                ) : (
+                                    <View style={styles.breakdownRow}>
+                                        <Text style={styles.extraDetailsLabel}>No billing details yet</Text>
+                                        <Text style={styles.extraDetailsAmount}>{formatCurrency(0)}</Text>
+                                    </View>
+                                )}
                                 <View style={styles.extraDetailsNoteRow}>
                                     <Ionicons name="document-text-outline" size={18} color="#7a808e" />
-                                    <Text style={styles.extraDetailsNote}>Penalty starts after due date.</Text>
+                                    <Text style={styles.extraDetailsNote}>
+                                        {billingSummary
+                                            ? billingStatusIsPaid
+                                                ? 'Payment has been recorded.'
+                                                : 'Penalty starts after due date.'
+                                            : 'Billing details will appear once submitted.'}
+                                    </Text>
                                 </View>
                             </View>
                         ) : null}
@@ -154,24 +269,28 @@ const Rent = () => {
                                 <View style={styles.personnelAvatar}>
                                     <Ionicons name="person" size={24} color="#ffffff" />
                                 </View>
-                                <Text style={styles.personnelName}>{fullName || 'Unnamed'}</Text>
-                                {statusLabel ? (
-                                    <View
-                                        style={[
-                                            styles.statusPill,
-                                            isPending ? styles.statusPillPending : styles.statusPillApproved,
-                                        ]}
-                                    >
-                                        <Text
+                                <View style={styles.personnelTextWrap}>
+                                    <Text style={styles.personnelName} numberOfLines={1}>
+                                        {fullName || 'Unnamed'}
+                                    </Text>
+                                    {statusLabel ? (
+                                        <View
                                             style={[
-                                                styles.statusText,
-                                                isPending ? styles.statusTextPending : styles.statusTextApproved,
+                                                styles.statusPill,
+                                                isPending ? styles.statusPillPending : styles.statusPillApproved,
                                             ]}
                                         >
-                                            {statusLabel}
-                                        </Text>
-                                    </View>
-                                ) : null}
+                                            <Text
+                                                style={[
+                                                    styles.statusText,
+                                                    isPending ? styles.statusTextPending : styles.statusTextApproved,
+                                                ]}
+                                            >
+                                                {statusLabel}
+                                            </Text>
+                                        </View>
+                                    ) : null}
+                                </View>
                                 <Ionicons name="chevron-forward" size={20} color="#7a808e" />
                             </Pressable>
                         );
@@ -286,6 +405,12 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#252932',
     },
+    billingMonthTitle: {
+        marginTop: 2,
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#7a7f89',
+    },
     unpaidPill: {
         minWidth: 92,
         height: 36,
@@ -301,6 +426,13 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '800',
         color: '#d85647',
+    },
+    paidPill: {
+        borderColor: '#4cab53',
+        backgroundColor: '#d9f1dc',
+    },
+    paidText: {
+        color: '#2f7a40',
     },
     subLabel: {
         marginTop: 10,
@@ -331,9 +463,59 @@ const styles = StyleSheet.create({
         borderTopColor: '#d4d8e2',
         paddingTop: 12,
     },
+    extraDetailsTitle: {
+        marginBottom: 8,
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#252932',
+    },
     extraDetailsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+    },
+    breakdownRow: {
+        minHeight: 34,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e1e5ee',
+    },
+    subtotalRow: {
+        minHeight: 38,
+        borderBottomColor: '#cfd5e3',
+        backgroundColor: '#eef1f7',
+        paddingHorizontal: 8,
+        marginTop: 4,
+        borderRadius: 8,
+    },
+    subtotalLabel: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#384050',
+    },
+    subtotalAmount: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#2448a4',
+    },
+    overallRow: {
+        minHeight: 42,
+        borderBottomWidth: 0,
+        backgroundColor: '#dfe7fb',
+        paddingHorizontal: 8,
+        marginTop: 6,
+        borderRadius: 8,
+    },
+    overallLabel: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#1d2430',
+    },
+    overallAmount: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#2448a4',
     },
     extraDetailsLabel: {
         fontSize: 17,
@@ -347,17 +529,6 @@ const styles = StyleSheet.create({
         fontSize: 30 / 2,
         fontWeight: '800',
         color: '#232833',
-    },
-    violationsRow: {
-        marginTop: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#e1e5ee',
-        paddingTop: 10,
-    },
-    violationsValue: {
-        fontSize: 18,
-        fontWeight: '800',
-        color: '#2f5ada',
     },
     extraDetailsNoteRow: {
         marginTop: 10,
@@ -395,14 +566,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    personnelTextWrap: {
+        flex: 1,
+        minWidth: 0,
+    },
     personnelName: {
         fontSize: 42 / 2,
         fontWeight: '700',
         color: '#11131a',
-        flexShrink: 1,
     },
     statusPill: {
-        marginLeft: 'auto',
+        alignSelf: 'flex-start',
+        marginTop: 5,
         borderRadius: 16,
         paddingHorizontal: 10,
         paddingVertical: 4,

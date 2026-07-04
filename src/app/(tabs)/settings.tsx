@@ -2,6 +2,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAuthSession } from '../../lib/authSession';
 
 const SETTINGS_ITEMS = [
     {
@@ -62,6 +63,7 @@ const SettingsIcon = ({ iconSet, iconName }: SettingsIconProps) => {
 
 const Settings = () => {
     const router = useRouter();
+    const { logout } = useAuthSession();
 
     const handleSettingPress = (id: SettingId) => {
         if (id === 'profile') {
@@ -102,7 +104,13 @@ const Settings = () => {
                         </Pressable>
                     ))}
 
-                    <Pressable style={styles.logoutButton} onPress={() => router.replace('/')}>
+                    <Pressable
+                        style={styles.logoutButton}
+                        onPress={async () => {
+                            await logout();
+                            router.replace('/');
+                        }}
+                    >
                         <Text style={styles.logoutText}>Logout</Text>
                     </Pressable>
                 </View>

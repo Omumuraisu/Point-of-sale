@@ -1,10 +1,23 @@
 import { Tabs } from "expo-router";
+import { Redirect } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuthSession } from "../../lib/authSession";
+import { useTransactionSyncMonitor } from "../../lib/useTransactionSyncMonitor";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { currentUser, isHydrating } = useAuthSession();
   const tabBarBottomPadding = Math.max(insets.bottom, 8);
+  useTransactionSyncMonitor(currentUser?.accountId);
+
+  if (isHydrating) {
+    return null;
+  }
+
+  if (!currentUser) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <Tabs
@@ -58,7 +71,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="rent"
         options={{
-          title: "Rent",
+          title: "Billing",
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="file-document-edit-outline" size={size} color={color} />
           ),
