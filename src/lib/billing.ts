@@ -14,6 +14,20 @@ interface PaymentRow {
     violation_type: string | null;
 }
 
+export interface BillingMonthSummary {
+    billingMonth: string | null;
+    status: 'PAID' | 'UNPAID';
+    totalAmount: number;
+    unpaidAmount: number;
+    dueDate: string | null;
+    paidAt: string | null;
+    paymentCount: number;
+    rentAmount: number;
+    electricityAmount: number;
+    waterAmount: number;
+    violationsAmount: number;
+}
+
 export interface BillingSummary {
     status: 'PAID' | 'UNPAID';
     totalAmount: number;
@@ -26,7 +40,10 @@ export interface BillingSummary {
     rentAmount: number;
     electricityAmount: number;
     waterAmount: number;
+    violationsAmount: number;
     arrearsAmount: number;
+    currentBill: BillingMonthSummary | null;
+    arrearsMonths: BillingMonthSummary[];
 }
 
 const PAYMENT_COLUMNS = [
@@ -56,8 +73,12 @@ const getPaymentMonth = (payment: PaymentRow) => (
     payment.billing_month ?? payment.due_date ?? ''
 );
 
-const getPaymentTypeBucket = (paymentType: string) => {
-    const normalized = paymentType.toLowerCase().trim();
+const getPaymentTypeBucket = (payment: PaymentRow) => {
+    const normalized = [
+        payment.payment_type,
+        payment.violation_type,
+        payment.description,
+    ].filter(Boolean).join(' ').toLowerCase().trim();
 
     if (normalized.includes('electric')) {
         return 'electricity';
@@ -71,12 +92,15 @@ const getPaymentTypeBucket = (paymentType: string) => {
         return 'rent';
     }
 
+    if (normalized.includes('violation') || normalized.includes('penalty') || normalized.includes('fine')) {
+        return 'violations';
+    }
+
     return null;
 };
 
-const getLatestMonth = (payments: PaymentRow[]) => (
-    payments
-        .map(getPaymentMonth)
+const getLatestMonth = (months: string[]) => (
+    months
         .filter(Boolean)
         .sort((first, second) => second.localeCompare(first))[0] ?? null
 );
@@ -94,6 +118,46 @@ const getLatestPaidAt = (payments: PaymentRow[]): string | null => (
         .filter((paidAt): paidAt is string => Boolean(paidAt))
         .sort((first, second) => second.localeCompare(first))[0] ?? null
 );
+
+const summarizeMonth = (billingMonth: string | null, payments: PaymentRow[]): BillingMonthSummary => {
+    const amountByBucket = payments.reduce(
+        (totals, payment) => {
+            const bucket = getPaymentTypeBucket(payment);
+            const amount = toAmount(payment.amount);
+
+            if (bucket) {
+                totals[bucket] += amount;
+            }
+
+            return totals;
+        },
+        {
+            rent: 0,
+            electricity: 0,
+            water: 0,
+            violations: 0,
+        },
+    );
+    const unpaidPayments = payments.filter((payment) => !isPaidPayment(payment));
+    const totalAmount = amountByBucket.rent
+        + amountByBucket.electricity
+        + amountByBucket.water
+        + amountByBucket.violations;
+
+    return {
+        billingMonth,
+        status: unpaidPayments.length > 0 ? 'UNPAID' : 'PAID',
+        totalAmount,
+        unpaidAmount: unpaidPayments.reduce((sum, payment) => sum + toAmount(payment.amount), 0),
+        dueDate: getEarliestDueDate(payments),
+        paidAt: getLatestPaidAt(payments),
+        paymentCount: payments.length,
+        rentAmount: amountByBucket.rent,
+        electricityAmount: amountByBucket.electricity,
+        waterAmount: amountByBucket.water,
+        violationsAmount: amountByBucket.violations,
+    };
+};
 
 export const fetchBillingSummary = async (
     businessId?: number | null,
@@ -130,45 +194,47 @@ export const fetchBillingSummary = async (
         return null;
     }
 
-    const selectedMonth = getLatestMonth(payments);
-    const selectedPayments = selectedMonth
-        ? payments.filter((payment) => getPaymentMonth(payment) === selectedMonth)
-        : payments;
-    const arrearsPayments = selectedMonth
-        ? payments.filter((payment) => getPaymentMonth(payment) < selectedMonth && !isPaidPayment(payment))
-        : [];
-    const includedPayments = [...selectedPayments, ...arrearsPayments];
-    const amountByBucket = selectedPayments.reduce(
-        (totals, payment) => {
-            const bucket = getPaymentTypeBucket(payment.payment_type);
+    const paymentsByMonth = payments.reduce((groups, payment) => {
+        const month = getPaymentMonth(payment);
+        const key = month || 'unassigned';
+        const monthPayments = groups.get(key) ?? [];
 
-            if (bucket) {
-                totals[bucket] += toAmount(payment.amount);
-            }
+        monthPayments.push(payment);
+        groups.set(key, monthPayments);
 
-            return totals;
-        },
-        {
-            rent: 0,
-            electricity: 0,
-            water: 0,
-        },
-    );
-    const arrearsAmount = arrearsPayments.reduce((sum, payment) => sum + toAmount(payment.amount), 0);
-    const currentMonthAmount = selectedPayments.reduce((sum, payment) => sum + toAmount(payment.amount), 0);
+        return groups;
+    }, new Map<string, PaymentRow[]>());
+    const monthSummaries = Array.from(paymentsByMonth.entries())
+        .map(([month, monthPayments]) => summarizeMonth(month === 'unassigned' ? null : month, monthPayments))
+        .sort((first, second) => (second.billingMonth ?? '').localeCompare(first.billingMonth ?? ''));
+    const selectedMonth = getLatestMonth(monthSummaries.map((summary) => summary.billingMonth ?? ''));
+    const currentBill = monthSummaries.find((summary) => summary.billingMonth === selectedMonth)
+        ?? monthSummaries[0]
+        ?? null;
+    const arrearsMonths = monthSummaries.filter((summary) => (
+        summary.billingMonth !== currentBill?.billingMonth
+        && summary.unpaidAmount > 0
+    ));
+    const arrearsAmount = arrearsMonths.reduce((sum, month) => sum + month.unpaidAmount, 0);
+    const currentMonthAmount = currentBill?.unpaidAmount ?? 0;
+    const totalDue = currentMonthAmount + arrearsAmount;
+    const currentMonthPaidAmount = currentBill?.totalAmount ?? 0;
 
     return {
-        status: includedPayments.every(isPaidPayment) ? 'PAID' : 'UNPAID',
-        totalAmount: currentMonthAmount + arrearsAmount,
-        dueDate: getEarliestDueDate(selectedPayments),
-        paidAt: getLatestPaidAt(includedPayments),
-        billingMonth: selectedMonth,
-        paymentCount: includedPayments.length,
+        status: totalDue > 0 ? 'UNPAID' : 'PAID',
+        totalAmount: totalDue > 0 ? totalDue : currentMonthPaidAmount,
+        dueDate: currentBill?.dueDate ?? null,
+        paidAt: getLatestPaidAt(payments),
+        billingMonth: currentBill?.billingMonth ?? null,
+        paymentCount: monthSummaries.reduce((sum, month) => sum + month.paymentCount, 0),
         currentMonthAmount,
         previousMonthAmount: arrearsAmount,
-        rentAmount: amountByBucket.rent,
-        electricityAmount: amountByBucket.electricity,
-        waterAmount: amountByBucket.water,
+        rentAmount: currentBill?.rentAmount ?? 0,
+        electricityAmount: currentBill?.electricityAmount ?? 0,
+        waterAmount: currentBill?.waterAmount ?? 0,
+        violationsAmount: currentBill?.violationsAmount ?? 0,
         arrearsAmount,
+        currentBill,
+        arrearsMonths,
     };
 };

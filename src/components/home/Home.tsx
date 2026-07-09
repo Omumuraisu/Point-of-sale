@@ -9,7 +9,7 @@ import { TransactionRecord } from '../../lib/types';
 import { useAuthSession } from '../../lib/authSession';
 import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
 import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
-import { fetchUnreadNotificationCount } from '../../lib/mobileNotifications';
+import { useUnreadNotificationCount } from '../../lib/useUnreadNotificationCount';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -23,7 +23,7 @@ export default function Home() {
     const { currentUser } = useAuthSession();
     const [isOpen, setIsOpen] = useState(true);
     const [recentSales, setRecentSales] = useState<TransactionRecord[]>([]);
-    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const { unreadNotificationCount } = useUnreadNotificationCount(currentUser?.accountId);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
     const stallLabel = currentUser?.stallNumber ? `Stall ${currentUser.stallNumber}` : 'No stall assigned';
 
@@ -32,10 +32,9 @@ export default function Home() {
             let isMounted = true;
 
             const hydrateRecentSales = async () => {
-                const [remoteTransactions, localTransactions, unreadCount] = await Promise.all([
+                const [remoteTransactions, localTransactions] = await Promise.all([
                     loadRemoteSalesTransactions(currentUser?.accountId),
                     loadSavedTransactions(currentUser?.accountId),
-                    fetchUnreadNotificationCount(currentUser?.accountId),
                 ]);
                 const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
                 const savedTransactions = [...unsyncedLocalTransactions, ...remoteTransactions]
@@ -43,7 +42,6 @@ export default function Home() {
 
                 if (isMounted) {
                     setRecentSales(savedTransactions.slice(0, 3));
-                    setUnreadNotificationCount(unreadCount);
                 }
             };
 

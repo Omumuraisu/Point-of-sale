@@ -9,10 +9,11 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'
 interface PaymentProps {
     totalDue?: number;
     onBack: () => void;
-    onConfirmPayment: (paidAmount: number, changeAmount: number) => void;
+    onConfirmPayment: (paidAmount: number, changeAmount: number) => void | Promise<void>;
+    isConfirming?: boolean;
 }
 
-const Payment = ({ totalDue = 0, onBack, onConfirmPayment }: PaymentProps) => {
+const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false }: PaymentProps) => {
     const insets = useSafeAreaInsets();
     const [amountInput, setAmountInput] = useState('');
 
@@ -22,7 +23,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment }: PaymentProps) => {
     }, [amountInput]);
 
     const changeAmount = Math.max(paidAmount - Number(totalDue || 0), 0);
-    const canConfirm = paidAmount >= Number(totalDue || 0) && Number(totalDue || 0) > 0;
+    const canConfirm = paidAmount >= Number(totalDue || 0) && Number(totalDue || 0) > 0 && !isConfirming;
 
     const handleKeyPress = (key: string) => {
         if (key === 'backspace') {
@@ -124,7 +125,9 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment }: PaymentProps) => {
                         onPress={() => onConfirmPayment?.(paidAmount, changeAmount)}
                         disabled={!canConfirm}
                     >
-                        <Text style={styles.confirmButtonText}>Confirm Payment</Text>
+                        <Text style={styles.confirmButtonText}>
+                            {isConfirming ? 'Recording...' : 'Confirm Payment'}
+                        </Text>
                     </Pressable>
                 </View>
             </ScrollView>

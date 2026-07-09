@@ -1,10 +1,8 @@
-import { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
 import { useAuthSession } from '../../../lib/authSession';
-import { fetchUnreadNotificationCount } from '../../../lib/mobileNotifications';
+import { useUnreadNotificationCount } from '../../../lib/useUnreadNotificationCount';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -16,28 +14,8 @@ const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 const POSHeader = () => {
     const router = useRouter();
     const { currentUser } = useAuthSession();
-    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const { unreadNotificationCount } = useUnreadNotificationCount(currentUser?.accountId);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
-
-    useFocusEffect(
-        useCallback(() => {
-            let isMounted = true;
-
-            const hydrateUnreadCount = async () => {
-                const unreadCount = await fetchUnreadNotificationCount(currentUser?.accountId);
-
-                if (isMounted) {
-                    setUnreadNotificationCount(unreadCount);
-                }
-            };
-
-            void hydrateUnreadCount();
-
-            return () => {
-                isMounted = false;
-            };
-        }, [currentUser?.accountId]),
-    );
 
     return (
         <View style={styles.headerRow}>

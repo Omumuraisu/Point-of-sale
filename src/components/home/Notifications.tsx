@@ -97,13 +97,44 @@ const NOTIFICATION_THEME = {
     },
 } as const;
 
+const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+});
+
+const formatBillingMonthLabel = (value: string | null) => {
+    if (!value) {
+        return null;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return MONTH_FORMATTER.format(date);
+};
+
 const formatNotificationTitle = (notification: MobileNotification) => {
     if (notification.notificationType === 'vendor_compliance_requested') {
         return notification.title || 'Vendor compliance request';
     }
 
+    if (notification.notificationType === 'billing_payment_reminder') {
+        const monthLabel = formatBillingMonthLabel(notification.billingMonth);
+
+        return monthLabel
+            ? `${notification.title || 'Billing payment reminder'} - ${monthLabel}`
+            : notification.title || 'Billing payment reminder';
+    }
+
     if (notification.notificationType === 'billing_submitted') {
         return 'Monthly Bill';
+    }
+
+    if (notification.notificationType === 'billing_paid') {
+        return notification.title || 'Billing payment received';
     }
 
     return notification.title;
@@ -148,6 +179,10 @@ const getNotificationType = (notification: MobileNotification): NotificationType
         return 'warning';
     }
 
+    if (notification.notificationType === 'billing_paid') {
+        return 'success';
+    }
+
     return 'alert';
 };
 
@@ -159,6 +194,7 @@ const getReadNotificationAction = (notification: MobileNotification) => {
     if (
         notification.notificationType === 'billing_submitted'
         || notification.notificationType === 'billing_payment_reminder'
+        || notification.notificationType === 'billing_paid'
     ) {
         return 'View Bill';
     }

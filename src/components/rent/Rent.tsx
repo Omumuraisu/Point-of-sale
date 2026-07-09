@@ -16,6 +16,7 @@ import POSHeader from '../pos/components/POSHeader';
 import { loadVendorApplications, PersonnelRecord } from './personnelStore';
 import { useAuthSession } from '../../lib/authSession';
 import { fetchBillingSummary, BillingSummary } from '../../lib/billing';
+import { fetchBusinessLeaseAgreement, BusinessLeaseAgreement } from '../../lib/businessLease';
 import { formatCurrency } from '../../lib/utils';
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -43,6 +44,23 @@ const formatDate = (value: string | null) => {
     return DATE_FORMATTER.format(date);
 };
 
+const formatPlainDate = (value: string | null) => {
+    if (!value) {
+        return 'No record yet';
+    }
+
+    const normalizedDateValue = /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? `${value}T00:00:00`
+        : value;
+    const date = new Date(normalizedDateValue);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return DATE_FORMATTER.format(date);
+};
+
 const formatBillingMonth = (value: string | null) => {
     if (!value) {
         return 'Current Bill';
@@ -57,12 +75,27 @@ const formatBillingMonth = (value: string | null) => {
     return `${MONTH_FORMATTER.format(date)} Bill`;
 };
 
+const formatBillingMonthLabel = (value: string | null) => {
+    if (!value) {
+        return 'Unassigned month';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return MONTH_FORMATTER.format(date);
+};
+
 const Rent = () => {
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
     const [personnelRecords, setPersonnelRecords] = useState<PersonnelRecord[]>([]);
     const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+    const [leaseAgreement, setLeaseAgreement] = useState<BusinessLeaseAgreement | null>(null);
     const [isBillingLoading, setBillingLoading] = useState(true);
 
     useEffect(() => {
@@ -76,14 +109,16 @@ const Rent = () => {
             let isActive = true;
 
             const loadPersonnel = async () => {
-                const [saved, summary] = await Promise.all([
+                const [saved, summary, lease] = await Promise.all([
                     loadVendorApplications(currentUser?.businessOwnerId),
                     fetchBillingSummary(currentUser?.businessId, currentUser?.stallNumber),
+                    fetchBusinessLeaseAgreement(currentUser?.businessId, currentUser?.businessOwnerId),
                 ]);
 
                 if (isActive) {
                     setPersonnelRecords(saved);
                     setBillingSummary(summary);
+                    setLeaseAgreement(lease);
                     setBillingLoading(false);
                 }
             };
@@ -132,8 +167,8 @@ const Rent = () => {
             { label: 'Rent', amount: billingSummary.rentAmount },
             { label: 'Electricity', amount: billingSummary.electricityAmount },
             { label: 'Water', amount: billingSummary.waterAmount },
-            ...(billingSummary.arrearsAmount > 0
-                ? [{ label: 'Arrears', amount: billingSummary.arrearsAmount }]
+            ...(billingSummary.violationsAmount > 0
+                ? [{ label: 'Violations', amount: billingSummary.violationsAmount }]
                 : []),
         ]
         : [];
@@ -202,31 +237,51 @@ const Rent = () => {
                                 <Text style={styles.extraDetailsTitle}>Bill Summary</Text>
                                 {billBreakdown.length > 0 ? (
                                     <>
-                                        {billBreakdown
-                                            .filter((item) => item.label !== 'Arrears')
-                                            .map((item) => (
-                                                <View style={styles.breakdownRow} key={item.label}>
-                                                    <Text style={styles.extraDetailsLabel}>{item.label}</Text>
-                                                    <Text style={styles.extraDetailsAmount}>{formatCurrency(item.amount)}</Text>
-                                                </View>
-                                            ))}
+                                        <View style={styles.monthSectionHeader}>
+                                            <Text style={styles.monthSectionTitle}>Current Bill</Text>
+                                            <Text style={styles.monthSectionMeta}>
+                                                {formatBillingMonthLabel(billingSummary?.currentBill?.billingMonth ?? null)}
+                                            </Text>
+                                        </View>
+                                        {billBreakdown.map((item) => (
+                                            <View style={styles.breakdownRow} key={item.label}>
+                                                <Text style={styles.extraDetailsLabel}>{item.label}</Text>
+                                                <Text style={styles.extraDetailsAmount}>{formatCurrency(item.amount)}</Text>
+                                            </View>
+                                        ))}
                                         <View style={[styles.breakdownRow, styles.subtotalRow]}>
                                             <Text style={styles.subtotalLabel}>Current Period Subtotal</Text>
                                             <Text style={styles.subtotalAmount}>
-                                                {formatCurrency(billingSummary?.currentMonthAmount ?? 0)}
+                                                {formatCurrency(billingSummary?.currentBill?.totalAmount ?? 0)}
                                             </Text>
                                         </View>
-                                        {billingSummary?.arrearsAmount ? (
-                                            <View style={styles.breakdownRow}>
-                                                <Text style={styles.extraDetailsLabel}>Arrears</Text>
-                                                <Text style={styles.extraDetailsAmount}>
-                                                    {formatCurrency(billingSummary.arrearsAmount)}
-                                                </Text>
+                                        {billingSummary?.arrearsMonths.length ? (
+                                            <View style={styles.arrearsWrap}>
+                                                <View style={styles.monthSectionHeader}>
+                                                    <Text style={styles.monthSectionTitle}>Arrears</Text>
+                                                    <Text style={styles.monthSectionMeta}>Previous Balance</Text>
+                                                </View>
+                                                {billingSummary.arrearsMonths.map((month) => (
+                                                    <View style={styles.breakdownRow} key={month.billingMonth ?? 'unassigned'}>
+                                                        <Text style={styles.extraDetailsLabel}>
+                                                            {formatBillingMonthLabel(month.billingMonth)}
+                                                        </Text>
+                                                        <Text style={styles.extraDetailsAmount}>
+                                                            {formatCurrency(month.unpaidAmount)}
+                                                        </Text>
+                                                    </View>
+                                                ))}
+                                                <View style={[styles.breakdownRow, styles.subtotalRow]}>
+                                                    <Text style={styles.subtotalLabel}>Arrears Subtotal</Text>
+                                                    <Text style={styles.subtotalAmount}>
+                                                        {formatCurrency(billingSummary.arrearsAmount)}
+                                                    </Text>
+                                                </View>
                                             </View>
                                         ) : null}
                                         <View style={[styles.breakdownRow, styles.overallRow]}>
                                             <Text style={styles.overallLabel}>
-                                                {billingStatusIsPaid ? 'Overall Total Paid' : 'Overall Total Due'}
+                                                {billingStatusIsPaid ? 'Overall Total Paid' : 'Total Due'}
                                             </Text>
                                             <Text style={styles.overallAmount}>
                                                 {formatCurrency(billingSummary?.totalAmount ?? 0)}
@@ -310,16 +365,41 @@ const Rent = () => {
                             <View style={styles.leaseItem}>
                                 <Text style={styles.leaseLabel}>STATUS</Text>
                                 <View style={styles.renewedRow}>
-                                    <Ionicons name="checkmark-circle" size={22} color="#4cab53" />
-                                    <Text style={styles.renewedText}>RENEWED</Text>
+                                    <Ionicons
+                                        name={leaseAgreement ? 'checkmark-circle' : 'alert-circle-outline'}
+                                        size={22}
+                                        color={leaseAgreement ? '#4cab53' : '#d85647'}
+                                    />
+                                    <Text style={[styles.renewedText, !leaseAgreement ? styles.noLeaseText : null]}>
+                                        {isBillingLoading ? 'LOADING' : leaseAgreement ? 'ACTIVE' : 'NO RECORD'}
+                                    </Text>
                                 </View>
                             </View>
 
                             <View style={styles.leaseItem}>
-                                <Text style={styles.leaseLabel}>DUE DATE</Text>
-                                <Text style={styles.leaseDueDate}>June 2030</Text>
+                                <Text style={styles.leaseLabel}>LEASE DATE</Text>
+                                <Text style={styles.leaseDueDate}>
+                                    {isBillingLoading ? 'Loading...' : formatPlainDate(leaseAgreement?.leaseDate ?? null)}
+                                </Text>
                             </View>
                         </View>
+
+                        {leaseAgreement ? (
+                            <View style={styles.leaseDetails}>
+                                <View style={styles.leaseDetailRow}>
+                                    <Text style={styles.leaseDetailLabel}>Business</Text>
+                                    <Text style={styles.leaseDetailValue}>{leaseAgreement.businessName}</Text>
+                                </View>
+                                <View style={styles.leaseDetailRow}>
+                                    <Text style={styles.leaseDetailLabel}>Type</Text>
+                                    <Text style={styles.leaseDetailValue}>{leaseAgreement.businessType}</Text>
+                                </View>
+                                <View style={styles.leaseDetailRow}>
+                                    <Text style={styles.leaseDetailLabel}>Section</Text>
+                                    <Text style={styles.leaseDetailValue}>{leaseAgreement.section}</Text>
+                                </View>
+                            </View>
+                        ) : null}
                     </View>
                 </ScrollView>
             </View>
@@ -489,6 +569,27 @@ const styles = StyleSheet.create({
         marginTop: 4,
         borderRadius: 8,
     },
+    monthSectionHeader: {
+        minHeight: 32,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 4,
+        marginBottom: 4,
+    },
+    monthSectionTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#252932',
+    },
+    monthSectionMeta: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#7a808e',
+    },
+    arrearsWrap: {
+        marginTop: 10,
+    },
     subtotalLabel: {
         fontSize: 16,
         fontWeight: '800',
@@ -648,10 +749,38 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#3ea547',
     },
+    noLeaseText: {
+        color: '#d85647',
+    },
     leaseDueDate: {
         marginTop: 8,
         fontSize: 40 / 2,
         fontWeight: '800',
         color: '#222833',
+    },
+    leaseDetails: {
+        marginTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#d4d8e2',
+        paddingTop: 8,
+        gap: 6,
+    },
+    leaseDetailRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    leaseDetailLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#7a808e',
+    },
+    leaseDetailValue: {
+        flex: 1,
+        textAlign: 'right',
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#252932',
     },
 });

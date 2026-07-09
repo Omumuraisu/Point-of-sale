@@ -10,9 +10,117 @@ CHECK (
   notification_type IN (
     'billing_submitted',
     'billing_payment_reminder',
+    'billing_paid',
     'vendor_compliance_requested'
   )
 );
+
+CREATE OR REPLACE FUNCTION public.notify_business_owner_billing_paid()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  owner_account_id bigint;
+  owner_id bigint;
+  paid_billing_month text;
+  paid_stall_number text;
+BEGIN
+  IF NOT (
+    lower(coalesce(NEW.status, '')) = 'paid'
+    OR NEW.paid_at IS NOT NULL
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND (
+      lower(coalesce(OLD.status, '')) = 'paid'
+      OR OLD.paid_at IS NOT NULL
+    ) THEN
+    RETURN NEW;
+  END IF;
+
+  paid_billing_month := coalesce(NEW.billing_month::text, NEW.due_date::text, '');
+  paid_stall_number := coalesce(NEW.stall_number, '');
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.payments pending_payment
+    WHERE pending_payment.business_id = NEW.business_id
+      AND coalesce(pending_payment.stall_number, '') = paid_stall_number
+      AND coalesce(pending_payment.billing_month::text, pending_payment.due_date::text, '') = paid_billing_month
+      AND NOT (
+        lower(coalesce(pending_payment.status, '')) = 'paid'
+        OR pending_payment.paid_at IS NOT NULL
+      )
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT business.business_owner_id, business_owner.account_id
+  INTO owner_id, owner_account_id
+  FROM public.business
+  JOIN public.business_owner
+    ON business_owner.business_owner_id = business.business_owner_id
+  WHERE business.business_id = NEW.business_id
+  LIMIT 1;
+
+  IF owner_id IS NULL OR owner_account_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.notifications existing_notification
+    WHERE existing_notification.recipient_type = 'business_owner'
+      AND existing_notification.recipient_account_id = owner_account_id
+      AND existing_notification.business_id = NEW.business_id
+      AND coalesce(existing_notification.stall_number, '') = paid_stall_number
+      AND coalesce(existing_notification.billing_month, '') = paid_billing_month
+      AND existing_notification.notification_type = 'billing_paid'
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.notifications (
+    recipient_type,
+    recipient_account_id,
+    business_owner_id,
+    business_id,
+    stall_number,
+    billing_cycle_id,
+    billing_month,
+    notification_type,
+    title,
+    message,
+    status,
+    created_at
+  )
+  VALUES (
+    'business_owner',
+    owner_account_id,
+    owner_id,
+    NEW.business_id,
+    NEW.stall_number,
+    NEW.payment_id,
+    paid_billing_month,
+    'billing_paid',
+    'Billing payment received',
+    'Your billing payment has been recorded. Thank you for paying your bill.',
+    'unread',
+    timezone('Asia/Manila', now())
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS payments_notify_billing_paid ON public.payments;
+CREATE TRIGGER payments_notify_billing_paid
+AFTER INSERT OR UPDATE OF status, paid_at
+ON public.payments
+FOR EACH ROW
+EXECUTE FUNCTION public.notify_business_owner_billing_paid();
 
 CREATE TABLE IF NOT EXISTS public.vendor_compliance_requests (
   compliance_request_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

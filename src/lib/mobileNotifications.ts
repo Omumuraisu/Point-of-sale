@@ -9,8 +9,8 @@ export interface MobileNotification {
     businessOwnerId: number;
     businessId: number;
     stallNumber: string;
-    billingCycleId: number;
-    billingMonth: string;
+    billingCycleId: number | null;
+    billingMonth: string | null;
     notificationType: string;
     title: string;
     message: string;
@@ -26,8 +26,8 @@ interface NotificationRow {
     business_owner_id: number;
     business_id: number;
     stall_number: string;
-    billing_cycle_id: number;
-    billing_month: string;
+    billing_cycle_id: number | null;
+    billing_month: string | null;
     notification_type: string;
     title: string;
     message: string;

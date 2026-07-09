@@ -10,9 +10,10 @@ interface ReceiptProps {
     onAddMore: () => void;
     onClearAll: () => void;
     onConfirm: () => void;
+    isConfirming?: boolean;
 }
 
-const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm }: ReceiptProps) => {
+const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isConfirming = false }: ReceiptProps) => {
     const insets = useSafeAreaInsets();
     const totalAmount = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -76,11 +77,16 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm }: R
             </View>
 
             <Pressable
-                style={[styles.confirmBtn, { marginBottom: Math.max(insets.bottom, 10) + 10 }]}
+                style={[
+                    styles.confirmBtn,
+                    isConfirming ? styles.confirmBtnDisabled : null,
+                    { marginBottom: Math.max(insets.bottom, 10) + 10 },
+                ]}
                 onPress={onConfirm}
+                disabled={isConfirming}
             >
                 <Ionicons name="wallet" size={31} color="#ffffff" />
-                <Text style={styles.confirmText}>Confirm</Text>
+                <Text style={styles.confirmText}>{isConfirming ? 'Opening Payment...' : 'Confirm'}</Text>
             </Pressable>
         </SafeAreaView>
     );
@@ -239,6 +245,9 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 3 },
         shadowRadius: 4,
         elevation: 4,
+    },
+    confirmBtnDisabled: {
+        opacity: 0.65,
     },
     confirmText: {
         fontSize: 70 / 2,

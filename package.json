@@ -4,6 +4,10 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "start:lan": "expo start --lan",
+    "start:local": "expo start --localhost",
+    "start:usb": "adb reverse tcp:8081 tcp:8081 && expo start --localhost",
+    "start:tunnel": "expo start --tunnel",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",

@@ -1,4 +1,6 @@
+import { useCallback, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { clearPersistedCartItems, savePersistedCartItems } from '../components/pos/cartStore';
 import Receipt from '../components/pos/Receipt';
 import { parseCart } from '../lib/utils';
@@ -7,6 +9,15 @@ const ReceiptRoute = () => {
     const router = useRouter();
     const { cart } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
+    const isConfirmingRef = useRef(false);
+    const [isConfirming, setIsConfirming] = useState(false);
+
+    useFocusEffect(
+        useCallback(() => {
+            isConfirmingRef.current = false;
+            setIsConfirming(false);
+        }, []),
+    );
 
     const handleClearAll = async () => {
         await clearPersistedCartItems();
@@ -32,6 +43,13 @@ const ReceiptRoute = () => {
     };
 
     const handleConfirm = () => {
+        if (isConfirmingRef.current) {
+            return;
+        }
+
+        isConfirmingRef.current = true;
+        setIsConfirming(true);
+
         router.push({
             pathname: '/payment',
             params: {
@@ -48,6 +66,7 @@ const ReceiptRoute = () => {
             onAddMore={handleAddMore}
             onClearAll={handleClearAll}
             onConfirm={handleConfirm}
+            isConfirming={isConfirming}
         />
     );
 };
