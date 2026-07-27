@@ -455,16 +455,35 @@ export const syncTransactionRecord = async (
     return result.success;
 };
 
-export const loadRemoteSalesTransactions = async (accountId?: number): Promise<TransactionRecord[]> => {
-    if (!accountId || !isSupabaseConfigured || !supabase) {
+interface SalesTransactionScope {
+    accountId?: number;
+    stallId?: string | null;
+    stallNumber?: string | null;
+}
+
+export const loadRemoteSalesTransactions = async ({
+    accountId,
+    stallId,
+    stallNumber,
+}: SalesTransactionScope): Promise<TransactionRecord[]> => {
+    const stallScope = stallId ?? stallNumber;
+
+    if ((!stallScope && !accountId) || !isSupabaseConfigured || !supabase) {
         return [];
     }
 
-    const { data, error } = await supabase
+    let query = supabase
         .from('sales_transaction')
         .select('transaction_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date')
-        .eq('account_id', accountId)
         .order('transaction_date', { ascending: false });
+
+    // Sales belong to a stall. The account filter is only a safe fallback for
+    // accounts whose business has not been assigned a stall yet.
+    query = stallScope
+        ? query.eq('stall_id', stallScope)
+        : query.eq('account_id', accountId as number);
+
+    const { data, error } = await query;
 
     if (error || !data) {
         if (__DEV__ && error) {

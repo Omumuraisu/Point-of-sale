@@ -22,7 +22,11 @@ const TransactionDetailRoute = () => {
 
         const hydrateTransaction = async () => {
             const localTransactions = await loadSavedTransactions(currentUser?.accountId);
-            const remoteTransactions = await loadRemoteSalesTransactions(currentUser?.accountId);
+            const remoteTransactions = await loadRemoteSalesTransactions({
+                accountId: currentUser?.accountId,
+                stallId: currentUser?.stallId,
+                stallNumber: currentUser?.stallNumber,
+            });
             const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
             const allTransactions = [...unsyncedLocalTransactions, ...remoteTransactions];
             const matched = allTransactions.find((entry) => entry.id === transactionId) ?? null;
@@ -37,7 +41,7 @@ const TransactionDetailRoute = () => {
         return () => {
             isMounted = false;
         };
-    }, [currentUser?.accountId, transactionId]);
+    }, [currentUser?.accountId, currentUser?.stallId, currentUser?.stallNumber, transactionId]);
 
     return (
         <TransactionDetail

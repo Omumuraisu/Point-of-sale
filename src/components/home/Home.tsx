@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Switch, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -10,6 +10,8 @@ import { useAuthSession } from '../../lib/authSession';
 import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
 import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
 import { useUnreadNotificationCount } from '../../lib/useUnreadNotificationCount';
+import { getTodaySalesSummary } from '../../lib/salesMetrics';
+import { formatCurrency } from '../../lib/utils';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -26,6 +28,7 @@ export default function Home() {
     const { unreadNotificationCount } = useUnreadNotificationCount(currentUser?.accountId);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
     const stallLabel = currentUser?.stallNumber ? `Stall ${currentUser.stallNumber}` : 'No stall assigned';
+    const todaySales = useMemo(() => getTodaySalesSummary(recentSales), [recentSales]);
 
     useFocusEffect(
         useCallback(() => {
@@ -33,7 +36,11 @@ export default function Home() {
 
             const hydrateRecentSales = async () => {
                 const [remoteTransactions, localTransactions] = await Promise.all([
-                    loadRemoteSalesTransactions(currentUser?.accountId),
+                    loadRemoteSalesTransactions({
+                        accountId: currentUser?.accountId,
+                        stallId: currentUser?.stallId,
+                        stallNumber: currentUser?.stallNumber,
+                    }),
                     loadSavedTransactions(currentUser?.accountId),
                 ]);
                 const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
@@ -41,7 +48,7 @@ export default function Home() {
                     .sort((first, second) => second.createdAt - first.createdAt);
 
                 if (isMounted) {
-                    setRecentSales(savedTransactions.slice(0, 3));
+                    setRecentSales(savedTransactions);
                 }
             };
 
@@ -54,7 +61,7 @@ export default function Home() {
                 isMounted = false;
                 unsubscribe();
             };
-        }, [currentUser?.accountId]),
+        }, [currentUser?.accountId, currentUser?.stallId, currentUser?.stallNumber]),
     );
 
     return (
@@ -120,8 +127,12 @@ export default function Home() {
                 <View style={styles.totalCard}>
                     <View>
                         <Text style={styles.totalLabel}>Today's Total</Text>
-                        <Text style={styles.totalValue}>P 14,247.00</Text>
-                        <Text style={styles.growthText}>+12% from yesterday</Text>
+                        <Text style={styles.totalValue}>{formatCurrency(todaySales.total)}</Text>
+                        <Text style={styles.growthText}>
+                            {todaySales.growthPercent === null
+                                ? 'No sales recorded yesterday'
+                                : `${todaySales.growthPercent >= 0 ? '+' : ''}${todaySales.growthPercent.toFixed(1)}% from yesterday`}
+                        </Text>
                     </View>
 
                     <View style={styles.chartCircle}>
@@ -145,7 +156,7 @@ export default function Home() {
                             </Text>
                         </View>
                     ) : (
-                        recentSales.map((item) => (
+                        recentSales.slice(0, 3).map((item) => (
                             <View style={styles.saleCard} key={item.id}>
                                 <View style={styles.saleAccent} />
                                 <View style={styles.saleInfo}>

@@ -97,6 +97,7 @@ const Rent = () => {
     const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
     const [leaseAgreement, setLeaseAgreement] = useState<BusinessLeaseAgreement | null>(null);
     const [isBillingLoading, setBillingLoading] = useState(true);
+    const isVendor = currentUser?.profileTable === 'vendor';
 
     useEffect(() => {
         if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -112,7 +113,9 @@ const Rent = () => {
                 const [saved, summary, lease] = await Promise.all([
                     loadVendorApplications(currentUser?.businessOwnerId),
                     fetchBillingSummary(currentUser?.businessId, currentUser?.stallNumber),
-                    fetchBusinessLeaseAgreement(currentUser?.businessId, currentUser?.businessOwnerId),
+                    isVendor
+                        ? Promise.resolve(null)
+                        : fetchBusinessLeaseAgreement(currentUser?.businessId, currentUser?.businessOwnerId),
                 ]);
 
                 if (isActive) {
@@ -124,12 +127,13 @@ const Rent = () => {
             };
 
             setBillingLoading(true);
+            setDueDetailsExpanded(false);
             loadPersonnel();
 
             return () => {
                 isActive = false;
             };
-        }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber])
+        }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber, isVendor])
     );
 
     const handleToggleDueDetails = () => {
@@ -148,7 +152,9 @@ const Rent = () => {
         });
     };
 
-    const personnelList = personnelRecords;
+    const personnelList = isVendor
+        ? personnelRecords.filter((personnel) => personnel.accountId !== currentUser?.accountId)
+        : personnelRecords;
     const stallNumber = currentUser?.stallNumber ?? 'Not assigned';
     const billingStatus = billingSummary?.status ?? 'UNPAID';
     const billingStatusIsPaid = billingStatus === 'PAID';
@@ -157,11 +163,17 @@ const Rent = () => {
         : formatCurrency(billingSummary?.totalAmount ?? 0);
     const amountLabel = billingStatusIsPaid ? 'Total Amount Paid' : 'Total Amount Due';
     const billingDateLabel = billingSummary
-        ? billingStatusIsPaid
-            ? `Paid: ${formatDate(billingSummary.paidAt)}`
-            : `Due: ${formatDate(billingSummary.dueDate)}`
+        ? isVendor
+            ? `Due: ${formatDate(billingSummary.dueDate)}`
+            : billingStatusIsPaid
+                ? `Paid: ${formatDate(billingSummary.paidAt)}`
+                : `Due: ${formatDate(billingSummary.dueDate)}`
         : 'No billing record yet';
-    const billingDateIcon = billingStatusIsPaid ? 'checkmark-circle-outline' : 'calendar-outline';
+    const billingDateIcon = isVendor
+        ? 'calendar-outline'
+        : billingStatusIsPaid
+            ? 'checkmark-circle-outline'
+            : 'calendar-outline';
     const billBreakdown = billingSummary
         ? [
             { label: 'Rent', amount: billingSummary.rentAmount },
@@ -195,7 +207,7 @@ const Rent = () => {
 
                         <View style={styles.ownerWrap}>
                             <Text style={styles.ownerName}>{currentUser?.displayName ?? 'Loading...'}</Text>
-                            <Text style={styles.ownerRole}>STALL OWNER</Text>
+                            <Text style={styles.ownerRole}>{isVendor ? 'STALL VENDOR' : 'STALL OWNER'}</Text>
                         </View>
                     </View>
 
@@ -203,9 +215,11 @@ const Rent = () => {
                         <View style={styles.rowBetween}>
                             <View>
                                 <Text style={styles.sectionTitle}>Billing Status</Text>
-                                <Text style={styles.billingMonthTitle}>
-                                    {isBillingLoading ? 'Loading bill...' : formatBillingMonth(billingSummary?.billingMonth ?? null)}
-                                </Text>
+                                {!isVendor ? (
+                                    <Text style={styles.billingMonthTitle}>
+                                        {isBillingLoading ? 'Loading bill...' : formatBillingMonth(billingSummary?.billingMonth ?? null)}
+                                    </Text>
+                                ) : null}
                             </View>
                             <View style={[styles.unpaidPill, billingStatusIsPaid ? styles.paidPill : null]}>
                                 <Text style={[styles.unpaidText, billingStatusIsPaid ? styles.paidText : null]}>
@@ -219,20 +233,23 @@ const Rent = () => {
 
                         <Pressable
                             style={styles.rowBetween}
-                            onPress={handleToggleDueDetails}
+                            disabled={isVendor}
+                            onPress={isVendor ? undefined : handleToggleDueDetails}
                         >
                             <View style={styles.dueRow}>
                                 <Ionicons name={billingDateIcon} size={20} color="#2f5ada" />
                                 <Text style={styles.dueText}>{billingDateLabel}</Text>
                             </View>
-                            <Ionicons
-                                name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
-                                size={22}
-                                color="#8d919a"
-                            />
+                            {!isVendor ? (
+                                <Ionicons
+                                    name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
+                                    size={22}
+                                    color="#8d919a"
+                                />
+                            ) : null}
                         </Pressable>
 
-                        {isDueDetailsExpanded ? (
+                        {!isVendor && isDueDetailsExpanded ? (
                             <View style={styles.extraDetailsWrap}>
                                 <Text style={styles.extraDetailsTitle}>Bill Summary</Text>
                                 {billBreakdown.length > 0 ? (
@@ -319,7 +336,8 @@ const Rent = () => {
                             <Pressable
                                 style={styles.personnelCard}
                                 key={personnel.id}
-                                onPress={() => handlePersonnelPress(personnel.id)}
+                                disabled={isVendor}
+                                onPress={isVendor ? undefined : () => handlePersonnelPress(personnel.id)}
                             >
                                 <View style={styles.personnelAvatar}>
                                     <Ionicons name="person" size={24} color="#ffffff" />
@@ -346,19 +364,24 @@ const Rent = () => {
                                         </View>
                                     ) : null}
                                 </View>
-                                <Ionicons name="chevron-forward" size={20} color="#7a808e" />
+                                {!isVendor ? (
+                                    <Ionicons name="chevron-forward" size={20} color="#7a808e" />
+                                ) : null}
                             </Pressable>
                         );
                     })}
 
-                    <Pressable
-                        style={styles.addPersonnelButton}
-                        onPress={handleAddPersonnel}
-                    >
-                        <Text style={styles.addPersonnelText}>Add Personnel</Text>
-                    </Pressable>
+                    {!isVendor ? (
+                        <Pressable
+                            style={styles.addPersonnelButton}
+                            onPress={handleAddPersonnel}
+                        >
+                            <Text style={styles.addPersonnelText}>Add Personnel</Text>
+                        </Pressable>
+                    ) : null}
 
-                    <View style={styles.card}>
+                    {!isVendor ? (
+                        <View style={styles.card}>
                         <Text style={styles.leaseTitle}>LEASE AGREEMENT</Text>
 
                         <View style={styles.leaseGrid}>
@@ -400,7 +423,8 @@ const Rent = () => {
                                 </View>
                             </View>
                         ) : null}
-                    </View>
+                        </View>
+                    ) : null}
                 </ScrollView>
             </View>
         </SafeAreaView>

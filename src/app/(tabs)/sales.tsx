@@ -5,6 +5,7 @@ import {
     Pressable,
     StyleSheet,
     ScrollView,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -17,59 +18,14 @@ import { TransactionRecord } from '../../lib/types';
 import { useAuthSession } from '../../lib/authSession';
 import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
 import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
-
-const CHART_PERIODS = {
-    daily: {
-        title: 'Daily Sales',
-        bars: [
-            { label: 'Sun', value: 58 },
-            { label: 'Mon', value: 66 },
-            { label: 'Tue', value: 48 },
-            { label: 'Wed', value: 76 },
-            { label: 'Thu', value: 59 },
-            { label: 'Fri', value: 63 },
-            { label: 'Sat', value: 42 },
-        ],
-        activeIndex: 6,
-    },
-    weekly: {
-        title: 'Weekly Sales',
-        bars: [
-            { label: 'W1', value: 64 },
-            { label: 'W2', value: 70 },
-            { label: 'W3', value: 50 },
-            { label: 'W4', value: 62 },
-            { label: 'W5', value: 56 },
-            { label: 'W1\nMar', value: 53 },
-            { label: 'W2\nMar', value: 49 },
-        ],
-        activeIndex: 1,
-    },
-    monthly: {
-        title: 'Monthly Sales',
-        bars: [
-            { label: 'Jan', value: 66 },
-            { label: 'Feb', value: 44 },
-            { label: 'Mar', value: 68 },
-            { label: 'Apr', value: 71 },
-            { label: 'May', value: 77 },
-            { label: 'Jun', value: 74 },
-            { label: 'Jul', value: 72 },
-        ],
-        activeIndex: 1,
-    },
-};
-
-type ChartBar = {
-    label: string;
-    value: number;
-};
-
-type ChartPeriodConfig = {
-    title: string;
-    bars: ChartBar[];
-    activeIndex: number;
-};
+import { getTodaySalesSummary } from '../../lib/salesMetrics';
+import { formatCurrency } from '../../lib/utils';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
+import {
+    loadWeeklySalesPatterns,
+    verifyHoltWintersReadAccess,
+    WeeklySalesPattern,
+} from '../../lib/weeklySalesPatterns';
 
 type TopSoldProductBar = {
     label: string;
@@ -82,10 +38,6 @@ type TopProductGroup = {
     key: string;
     label: string;
 };
-
-const PERIOD_OPTIONS = ['daily', 'weekly', 'monthly'] as const;
-type PeriodOption = (typeof PERIOD_OPTIONS)[number];
-const CHART_PERIODS_TYPED: Record<PeriodOption, ChartPeriodConfig> = CHART_PERIODS;
 
 const formatTopProductLabel = (rawLabel: string): string => {
     const label = rawLabel.trim().replace(/\s+/g, ' ');
@@ -187,9 +139,9 @@ const getSyncStatus = (transaction: TransactionRecord) => {
 };
 
 interface ChartViewProps {
-    period: PeriodOption;
-    onPeriodChange: (period: PeriodOption) => void;
     topSoldProducts: TopSoldProductBar[];
+    todayTotal: number;
+    growthPercent: number | null;
 }
 
 interface TransactionsViewProps {
@@ -204,8 +156,8 @@ const Sales = () => {
     const requestedView = typeof view === 'string' ? view : Array.isArray(view) ? view[0] : undefined;
     const initialViewMode: 'chart' | 'transactions' = requestedView === 'transactions' ? 'transactions' : 'chart';
     const [viewMode, setViewMode] = useState<'chart' | 'transactions'>(initialViewMode);
-    const [period, setPeriod] = useState<PeriodOption>('daily');
     const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
+    const todaySales = useMemo(() => getTodaySalesSummary(savedTransactions), [savedTransactions]);
 
     const topSoldProducts = useMemo<TopSoldProductBar[]>(() => {
         const quantityByProduct = new Map<string, {
@@ -293,7 +245,11 @@ const Sales = () => {
             let isMounted = true;
 
             const hydrateTransactions = async () => {
-                const remoteTransactions = await loadRemoteSalesTransactions(currentUser?.accountId);
+                const remoteTransactions = await loadRemoteSalesTransactions({
+                    accountId: currentUser?.accountId,
+                    stallId: currentUser?.stallId,
+                    stallNumber: currentUser?.stallNumber,
+                });
                 const localTransactions = await loadSavedTransactions(currentUser?.accountId);
                 const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
                 const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
@@ -313,7 +269,7 @@ const Sales = () => {
                 isMounted = false;
                 unsubscribe();
             };
-        }, [currentUser?.accountId]),
+        }, [currentUser?.accountId, currentUser?.stallId, currentUser?.stallNumber]),
     );
 
     useEffect(() => {
@@ -355,7 +311,13 @@ const Sales = () => {
                 </View>
 
                 {viewMode === 'chart'
-                    ? <ChartView period={period} onPeriodChange={setPeriod} topSoldProducts={topSoldProducts} />
+                    ? (
+                        <ChartView
+                            topSoldProducts={topSoldProducts}
+                            todayTotal={todaySales.total}
+                            growthPercent={todaySales.growthPercent}
+                        />
+                    )
                     : (
                         <TransactionsView
                             transactions={savedTransactions}
@@ -372,59 +334,255 @@ const Sales = () => {
     );
 };
 
-const ChartView = ({ period, onPeriodChange, topSoldProducts }: ChartViewProps) => {
-    const activePeriod = CHART_PERIODS_TYPED[period] ?? CHART_PERIODS_TYPED.daily;
+const MANILA_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+});
+
+const MANILA_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    weekday: 'long',
+});
+
+const CALENDAR_DAY_INDEX: Record<string, number> = {
+    Monday: 0,
+    Tuesday: 1,
+    Wednesday: 2,
+    Thursday: 3,
+    Friday: 4,
+    Saturday: 5,
+    Sunday: 6,
+};
+
+const ChartView = ({
+    topSoldProducts,
+    todayTotal,
+    growthPercent,
+}: ChartViewProps) => {
+    const [patterns, setPatterns] = useState<WeeklySalesPattern[]>([]);
+    const [isPatternsLoading, setPatternsLoading] = useState(true);
+    const [patternsUnavailable, setPatternsUnavailable] = useState(false);
+
+    const reloadWeeklyPatterns = useCallback(async () => {
+        setPatternsLoading(true);
+        const result = await loadWeeklySalesPatterns();
+        setPatterns(result.data);
+        setPatternsUnavailable(result.error);
+        setPatternsLoading(false);
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadInitialPatterns = async () => {
+            const [hasReadAccess, result] = await Promise.all([
+                verifyHoltWintersReadAccess(),
+                loadWeeklySalesPatterns(),
+            ]);
+
+            if (!isMounted) {
+                return;
+            }
+
+            setPatterns(result.data);
+            setPatternsUnavailable(!hasReadAccess || result.error);
+            setPatternsLoading(false);
+        };
+
+        void loadInitialPatterns();
+
+        if (!isSupabaseConfigured || !supabase) {
+            return () => {
+                isMounted = false;
+            };
+        }
+
+        const supabaseClient = supabase;
+        const channelTopic = 'realtime:pos-weekly-pattern-updates';
+        let activeChannel: ReturnType<typeof supabaseClient.channel> | null = null;
+
+        const setupRealtimeChannel = async () => {
+            const existingChannels = supabaseClient
+                .getChannels()
+                .filter((channel) => channel.topic === channelTopic);
+
+            await Promise.all(
+                existingChannels.map((channel) => supabaseClient.removeChannel(channel)),
+            );
+
+            if (!isMounted) {
+                return;
+            }
+
+            activeChannel = supabaseClient
+                .channel('pos-weekly-pattern-updates')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'hw_forecast_runs',
+                    },
+                    (payload) => {
+                        const nextRun = payload.new as { status?: string } | null;
+
+                        if (nextRun?.status === 'success') {
+                            void reloadWeeklyPatterns();
+                        }
+                    },
+                )
+                .subscribe();
+        };
+
+        void setupRealtimeChannel();
+
+        return () => {
+            isMounted = false;
+
+            if (activeChannel) {
+                void supabaseClient.removeChannel(activeChannel);
+            }
+        };
+    }, [reloadWeeklyPatterns]);
+
+    const highestPatternValue = useMemo(() => Math.max(
+        ...patterns.map((pattern) => pattern.avgDailyRevPhp),
+        0,
+    ), [patterns]);
+
+    const generatedAtLabel = useMemo(() => {
+        const generatedAt = patterns[0]?.generatedAt;
+
+        if (!generatedAt) {
+            return '';
+        }
+
+        const date = new Date(generatedAt);
+        return Number.isNaN(date.getTime()) ? '' : MANILA_DATE_TIME_FORMATTER.format(date);
+    }, [patterns]);
+    const currentManilaDay = MANILA_WEEKDAY_FORMATTER.format(new Date());
+    const currentManilaDayIndex = CALENDAR_DAY_INDEX[currentManilaDay] ?? 0;
 
     return (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             <View style={styles.summaryWrap}>
                 <Text style={styles.summaryLabel}>Today's Total Sales</Text>
-                <Text style={styles.summaryAmount}>P 14,247.00</Text>
+                <Text style={styles.summaryAmount}>{formatCurrency(todayTotal)}</Text>
                 <View style={styles.growthPill}>
-                    <Text style={styles.growthText}>+12% from yesterday</Text>
+                    <Text style={styles.growthText}>
+                        {growthPercent === null
+                            ? 'No sales recorded yesterday'
+                            : `${growthPercent >= 0 ? '+' : ''}${growthPercent.toFixed(1)}% from yesterday`}
+                    </Text>
                 </View>
             </View>
 
             <View style={styles.chartCard}>
-                <Text style={styles.cardTitle}>{activePeriod.title}</Text>
+                <View style={styles.patternHeader}>
+                    <View style={styles.patternTitleWrap}>
+                        <Text style={styles.cardTitle}>Weekly Sales Patterns</Text>
+                        {generatedAtLabel ? (
+                            <Text style={styles.patternGeneratedAt}>Updated {generatedAtLabel}</Text>
+                        ) : null}
+                    </View>
+                    <MaterialCommunityIcons name="chart-timeline-variant" size={24} color="#2f5ada" />
+                </View>
 
-                <View style={styles.barsWrap}>
-                    {activePeriod.bars.map((bar, index) => {
-                        const isActive = index === activePeriod.activeIndex;
+                {isPatternsLoading ? (
+                    <View style={styles.patternState}>
+                        <ActivityIndicator size="small" color="#2f5ada" />
+                        <Text style={styles.patternStateText}>Loading weekly sales patterns...</Text>
+                    </View>
+                ) : null}
 
-                        return (
-                            <View key={`${period}-${bar.label}-${index}`} style={styles.barCol}>
-                                <View style={styles.barTrack}>
-                                    <View style={[styles.barFill, { height: `${bar.value}%` }, isActive && styles.barFillActive]}>
-                                        {isActive ? (
-                                            <View style={styles.activeMarker}>
-                                                <Ionicons name="chevron-up" size={14} color="#ffffff" />
+                {!isPatternsLoading && patternsUnavailable ? (
+                    <View style={styles.patternState}>
+                        <Ionicons name="cloud-offline-outline" size={28} color="#747b8a" />
+                        <Text style={styles.patternStateTitle}>Weekly sales patterns are currently unavailable.</Text>
+                    </View>
+                ) : null}
+
+                {!isPatternsLoading && !patternsUnavailable && patterns.length === 0 ? (
+                    <View style={styles.patternState}>
+                        <Ionicons name="analytics-outline" size={28} color="#747b8a" />
+                        <Text style={styles.patternStateTitle}>No weekly sales patterns are available yet.</Text>
+                    </View>
+                ) : null}
+
+                {!isPatternsLoading && !patternsUnavailable && patterns.length > 0 ? (
+                    <>
+                        <View style={styles.patternBarsWrap}>
+                            {patterns.map((pattern) => {
+                                const patternValue = pattern.avgDailyRevPhp;
+                                const patternDayIndex = CALENDAR_DAY_INDEX[pattern.dayOfWeek] ?? pattern.dowIndex;
+                                const isFutureDay = patternDayIndex > currentManilaDayIndex;
+                                const barHeight = !isFutureDay && highestPatternValue > 0
+                                    ? Math.max(4, Math.round((patternValue / highestPatternValue) * 100))
+                                    : 0;
+                                const isCurrentDay = pattern.dayOfWeek === currentManilaDay;
+
+                                return (
+                                    <View key={`${pattern.runId}-${pattern.dayOfWeek}`} style={styles.patternBarColumn}>
+                                        <View style={[
+                                            styles.patternBarTrack,
+                                            pattern.isWeekend && styles.patternBarTrackWeekend,
+                                        ]}>
+                                            <View
+                                                style={[
+                                                    styles.patternBarFill,
+                                                    { height: `${barHeight}%` },
+                                                    pattern.isWeekend && styles.patternBarFillWeekend,
+                                                ]}
+                                            >
+                                                {isCurrentDay ? (
+                                                    <View style={styles.activeMarker}>
+                                                        <Ionicons name="chevron-up" size={14} color="#ffffff" />
+                                                    </View>
+                                                ) : null}
                                             </View>
-                                        ) : null}
+                                        </View>
+                                        <Text style={[
+                                            styles.patternDayLabel,
+                                            pattern.isWeekend && styles.patternDayLabelWeekend,
+                                        ]}>
+                                            {pattern.dayOfWeek.slice(0, 3)}
+                                        </Text>
                                     </View>
-                                </View>
-                                <Text style={[styles.monthText, isActive && styles.monthTextActive]}>{bar.label}</Text>
-                            </View>
-                        );
-                    })}
-                </View>
+                                );
+                            })}
+                        </View>
 
-                <View style={styles.periodSwitchWrap}>
-                    {PERIOD_OPTIONS.map((option) => {
-                        const isActive = period === option;
-                        const label = option.charAt(0).toUpperCase() + option.slice(1);
+                        <View style={styles.periodSwitchWrap}>
+                            {(['Daily', 'Weekly', 'Monthly'] as const).map((label) => {
+                                const isAvailable = label === 'Daily';
 
-                        return (
-                            <Pressable
-                                key={option}
-                                style={[styles.periodSwitchBtn, isActive && styles.periodSwitchBtnActive]}
-                                onPress={() => onPeriodChange(option)}
-                            >
-                                <Text style={[styles.periodText, isActive && styles.periodTextActive]}>{label}</Text>
-                            </Pressable>
-                        );
-                    })}
-                </View>
+                                return (
+                                    <Pressable
+                                        key={label}
+                                        disabled={!isAvailable}
+                                        style={[
+                                            styles.periodSwitchBtn,
+                                            isAvailable && styles.periodSwitchBtnActive,
+                                            !isAvailable && styles.periodSwitchBtnDisabled,
+                                        ]}
+                                    >
+                                        <Text style={[
+                                            styles.periodText,
+                                            isAvailable && styles.periodTextActive,
+                                            !isAvailable && styles.periodTextDisabled,
+                                        ]}>
+                                            {label}
+                                        </Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+                    </>
+                ) : null}
             </View>
 
             <View style={styles.chartCard}>
@@ -736,6 +894,84 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#242830',
     },
+    patternHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    patternTitleWrap: {
+        flex: 1,
+    },
+    patternGeneratedAt: {
+        marginTop: 3,
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#747b8a',
+    },
+    patternState: {
+        minHeight: 210,
+        paddingHorizontal: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+    },
+    patternStateTitle: {
+        fontSize: 15,
+        lineHeight: 21,
+        fontWeight: '800',
+        color: '#525968',
+        textAlign: 'center',
+    },
+    patternStateText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#747b8a',
+    },
+    patternBarsWrap: {
+        height: 190,
+        marginTop: 16,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        gap: 5,
+    },
+    patternBarColumn: {
+        flex: 1,
+        maxWidth: 46,
+        alignItems: 'center',
+    },
+    patternBarTrack: {
+        width: '100%',
+        height: 154,
+        borderRadius: 6,
+        backgroundColor: '#dce4f7',
+        justifyContent: 'flex-end',
+        overflow: 'hidden',
+    },
+    patternBarTrackWeekend: {
+        backgroundColor: '#cbd8f4',
+    },
+    patternBarFill: {
+        width: '100%',
+        borderTopLeftRadius: 6,
+        borderTopRightRadius: 6,
+        backgroundColor: '#5274d5',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+    },
+    patternBarFillWeekend: {
+        backgroundColor: '#3158b8',
+    },
+    patternDayLabel: {
+        marginTop: 7,
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#626a7b',
+    },
+    patternDayLabelWeekend: {
+        color: '#3158b8',
+    },
     barsWrap: {
         marginTop: 14,
         flexDirection: 'row',
@@ -880,6 +1116,9 @@ const styles = StyleSheet.create({
     periodSwitchBtnActive: {
         backgroundColor: '#2f5ada',
     },
+    periodSwitchBtnDisabled: {
+        opacity: 0.58,
+    },
     periodText: {
         fontSize: 18 / 1.2,
         fontWeight: '700',
@@ -887,6 +1126,9 @@ const styles = StyleSheet.create({
     },
     periodTextActive: {
         color: '#ffffff',
+    },
+    periodTextDisabled: {
+        color: '#747b8a',
     },
     topProductsEmptyWrap: {
         marginTop: 14,
