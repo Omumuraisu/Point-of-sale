@@ -43,10 +43,10 @@ const LoginForm = () => {
         <View style={styles.formCard}>
             <Text style={styles.label}>Phone Number</Text>
             <View style={styles.inputWrapper}>
-                <Ionicons name="person-outline" size={20} color="#272c33" />
+                <Ionicons name="call-outline" size={20} color="#272c33" />
                 <TextInput
                     style={styles.input}
-                    placeholder="e.g., 09171234567"
+                    placeholder="0923 123 2134"
                     placeholderTextColor="#8e939e"
                     value={username}
                     onChangeText={setUsername}
@@ -80,16 +80,13 @@ const LoginForm = () => {
                 <TouchableOpacity>
                     <Text style={styles.forgotLink}>Forgot password?</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => router.push('/activate-account')}>
-                    <Text style={styles.forgotLink}>Activate account</Text>
-                </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
                 <Text style={styles.loginBtnText}>{isLoggingIn ? 'Checking...' : 'Login'}</Text>
             </TouchableOpacity>
             {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+            <Text style={styles.formFooter}>© 2026 MarketSync. All rights reserved.</Text>
         </View>
     );
 };

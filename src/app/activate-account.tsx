@@ -7,7 +7,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 export default function ActivateAccountScreen() {
@@ -38,7 +38,15 @@ export default function ActivateAccountScreen() {
                 <Text style={styles.subtitle}>Receive OTP Code</Text>
 
                 <View style={styles.iconCircle}>
-                    <Ionicons name="lock-closed" size={56} color="#212831" />
+                    <View style={styles.iconArtwork}>
+                        <MaterialCommunityIcons name="cellphone" size={78} color="#34383d" />
+                        <MaterialCommunityIcons
+                            name="message-processing"
+                            size={47}
+                            color="#2db9e8"
+                            style={styles.messageIcon}
+                        />
+                    </View>
                 </View>
 
                 <Text style={styles.label}>Phone Number</Text>
@@ -102,6 +110,17 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    iconArtwork: {
+        width: 104,
+        height: 92,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    messageIcon: {
+        position: 'absolute',
+        right: 0,
+        top: 16,
     },
     label: {
         width: '100%',

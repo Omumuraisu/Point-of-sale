@@ -7,7 +7,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 export default function ActivateOtpScreen() {
@@ -40,7 +40,15 @@ export default function ActivateOtpScreen() {
                 <Text style={styles.subtitle}>{phone ?? '0915****72'}</Text>
 
                 <View style={styles.iconCircle}>
-                    <Ionicons name="mail-open" size={56} color="#212831" />
+                    <View style={styles.iconArtwork}>
+                        <MaterialCommunityIcons name="shield" size={92} color="#b9dff7" />
+                        <MaterialCommunityIcons
+                            name="lock"
+                            size={59}
+                            color="#ffad2f"
+                            style={styles.lockIcon}
+                        />
+                    </View>
                 </View>
 
                 <View style={styles.otpRow}>
@@ -111,6 +119,15 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    iconArtwork: {
+        width: 100,
+        height: 100,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    lockIcon: {
+        position: 'absolute',
     },
     otpRow: {
         flexDirection: 'row',
