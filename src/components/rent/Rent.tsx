@@ -98,6 +98,7 @@ const Rent = () => {
     const [leaseAgreement, setLeaseAgreement] = useState<BusinessLeaseAgreement | null>(null);
     const [isBillingLoading, setBillingLoading] = useState(true);
     const isVendor = currentUser?.profileTable === 'vendor';
+    const isDeveloper = currentUser?.userType.toLowerCase().trim() === 'developer';
 
     useEffect(() => {
         if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -207,7 +208,9 @@ const Rent = () => {
 
                         <View style={styles.ownerWrap}>
                             <Text style={styles.ownerName}>{currentUser?.displayName ?? 'Loading...'}</Text>
-                            <Text style={styles.ownerRole}>{isVendor ? 'STALL VENDOR' : 'STALL OWNER'}</Text>
+                            <Text style={styles.ownerRole}>
+                                {isDeveloper ? 'DEVELOPER' : isVendor ? 'STALL VENDOR' : 'STALL OWNER'}
+                            </Text>
                         </View>
                     </View>
 

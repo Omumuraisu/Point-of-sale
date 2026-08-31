@@ -50,7 +50,11 @@ const saveTransactions = async (accountId: number, transactions: TransactionReco
     }
 };
 
-export const loadSavedTransactions = async (accountId?: number): Promise<TransactionRecord[]> => {
+export const loadSavedTransactions = async (
+    accountId?: number,
+    stallId?: string | null,
+    stallNumber?: string | null,
+): Promise<TransactionRecord[]> => {
     if (!accountId) {
         return [];
     }
@@ -70,10 +74,20 @@ export const loadSavedTransactions = async (accountId?: number): Promise<Transac
         }
 
         // Keep only records that satisfy the strict typed shape.
+        const stallScope = [stallId, stallNumber].filter((value): value is string => Boolean(value));
+
         return parsed
             .filter(isTransactionRecord)
             .map(withSyncDefaults)
-            .filter((transaction) => transaction.accountId === undefined || transaction.accountId === accountId);
+            .filter((transaction) => transaction.accountId === undefined || transaction.accountId === accountId)
+            .filter((transaction) => {
+                if (stallScope.length === 0) {
+                    return true;
+                }
+
+                return [transaction.stallId, transaction.stallNumber]
+                    .some((value) => value != null && stallScope.includes(value));
+            });
     } catch (error) {
         if (__DEV__) {
             console.error('[TRANSACTIONS_DEBUG] Failed to load saved transactions:', error);

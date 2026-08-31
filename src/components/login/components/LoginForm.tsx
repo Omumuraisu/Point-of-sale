@@ -36,7 +36,11 @@ const LoginForm = () => {
             return;
         }
 
-        router.replace('/(tabs)/home');
+        router.replace(
+            result.user.profileTable === 'developer' && !result.user.businessId
+                ? '/select-business'
+                : '/(tabs)/home',
+        );
     };
 
     return (

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useAuthSession, normalizePhoneNumber } from '../../lib/authSession';
@@ -119,6 +119,12 @@ const Profile = () => {
             return;
         }
 
+        if (currentUser.profileTable === 'developer') {
+            Alert.alert('Developer account', 'Developer accounts do not edit the selected business owner profile.');
+            router.replace('/(tabs)/settings');
+            return;
+        }
+
         if (!trimmedName || !normalizedPhone) {
             Alert.alert('Missing details', 'Name and phone number are required.');
             return;
@@ -179,6 +185,10 @@ const Profile = () => {
             setIsSaving(false);
         }
     };
+
+    if (currentUser?.profileTable === 'developer') {
+        return <Redirect href="/(tabs)/settings" />;
+    }
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>

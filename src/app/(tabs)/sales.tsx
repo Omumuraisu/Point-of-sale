@@ -250,7 +250,11 @@ const Sales = () => {
                     stallId: currentUser?.stallId,
                     stallNumber: currentUser?.stallNumber,
                 });
-                const localTransactions = await loadSavedTransactions(currentUser?.accountId);
+                const localTransactions = await loadSavedTransactions(
+                    currentUser?.accountId,
+                    currentUser?.stallId,
+                    currentUser?.stallNumber,
+                );
                 const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
                 const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
                     .sort((first, second) => second.createdAt - first.createdAt);

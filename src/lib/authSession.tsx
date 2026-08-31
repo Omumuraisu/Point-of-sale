@@ -13,7 +13,8 @@ import { isSupabaseConfigured, supabase } from './supabase';
 
 const CURRENT_USER_KEY = '@auth/current-user';
 
-type ProfileTable = 'business_owner' | 'vendor';
+export type ProfileTable = 'business_owner' | 'vendor' | 'developer';
+type DatabaseProfileTable = Exclude<ProfileTable, 'developer'>;
 
 export interface CurrentUser {
     accountId: number;
@@ -21,8 +22,8 @@ export interface CurrentUser {
     userType: string;
     displayName: string;
     profileTable: ProfileTable;
-    profileId: number;
-    businessOwnerId: number;
+    profileId: number | null;
+    businessOwnerId: number | null;
     businessId: number | null;
     businessName: string | null;
     stallId: string | null;
@@ -33,6 +34,8 @@ export interface CurrentUser {
 interface AccountRow {
     account_id: number;
     phone_number: string | null;
+    email?: string | null;
+    username?: string | null;
     user_type: string;
     status: string;
 }
@@ -70,6 +73,7 @@ interface AuthSessionContextValue {
     currentUser: CurrentUser | null;
     isHydrating: boolean;
     loginWithPhone: (phoneNumber: string) => Promise<{ user: CurrentUser | null; error?: string }>;
+    selectDeveloperBusiness: (businessId: number) => Promise<{ user: CurrentUser | null; error?: string }>;
     logout: () => Promise<void>;
     updateCurrentUser: (updates: Partial<CurrentUser>) => Promise<void>;
 }
@@ -82,10 +86,16 @@ export const normalizePhoneNumber = (phoneNumber: string): string => (
 
 const normalizeUserType = (userType: string): string => userType.toLowerCase().trim();
 
-const getProfileTableForUserType = (userType: string): ProfileTable | null => {
+const isDeveloperUserType = (userType: string): boolean => normalizeUserType(userType) === 'developer';
+
+const getProfileTableForUserType = (userType: string): DatabaseProfileTable | null => {
     const normalized = normalizeUserType(userType);
 
-    if (normalized === 'business_owner' || normalized === 'business owner' || normalized === 'owner') {
+    if (
+        normalized === 'business_owner'
+        || normalized === 'business owner'
+        || normalized === 'owner'
+    ) {
         return 'business_owner';
     }
 
@@ -109,7 +119,7 @@ const buildDisplayName = (profile: ProfileRow): string => {
         || 'Unnamed Account';
 };
 
-const getProfileId = (profileTable: ProfileTable, profile: ProfileRow): number => {
+const getProfileId = (profileTable: DatabaseProfileTable, profile: ProfileRow): number => {
     if (profileTable === 'business_owner') {
         return profile.business_owner_id ?? 0;
     }
@@ -119,7 +129,7 @@ const getProfileId = (profileTable: ProfileTable, profile: ProfileRow): number =
 
 const createCurrentUser = (
     account: AccountRow,
-    profileTable: ProfileTable,
+    profileTable: DatabaseProfileTable,
     profile: ProfileRow,
     business: BusinessRow | null,
     resolvedStallId?: string | null,
@@ -138,6 +148,21 @@ const createCurrentUser = (
     stallId: resolvedStallId ?? business?.stall_id ?? business?.stall_number ?? business?.stall_no ?? null,
     stallNumber: business?.stall_number ?? business?.stall_no ?? null,
     profilePictureUrl: profile.profile_picture_url ?? null,
+});
+
+const createDeveloperUser = (account: AccountRow): CurrentUser => ({
+    accountId: account.account_id,
+    phoneNumber: account.phone_number ?? '',
+    userType: account.user_type,
+    displayName: account.username?.trim() || account.email?.split('@')[0] || 'Developer',
+    profileTable: 'developer',
+    profileId: null,
+    businessOwnerId: null,
+    businessId: null,
+    businessName: null,
+    stallId: null,
+    stallNumber: null,
+    profilePictureUrl: null,
 });
 
 const persistCurrentUser = async (user: CurrentUser | null) => {
@@ -178,8 +203,79 @@ const resolveBusinessContext = async (businessOwnerId: number) => {
     return { business: business ?? null, resolvedStallId };
 };
 
+const resolveBusinessById = async (businessId: number) => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { business: null, resolvedStallId: null, error: 'Supabase is not configured.' };
+    }
+
+    const { data: business, error } = await supabase
+        .from('business')
+        .select('business_id, business_owner_id, business_name, stall_id, stall_number, stall_no')
+        .eq('business_id', businessId)
+        .maybeSingle<BusinessRow>();
+
+    if (error || !business) {
+        return {
+            business: null,
+            resolvedStallId: null,
+            error: error?.message ?? 'The selected business is no longer available.',
+        };
+    }
+
+    let resolvedStallId = business.stall_id ?? null;
+    const stallNumber = business.stall_number ?? business.stall_no ?? null;
+
+    if (!resolvedStallId && stallNumber) {
+        const { data: stall } = await supabase
+            .from('stalls')
+            .select('stall_id, stall_number')
+            .eq('stall_number', stallNumber)
+            .maybeSingle<StallRow>();
+
+        resolvedStallId = stall?.stall_id ?? stallNumber;
+    }
+
+    if (!resolvedStallId) {
+        return { business: null, resolvedStallId: null, error: 'The selected business has no assigned stall.' };
+    }
+
+    return { business, resolvedStallId, error: undefined };
+};
+
 const refreshStoredUserBusinessContext = async (user: CurrentUser): Promise<CurrentUser> => {
     if (user.businessId && user.stallId) {
+        return user;
+    }
+
+    if (user.profileTable === 'developer') {
+        if (!user.businessId) {
+            return user;
+        }
+
+        const { business, resolvedStallId } = await resolveBusinessById(user.businessId);
+
+        if (!business || !resolvedStallId) {
+            return {
+                ...user,
+                businessOwnerId: null,
+                businessId: null,
+                businessName: null,
+                stallId: null,
+                stallNumber: null,
+            };
+        }
+
+        return {
+            ...user,
+            businessOwnerId: business.business_owner_id,
+            businessId: business.business_id,
+            businessName: business.business_name,
+            stallId: resolvedStallId,
+            stallNumber: business.stall_number ?? business.stall_no ?? null,
+        };
+    }
+
+    if (!user.businessOwnerId) {
         return user;
     }
 
@@ -214,9 +310,19 @@ const parseStoredUser = (value: string | null): CurrentUser | null => {
             && typeof parsed.phoneNumber === 'string'
             && typeof parsed.userType === 'string'
             && typeof parsed.displayName === 'string'
-            && (parsed.profileTable === 'business_owner' || parsed.profileTable === 'vendor')
-            && typeof parsed.profileId === 'number'
-            && typeof parsed.businessOwnerId === 'number'
+            && (
+                parsed.profileTable === 'business_owner'
+                || parsed.profileTable === 'vendor'
+                || parsed.profileTable === 'developer'
+            )
+            && (
+                typeof parsed.profileId === 'number'
+                || (parsed.profileTable === 'developer' && parsed.profileId == null)
+            )
+            && (
+                typeof parsed.businessOwnerId === 'number'
+                || (parsed.profileTable === 'developer' && parsed.businessOwnerId == null)
+            )
         ) {
             return {
                 accountId: parsed.accountId,
@@ -224,8 +330,8 @@ const parseStoredUser = (value: string | null): CurrentUser | null => {
                 userType: parsed.userType,
                 displayName: parsed.displayName,
                 profileTable: parsed.profileTable,
-                profileId: parsed.profileId,
-                businessOwnerId: parsed.businessOwnerId,
+                profileId: typeof parsed.profileId === 'number' ? parsed.profileId : null,
+                businessOwnerId: typeof parsed.businessOwnerId === 'number' ? parsed.businessOwnerId : null,
                 businessId: typeof parsed.businessId === 'number' ? parsed.businessId : null,
                 businessName: typeof parsed.businessName === 'string' ? parsed.businessName : null,
                 stallId: typeof parsed.stallId === 'string' ? parsed.stallId : null,
@@ -280,7 +386,7 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
 
         const { data: account, error: accountError } = await supabase
             .from('accounts')
-            .select('account_id, phone_number, user_type, status')
+            .select('account_id, phone_number, email, username, user_type, status')
             .eq('phone_number', normalizedPhone)
             .eq('status', 'active')
             .maybeSingle<AccountRow>();
@@ -291,6 +397,13 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
 
         if (!account) {
             return { user: null, error: 'No active account found for this phone number.' };
+        }
+
+        if (isDeveloperUserType(account.user_type)) {
+            const user = createDeveloperUser(account);
+            setCurrentUser(user);
+            await persistCurrentUser(user);
+            return { user };
         }
 
         const profileTable = getProfileTableForUserType(account.user_type);
@@ -333,6 +446,35 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
         return { user };
     }, []);
 
+    const selectDeveloperBusiness = useCallback(async (businessId: number) => {
+        if (!currentUser || currentUser.profileTable !== 'developer') {
+            return { user: null, error: 'Only developer accounts can select a business.' };
+        }
+
+        if (!Number.isFinite(businessId) || businessId <= 0) {
+            return { user: null, error: 'Select a valid business.' };
+        }
+
+        const { business, resolvedStallId, error } = await resolveBusinessById(businessId);
+
+        if (error || !business || !resolvedStallId) {
+            return { user: null, error: error ?? 'Unable to load the selected business.' };
+        }
+
+        const user: CurrentUser = {
+            ...currentUser,
+            businessOwnerId: business.business_owner_id,
+            businessId: business.business_id,
+            businessName: business.business_name,
+            stallId: resolvedStallId,
+            stallNumber: business.stall_number ?? business.stall_no ?? null,
+        };
+
+        setCurrentUser(user);
+        await persistCurrentUser(user);
+        return { user };
+    }, [currentUser]);
+
     const logout = useCallback(async () => {
         setCurrentUser(null);
         await persistCurrentUser(null);
@@ -354,9 +496,10 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
         currentUser,
         isHydrating,
         loginWithPhone,
+        selectDeveloperBusiness,
         logout,
         updateCurrentUser,
-    }), [currentUser, isHydrating, loginWithPhone, logout, updateCurrentUser]);
+    }), [currentUser, isHydrating, loginWithPhone, selectDeveloperBusiness, logout, updateCurrentUser]);
 
     return (
         <AuthSessionContext.Provider value={value}>

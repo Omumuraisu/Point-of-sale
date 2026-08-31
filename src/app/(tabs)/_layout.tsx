@@ -19,6 +19,10 @@ export default function TabsLayout() {
     return <Redirect href="/" />;
   }
 
+  if (currentUser.profileTable === 'developer' && !currentUser.businessId) {
+    return <Redirect href="/select-business" />;
+  }
+
   return (
     <Tabs
       screenOptions={{

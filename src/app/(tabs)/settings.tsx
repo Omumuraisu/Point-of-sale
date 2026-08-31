@@ -13,6 +13,13 @@ const SETTINGS_ITEMS = [
         iconName: 'person',
     },
     {
+        id: 'switch-business',
+        title: 'Switch Business',
+        subtitle: 'Choose another business or stall',
+        iconSet: 'material',
+        iconName: 'store-switch-outline',
+    },
+    {
         id: 'security',
         title: 'Security',
         subtitle: 'Change password',
@@ -36,7 +43,7 @@ const SETTINGS_ITEMS = [
 ] as const;
 
 type IconSet = 'ionicons' | 'material';
-type SettingId = 'profile' | 'security' | 'app-details' | 'system-evaluation';
+type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'system-evaluation';
 
 interface SettingItem {
     id: SettingId;
@@ -63,11 +70,20 @@ const SettingsIcon = ({ iconSet, iconName }: SettingsIconProps) => {
 
 const Settings = () => {
     const router = useRouter();
-    const { logout } = useAuthSession();
+    const { currentUser, logout } = useAuthSession();
+    const isDeveloper = currentUser?.profileTable === 'developer';
+    const visibleSettingsItems = typedSettingsItems.filter((item) => (
+        isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business'
+    ));
 
     const handleSettingPress = (id: SettingId) => {
         if (id === 'profile') {
             router.push('/profile');
+            return;
+        }
+
+        if (id === 'switch-business') {
+            router.push('/select-business');
             return;
         }
 
@@ -87,7 +103,7 @@ const Settings = () => {
                 <Text style={styles.pageTitle}>Settings</Text>
 
                 <View style={styles.cardsWrap}>
-                    {typedSettingsItems.map((item) => (
+                    {visibleSettingsItems.map((item) => (
                         <Pressable key={item.id} style={styles.itemCard} onPress={() => handleSettingPress(item.id)}>
                             <View style={styles.itemRow}>
                                 <View style={styles.iconCircle}>

@@ -96,6 +96,14 @@ export default function Layout() {
         }}
       />
       <Stack.Screen
+        name="select-business"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
         name="activate-otp"
         options={{
           headerShown: false,

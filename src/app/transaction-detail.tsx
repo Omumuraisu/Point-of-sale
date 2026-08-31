@@ -21,7 +21,11 @@ const TransactionDetailRoute = () => {
         let isMounted = true;
 
         const hydrateTransaction = async () => {
-            const localTransactions = await loadSavedTransactions(currentUser?.accountId);
+            const localTransactions = await loadSavedTransactions(
+                currentUser?.accountId,
+                currentUser?.stallId,
+                currentUser?.stallNumber,
+            );
             const remoteTransactions = await loadRemoteSalesTransactions({
                 accountId: currentUser?.accountId,
                 stallId: currentUser?.stallId,

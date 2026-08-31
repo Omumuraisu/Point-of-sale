@@ -41,7 +41,11 @@ export default function Home() {
                         stallId: currentUser?.stallId,
                         stallNumber: currentUser?.stallNumber,
                     }),
-                    loadSavedTransactions(currentUser?.accountId),
+                    loadSavedTransactions(
+                        currentUser?.accountId,
+                        currentUser?.stallId,
+                        currentUser?.stallNumber,
+                    ),
                 ]);
                 const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
                 const savedTransactions = [...unsyncedLocalTransactions, ...remoteTransactions]

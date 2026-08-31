@@ -11,6 +11,9 @@ export default function Index() {
     const [startupFinished, setStartupFinished] = useState(false);
 
     if (isHydrating) return null;
+    if (currentUser?.profileTable === 'developer' && !currentUser.businessId) {
+        return <Redirect href="/select-business" />;
+    }
     if (currentUser) return <Redirect href="/(tabs)/home" />;
     if (!startupFinished) return <StartupVideo onFinished={() => setStartupFinished(true)} />;
     return <Login />;
