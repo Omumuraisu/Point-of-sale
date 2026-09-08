@@ -40,5 +40,6 @@ export const styles = StyleSheet.create({
     loginBtn: { backgroundColor: '#f8f4f4', borderRadius: 28, height: 49, justifyContent: 'center', alignItems: 'center' },
     loginBtnText: { fontSize: 20, fontWeight: '800', color: NAVY },
     errorText: { marginTop: 12, color: '#ffe5e5', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+    successText: { marginTop: 12, color: '#dfffe5', fontSize: 13, fontWeight: '700', textAlign: 'center' },
     formFooter: { color: '#fff', fontSize: 12, textAlign: 'center', marginTop: 'auto' },
 });

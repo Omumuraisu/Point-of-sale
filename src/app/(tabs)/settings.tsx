@@ -40,10 +40,17 @@ const SETTINGS_ITEMS = [
         iconSet: 'material',
         iconName: 'clipboard-text-search-outline',
     },
+    {
+        id: 'test-sms',
+        title: 'Test SMS',
+        subtitle: 'Test developer OTP activation',
+        iconSet: 'material',
+        iconName: 'message-lock-outline',
+    },
 ] as const;
 
 type IconSet = 'ionicons' | 'material';
-type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'system-evaluation';
+type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'system-evaluation' | 'test-sms';
 
 interface SettingItem {
     id: SettingId;
@@ -72,9 +79,10 @@ const Settings = () => {
     const router = useRouter();
     const { currentUser, logout } = useAuthSession();
     const isDeveloper = currentUser?.profileTable === 'developer';
-    const visibleSettingsItems = typedSettingsItems.filter((item) => (
-        isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business'
-    ));
+    const visibleSettingsItems = typedSettingsItems.filter((item) => {
+        if (item.id === 'test-sms') return isDeveloper;
+        return isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business';
+    });
 
     const handleSettingPress = (id: SettingId) => {
         if (id === 'profile') {
@@ -94,6 +102,11 @@ const Settings = () => {
 
         if (id === 'system-evaluation') {
             router.push('/system-evaluation');
+            return;
+        }
+
+        if (id === 'test-sms') {
+            router.push('/test-sms');
         }
     };
 

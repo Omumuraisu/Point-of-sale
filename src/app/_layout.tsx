@@ -1,7 +1,32 @@
 import { useEffect } from 'react';
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { syncAllSupabaseData } from '../lib/supabaseSync';
-import { AuthSessionProvider } from '../lib/authSession';
+import { AuthSessionProvider, useAuthSession } from '../lib/authSession';
+import { VerificationFlowProvider } from '../lib/verificationFlow';
+
+const PUBLIC_ROUTES = new Set([
+  '',
+  'index',
+  'activate-account',
+  'activate-otp',
+  'create-password',
+  'forgot-password',
+]);
+
+function AuthGate({ children }: React.PropsWithChildren) {
+  const router = useRouter();
+  const segments = useSegments();
+  const { isAuthenticated, isHydrating } = useAuthSession();
+  const firstSegment = String(segments[0] ?? '');
+  const isProtected = !PUBLIC_ROUTES.has(firstSegment);
+
+  useEffect(() => {
+    if (!isHydrating && isProtected && !isAuthenticated) router.replace('/');
+  }, [isAuthenticated, isHydrating, isProtected, router]);
+
+  if (isHydrating || (isProtected && !isAuthenticated)) return null;
+  return <>{children}</>;
+}
 
 export default function Layout() {
   useEffect(() => {
@@ -10,6 +35,8 @@ export default function Layout() {
 
   return (
     <AuthSessionProvider>
+      <VerificationFlowProvider>
+      <AuthGate>
       <Stack initialRouteName="index">
       <Stack.Screen
         name="index"
@@ -119,7 +146,25 @@ export default function Layout() {
           animation: "slide_from_right",
         }}
       />
+      <Stack.Screen
+        name="forgot-password"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="test-sms"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
       </Stack>
+      </AuthGate>
+      </VerificationFlowProvider>
     </AuthSessionProvider>
   );
 }

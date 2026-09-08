@@ -1,0 +1,13 @@
+project_id = "marketsync-pos"
+
+[functions.send-sms]
+verify_jwt = false
+
+[functions.start-pos-account-verification]
+verify_jwt = false
+
+[functions.complete-pos-account-password]
+verify_jwt = false
+
+[functions.start-developer-activation-test]
+verify_jwt = false

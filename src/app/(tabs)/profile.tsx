@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Redirect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
-import { useAuthSession, normalizePhoneNumber } from '../../lib/authSession';
+import { useAuthSession } from '../../lib/authSession';
 
 const PROFILE_PHOTO_BUCKET = 'profile-pictures';
 
@@ -111,7 +111,6 @@ const Profile = () => {
 
     const handleSave = async () => {
         const trimmedName = name.trim();
-        const normalizedPhone = normalizePhoneNumber(phone);
 
         if (!currentUser) {
             Alert.alert('No active session', 'Please log in again before editing your profile.');
@@ -125,8 +124,8 @@ const Profile = () => {
             return;
         }
 
-        if (!trimmedName || !normalizedPhone) {
-            Alert.alert('Missing details', 'Name and phone number are required.');
+        if (!trimmedName) {
+            Alert.alert('Missing details', 'Name is required.');
             return;
         }
 
@@ -142,25 +141,12 @@ const Profile = () => {
             const { firstName, lastName } = splitDisplayName(trimmedName);
             const profileIdColumn = getProfileIdColumn(currentUser.profileTable);
 
-            const { error: accountError } = await supabase
-                .from('accounts')
-                .update({
-                    phone_number: normalizedPhone,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('account_id', currentUser.accountId);
-
-            if (accountError) {
-                throw new Error(accountError.message);
-            }
-
             const { error: profileError } = await supabase
                 .from(currentUser.profileTable)
                 .update({
                     first_name: firstName,
                     middle_initial: 'NA',
                     last_name: lastName,
-                    phone_number: normalizedPhone,
                     profile_picture_url: profilePictureUrl,
                 })
                 .eq(profileIdColumn, currentUser.profileId);
@@ -171,7 +157,6 @@ const Profile = () => {
 
             await updateCurrentUser({
                 displayName: trimmedName,
-                phoneNumber: normalizedPhone,
                 profilePictureUrl,
             });
             setSelectedPhoto(null);
@@ -225,14 +210,14 @@ const Profile = () => {
                         placeholderTextColor="#8f939c"
                     />
 
-                    <Text style={styles.sectionTitle}>Change Phone Number</Text>
+                    <Text style={styles.sectionTitle}>Verified Phone Number</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, styles.readOnlyInput]}
                         value={phone}
-                        onChangeText={setPhone}
                         placeholder="Phone number"
                         placeholderTextColor="#8f939c"
                         keyboardType="phone-pad"
+                        editable={false}
                     />
 
                     <View style={styles.saveRow}>
@@ -353,6 +338,7 @@ const styles = StyleSheet.create({
         color: '#242a32',
         marginBottom: 8,
     },
+    readOnlyInput: { color: '#6f7480', backgroundColor: '#e5e7ed' },
     saveRow: {
         marginTop: 14,
         alignItems: 'flex-end',

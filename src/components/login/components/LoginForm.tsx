@@ -6,13 +6,14 @@ import {
     TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { styles } from './styles';
 import { useAuthSession } from '../../../lib/authSession';
 
 const LoginForm = () => {
     const router = useRouter();
-    const { loginWithPhone } = useAuthSession();
+    const params = useLocalSearchParams<{ message?: string }>();
+    const { loginWithPassword } = useAuthSession();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -27,7 +28,7 @@ const LoginForm = () => {
         setErrorMessage('');
         setIsLoggingIn(true);
 
-        const result = await loginWithPhone(username);
+        const result = await loginWithPassword(username, password);
 
         setIsLoggingIn(false);
 
@@ -53,9 +54,15 @@ const LoginForm = () => {
                     placeholder="0923 123 2134"
                     placeholderTextColor="#8e939e"
                     value={username}
-                    onChangeText={setUsername}
+                    onChangeText={(value) => {
+                        setUsername(value);
+                        setErrorMessage('');
+                    }}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                    editable={!isLoggingIn}
                 />
             </View>
 
@@ -67,10 +74,15 @@ const LoginForm = () => {
                     placeholder="Enter your password"
                     placeholderTextColor="#8e939e"
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(value) => {
+                        setPassword(value);
+                        setErrorMessage('');
+                    }}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    editable={!isLoggingIn}
+                    onSubmitEditing={handleLogin}
                 />
                 <TouchableOpacity
                     onPress={() => setShowPassword((v) => !v)}
@@ -81,14 +93,15 @@ const LoginForm = () => {
             </View>
 
             <View style={styles.forgotRow}>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/forgot-password')} disabled={isLoggingIn}>
                     <Text style={styles.forgotLink}>Forgot password?</Text>
                 </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
+            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin} disabled={isLoggingIn}>
                 <Text style={styles.loginBtnText}>{isLoggingIn ? 'Checking...' : 'Login'}</Text>
             </TouchableOpacity>
+            {params.message ? <Text style={styles.successText}>{params.message}</Text> : null}
             {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
             <Text style={styles.formFooter}>© 2026 MarketSync. All rights reserved.</Text>
         </View>
