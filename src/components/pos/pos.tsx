@@ -9,9 +9,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { CATEGORY_ITEMS } from './data';
 import { CartItem, CategoryType } from '../../lib/types';
-import { loadMergedCategories } from './categoriesStore';
+import { loadListingCategories } from './productsStore';
+import { useAuthSession } from '../../lib/authSession';
 import POSHeader from './components/POSHeader';
 import ProductsTitle from './components/ProductsTitle';
 import CategoryCard from './components/CategoryCard';
@@ -30,14 +30,17 @@ const POS = ({
 }: POSProps) => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [categories, setCategories] = useState<CategoryType[]>(CATEGORY_ITEMS);
+  const { currentUser } = useAuthSession();
+  const [categories, setCategories] = useState<CategoryType[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
 
       const hydrateCategories = async () => {
-        const mergedCategories = await loadMergedCategories();
+        const mergedCategories = currentUser?.stallNumber
+          ? await loadListingCategories({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber })
+          : [];
 
         if (isMounted) {
           setCategories(mergedCategories);
@@ -49,7 +52,7 @@ const POS = ({
       return () => {
         isMounted = false;
       };
-    }, []),
+    }, [currentUser?.accountId, currentUser?.stallNumber]),
   );
 
   const handleCategoryPress = (item: CategoryType) => {

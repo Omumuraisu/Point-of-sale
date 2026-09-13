@@ -100,7 +100,7 @@ export const loadSavedTransactions = async (
 export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput): Promise<TransactionRecord | null> => {
     const { cartItems, paidAmount, totalDue, accountId } = input;
 
-    if (cartItems.length === 0) {
+    if (cartItems.length === 0 || cartItems.some((item) => !Number.isFinite(item.pricePerUnit) || item.pricePerUnit <= 0)) {
         return null;
     }
 
@@ -201,4 +201,19 @@ export const getUnsyncedTransactions = async (accountId: number): Promise<Transa
     const transactions = await loadSavedTransactions(accountId);
 
     return transactions.filter((transaction) => !transaction.synced);
+};
+
+export const reconcileUnsyncedTransactionListingIds = async (
+    accountId: number,
+    aliases: Record<string, string>,
+): Promise<void> => {
+    const transactions = await loadSavedTransactions(accountId);
+    const updated = transactions.map((transaction) => transaction.synced ? transaction : ({
+        ...transaction,
+        cartItems: transaction.cartItems?.map((item) => ({
+            ...item,
+            productListingId: aliases[item.productListingId] ?? item.productListingId,
+        })),
+    }));
+    await saveTransactions(accountId, updated);
 };

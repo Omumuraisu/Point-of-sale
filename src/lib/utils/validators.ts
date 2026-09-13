@@ -21,8 +21,10 @@ export const isCartItem = (value: unknown): value is CartItem => {
         && typeof value.quantity === 'number'
         && Number.isFinite(value.quantity)
         && typeof value.unit === 'string'
-        && typeof value.pricePerKg === 'number'
-        && Number.isFinite(value.pricePerKg)
+        && ((typeof value.pricePerUnit === 'number' && Number.isFinite(value.pricePerUnit))
+            || (typeof value.pricePerKg === 'number' && Number.isFinite(value.pricePerKg)))
+        && (value.productListingId === undefined || typeof value.productListingId === 'string')
+        && (value.catalogProductId === undefined || typeof value.catalogProductId === 'string')
         && typeof value.total === 'number'
         && Number.isFinite(value.total)
         && typeof value.createdAt === 'number'

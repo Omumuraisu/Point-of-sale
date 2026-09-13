@@ -13,7 +13,11 @@ export const parseCart = (rawCart: unknown): CartItem[] => {
             return [];
         }
 
-        return parsed.filter(isCartItem);
+        return parsed.filter(isCartItem).map((item) => ({
+            ...item,
+            productListingId: item.productListingId ?? '',
+            pricePerUnit: Number.isFinite(item.pricePerUnit) ? item.pricePerUnit : Number(item.pricePerKg ?? 0),
+        }));
     } catch {
         return [];
     }

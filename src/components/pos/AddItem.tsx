@@ -26,15 +26,7 @@ const UNIT_LABELS: Record<ProductUnit, string> = {
     mL: 'mL',
 };
 
-interface CategoryOption {
-    id: string;
-    label: string;
-}
-
 interface UpdateProductPayload {
-    name: string;
-    categoryId: string;
-    categoryLabel: string;
     pricePerUnit: number;
     unit: ProductUnit;
 }
@@ -44,11 +36,9 @@ interface AddItemScreenProps {
     categoryId?: string;
     categoryLabel?: string;
     productId?: string;
-    defaultKey?: string;
-    originalProductName?: string;
+    catalogProductId?: string;
     pricePerUnit?: number;
     unit?: ProductUnit;
-    categoryOptions?: CategoryOption[];
     onBack: () => void;
     onAdd: (payload: AddCartItemPayload) => void;
     onDeleteProduct: () => Promise<void> | void;
@@ -59,9 +49,10 @@ const AddItemScreen = ({
     productName = 'Product',
     categoryId = '',
     categoryLabel = 'Category',
+    productId = '',
+    catalogProductId,
     pricePerUnit = 0,
     unit = 'kg',
-    categoryOptions = [],
     onBack,
     onAdd,
     onDeleteProduct,
@@ -72,16 +63,12 @@ const AddItemScreen = ({
     const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isSavingProduct, setIsSavingProduct] = useState(false);
-    const [editName, setEditName] = useState(productName);
     const [editPrice, setEditPrice] = useState(String(pricePerUnit || ''));
     const [editUnit, setEditUnit] = useState<ProductUnit>(unit);
-    const [editCategoryId, setEditCategoryId] = useState(categoryId);
 
     useEffect(() => {
-        setEditName(productName);
         setEditPrice(String(pricePerUnit || ''));
         setEditUnit(unit);
-        setEditCategoryId(categoryId);
     }, [categoryId, pricePerUnit, productName, unit]);
 
     const quantityValue = useMemo(() => {
@@ -94,13 +81,10 @@ const AddItemScreen = ({
         [pricePerUnit, quantityValue],
     );
 
-    const canAdd = quantityValue > 0;
-    const selectedEditCategory = categoryOptions.find((option) => option.id === editCategoryId)
-        ?? categoryOptions.find((option) => option.label === categoryLabel);
+    const hasValidSellingPrice = Number.isFinite(pricePerUnit) && pricePerUnit > 0;
+    const canAdd = quantityValue > 0 && hasValidSellingPrice;
     const parsedEditPrice = Number(editPrice.trim());
-    const canSaveEdit = editName.trim().length > 0
-        && Boolean(selectedEditCategory)
-        && Number.isFinite(parsedEditPrice)
+    const canSaveEdit = Number.isFinite(parsedEditPrice)
         && parsedEditPrice > 0
         && !isSavingProduct;
 
@@ -143,9 +127,11 @@ const AddItemScreen = ({
         onAdd?.({
             name: productName,
             category: categoryLabel,
+            productListingId: productId,
+            catalogProductId,
             quantity: quantityValue,
             unit,
-            pricePerKg: Number(pricePerUnit || 0),
+            pricePerUnit,
             total: totalAmount,
         });
     };
@@ -162,7 +148,7 @@ const AddItemScreen = ({
     };
 
     const handleSaveEdit = async () => {
-        if (!canSaveEdit || !selectedEditCategory) {
+        if (!canSaveEdit) {
             return;
         }
 
@@ -170,9 +156,6 @@ const AddItemScreen = ({
 
         try {
             await onUpdateProduct({
-                name: editName.trim(),
-                categoryId: selectedEditCategory.id,
-                categoryLabel: selectedEditCategory.label,
                 pricePerUnit: parsedEditPrice,
                 unit: editUnit,
             });
@@ -233,6 +216,7 @@ const AddItemScreen = ({
 
                 <View style={styles.keyboardWrap}>
                     <Text style={styles.qtyHint}>Price per {unit}: {formatCurrency(Number(pricePerUnit || 0))}</Text>
+                    {!hasValidSellingPrice ? <Text style={styles.unpricedWarning}>Set a positive selling price before adding this product.</Text> : null}
 
                     <View style={styles.keyGrid}>
                         {KEYS.map((key) => {
@@ -326,16 +310,7 @@ const AddItemScreen = ({
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
                         >
-                            <Text style={styles.editLabel}>Product Name</Text>
-                            <View style={styles.editInputWrap}>
-                                <TextInput
-                                    value={editName}
-                                    onChangeText={setEditName}
-                                    placeholder="Product name"
-                                    placeholderTextColor="#858b98"
-                                    style={styles.editInput}
-                                />
-                            </View>
+                            <Text style={styles.identityNote}>Product identity and catalog category are shared and cannot be changed here.</Text>
 
                             <Text style={styles.editLabel}>Price per Unit</Text>
                             <View style={styles.editInputWrap}>
@@ -368,24 +343,6 @@ const AddItemScreen = ({
                                 })}
                             </View>
 
-                            <Text style={styles.editLabel}>Category</Text>
-                            <View style={styles.editPillGrid}>
-                                {categoryOptions.map((option) => {
-                                    const isSelected = editCategoryId === option.id;
-
-                                    return (
-                                        <Pressable
-                                            key={option.id}
-                                            style={[styles.categoryEditPill, isSelected && styles.editPillActive]}
-                                            onPress={() => setEditCategoryId(option.id)}
-                                        >
-                                            <Text style={[styles.editPillText, isSelected && styles.editPillTextActive]}>
-                                                {option.label}
-                                            </Text>
-                                        </Pressable>
-                                    );
-                                })}
-                            </View>
                         </ScrollView>
 
                         <View style={styles.editFooter}>
@@ -421,6 +378,8 @@ const AddItemScreen = ({
 export default AddItemScreen;
 
 const styles = StyleSheet.create({
+    unpricedWarning: { color: '#a23b32', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
+    identityNote: { color: '#5f6878', fontSize: 13, fontWeight: '600', marginBottom: 12 },
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

@@ -4,9 +4,13 @@ export interface CartItem {
     id: string;
     name: string;
     category: string;
+    productListingId: string;
+    catalogProductId?: string;
     quantity: number;
     unit: UnitType;
-    pricePerKg: number;
+    pricePerUnit: number;
+    /** Legacy persisted field; read-only compatibility. */
+    pricePerKg?: number;
     total: number;
     createdAt: number;
 }
@@ -14,8 +18,10 @@ export interface CartItem {
 export interface AddCartItemPayload {
     name: string;
     category: string;
+    productListingId: string;
+    catalogProductId?: string;
     quantity: number;
     unit: UnitType;
-    pricePerKg: number;
+    pricePerUnit: number;
     total: number;
 }

@@ -1,4 +1,4 @@
-import { CategoryProductsMap, CategoryType } from '../../lib/types';
+import { CategoryType } from '../../lib/types';
 
 export const CATEGORY_ITEMS: CategoryType[] = [
     {
@@ -66,17 +66,6 @@ export const CATEGORY_ITEMS: CategoryType[] = [
         textColor: '#7347e5',
     },
 ];
-
-export const CATEGORY_PRODUCTS: CategoryProductsMap = {
-    frozen: ['Ice Cream', 'Frozen Peas', 'Frozen Corn'],
-    'dry-goods': ['Rice', 'Pasta', 'Oats'],
-    meat: ['Chicken', 'Pork', 'Beef'],
-    veggies: ['Carrots', 'Broccoli', 'Spinach'],
-    fruits: ['Apple', 'Orange', 'Banana'],
-    eggs: ['Small Eggs', 'Medium Eggs', 'Large Eggs'],
-    grains: ['Corn Grits', 'Barley', 'Millet'],
-    seafood: ['Tilapia', 'Shrimp', 'Crab'],
-};
 
 const DEFAULT_CUSTOM_CATEGORY_STYLE = {
     icon: 'shape-outline',

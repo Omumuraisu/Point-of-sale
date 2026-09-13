@@ -16,6 +16,10 @@ interface SalesTransactionRow {
     unit_price_php: number;
     total_revenue_php: number;
     transaction_date: string;
+    product_listing_id: string | null;
+    catalog_product_id: string | null;
+    sold_quantity: number | null;
+    sold_unit: string | null;
 }
 
 interface TransactionSyncResult {
@@ -79,8 +83,11 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 const getUnitPrice = (item: CartItem): number => {
+    if (Number.isFinite(item.pricePerUnit)) {
+        return item.pricePerUnit;
+    }
     if (Number.isFinite(item.pricePerKg)) {
-        return item.pricePerKg;
+        return item.pricePerKg as number;
     }
 
     if (Number.isFinite(item.quantity) && item.quantity > 0 && Number.isFinite(item.total)) {
@@ -105,16 +112,18 @@ const toTimestamp = (value: string): number => {
 
 const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
     const createdAt = toTimestamp(row.transaction_date);
-    const quantity = Number(row.quantity_sold_kg) || 0;
+    const quantity = Number(row.sold_quantity ?? row.quantity_sold_kg) || 0;
     const unitPrice = Number(row.unit_price_php) || 0;
     const total = Number(row.total_revenue_php) || quantity * unitPrice;
     const cartItem: CartItem = {
         id: `sales-item-${row.transaction_id}`,
         name: row.product,
         category: row.category,
+        productListingId: row.product_listing_id ?? '',
+        catalogProductId: row.catalog_product_id ?? undefined,
         quantity,
-        unit: 'kg',
-        pricePerKg: unitPrice,
+        unit: row.sold_unit ?? 'kg',
+        pricePerUnit: unitPrice,
         total,
         createdAt,
     };
@@ -127,7 +136,7 @@ const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
         stallNumber: row.stall_number,
         item: row.product,
         amount: formatCurrency(total),
-        subtitle: `${quantity} kg • ${formatCurrency(unitPrice)}/kg`,
+        subtitle: `${quantity} ${row.sold_unit ?? 'kg'} • ${formatCurrency(unitPrice)}/${row.sold_unit ?? 'kg'}`,
         category: row.category,
         categoryType: getCategoryType(row.category),
         dateLabel: formatTransactionDate(createdAt),
@@ -159,7 +168,11 @@ const toSalesTransactionRows = (transaction: TransactionRecord) => {
         username: transaction.username ?? '',
         category: item.category || transaction.category,
         product: item.name,
+        product_listing_id: item.productListingId || null,
+        catalog_product_id: item.catalogProductId ?? null,
         quantity_sold_kg: item.quantity,
+        sold_quantity: item.quantity,
+        sold_unit: item.unit,
         unit_price_php: getUnitPrice(item),
         transaction_date: transactionDate,
         sync_date: new Date().toISOString(),
@@ -474,7 +487,7 @@ export const loadRemoteSalesTransactions = async ({
 
     let query = supabase
         .from('sales_transaction')
-        .select('transaction_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date')
+        .select('transaction_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date, product_listing_id, catalog_product_id, sold_quantity, sold_unit')
         .order('transaction_date', { ascending: false });
 
     // Sales belong to a stall. The account filter is only a safe fallback for

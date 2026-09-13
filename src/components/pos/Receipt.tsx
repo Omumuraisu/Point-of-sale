@@ -51,7 +51,7 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                             <View style={styles.itemMain}>
                                 <Text style={styles.itemName}>{item.name}</Text>
                                 <Text style={styles.itemSub}>
-                                    {formatCurrency(item.pricePerKg)} per {item.unit}
+                                    {formatCurrency(item.pricePerUnit)} per {item.unit}
                                 </Text>
                             </View>
                             <View style={styles.itemRight}>

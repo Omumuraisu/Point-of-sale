@@ -1,7 +1,9 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { syncUnsyncedTransactions } from './transactionsSync';
 import { loadMergedCategories } from '../components/pos/categoriesStore';
-import { loadSavedProducts } from '../components/pos/productsStore';
+import { ProductScope, getListingIdAliases, syncProducts as syncScopedProducts } from '../components/pos/productsStore';
+import { reconcileCartListingIds } from '../components/pos/cartStore';
+import { reconcileUnsyncedTransactionListingIds } from '../components/pos/transactionsStore';
 
 interface BatchSyncResult {
     attempted: number;
@@ -44,48 +46,9 @@ const ensureSupabaseClient = (): string | null => {
     return null;
 };
 
-export const syncProducts = async (): Promise<BatchSyncResult> => {
-    const configError = ensureSupabaseClient();
-    const client = supabase;
-
-    if (configError || !client) {
-        return {
-            ...emptyResult,
-            error: configError ?? 'Supabase is not configured.',
-        };
-    }
-
-    const products = await loadSavedProducts();
-
-    if (products.length === 0) {
-        return emptyResult;
-    }
-
-    try {
-        const { error } = await client
-            .from('products')
-            .upsert(
-                products.map((product) => ({
-                    id: product.id,
-                    name: product.name,
-                    category_id: product.categoryId,
-                    category_label: product.categoryLabel,
-                    price_per_unit: product.pricePerUnit,
-                    unit: product.unit,
-                    created_at_ms: product.createdAt,
-                })),
-                { onConflict: 'id' },
-            );
-
-        if (error) {
-            return { attempted: products.length, synced: 0, error: error.message };
-        }
-
-        logSyncDebug('products synced', { count: products.length });
-        return { attempted: products.length, synced: products.length };
-    } catch (error) {
-        return { attempted: products.length, synced: 0, error: getErrorMessage(error) };
-    }
+export const syncProducts = async (scope: ProductScope): Promise<BatchSyncResult> => {
+    try { return await syncScopedProducts(scope); }
+    catch (error) { return { ...emptyResult, error: getErrorMessage(error) }; }
 };
 
 export const syncCategories = async (): Promise<BatchSyncResult> => {
@@ -136,18 +99,20 @@ export const syncPersonnel = async (): Promise<BatchSyncResult> => {
     return emptyResult;
 };
 
-export const syncAllSupabaseData = async (): Promise<{
+export const syncAllSupabaseData = async (scope: ProductScope): Promise<{
     transactions: { attempted: number; synced: number };
     products: BatchSyncResult;
     categories: BatchSyncResult;
     personnel: BatchSyncResult;
 }> => {
-    const [transactions, products, categories, personnel] = await Promise.all([
-        syncUnsyncedTransactions(),
-        syncProducts(),
-        syncCategories(),
-        syncPersonnel(),
+    const products = await syncProducts(scope);
+    const aliases = await getListingIdAliases(scope);
+    await Promise.all([
+        reconcileCartListingIds(scope, aliases),
+        reconcileUnsyncedTransactionListingIds(scope.accountId, aliases),
     ]);
+    const transactions = await syncUnsyncedTransactions(scope.accountId);
+    const [categories, personnel] = await Promise.all([syncCategories(), syncPersonnel()]);
 
     logSyncDebug('full sync complete', {
         transactions,

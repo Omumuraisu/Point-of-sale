@@ -34,7 +34,8 @@ const TransactionDetail = ({ transaction, onBack }: TransactionDetailProps) => {
                 category: transaction.category,
                 quantity: 1,
                 unit: 'set',
-                pricePerKg: totalAmount,
+                productListingId: '',
+                pricePerUnit: totalAmount,
                 total: totalAmount,
                 createdAt: transaction.createdAt,
             },
@@ -71,7 +72,7 @@ const TransactionDetail = ({ transaction, onBack }: TransactionDetailProps) => {
                                     <View style={styles.itemMain}>
                                         <Text style={styles.itemName}>{item.name}</Text>
                                         <Text style={styles.itemSub}>
-                                            {formatCurrency(item.pricePerKg)} per {item.unit}
+                                            {formatCurrency(item.pricePerUnit)} per {item.unit}
                                         </Text>
                                     </View>
                                     <Text style={styles.itemPrice}>{formatCurrency(item.total)}</Text>

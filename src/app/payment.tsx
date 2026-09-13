@@ -19,6 +19,9 @@ const PaymentRoute = () => {
     );
 
     const handleConfirmPayment = async (paidAmount: number) => {
+        if (cartItems.length === 0 || cartItems.some((item) => !Number.isFinite(item.pricePerUnit) || item.pricePerUnit <= 0)) {
+            return;
+        }
         if (isSavingPaymentRef.current) {
             return;
         }

@@ -6,9 +6,12 @@ import POS from '../../components/pos/pos';
 import { CartItem } from '../../lib/types';
 import { formatCurrency, parseCart } from '../../lib/utils';
 import { loadPersistedCartItems, savePersistedCartItems } from '../../components/pos/cartStore';
+import { useAuthSession } from '../../lib/authSession';
 
 export default function PosTabScreen() {
     const { cart } = useLocalSearchParams();
+    const { currentUser } = useAuthSession();
+    const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
     const hasRouteCartParam = typeof cart === 'string';
     const routeCartItems = useMemo(
         () => parseCart(typeof cart === 'string' ? cart : ''),
@@ -25,11 +28,11 @@ export default function PosTabScreen() {
                     setCartItems(routeCartItems);
                 }
 
-                await savePersistedCartItems(routeCartItems);
+                if (scope) await savePersistedCartItems(scope, routeCartItems);
                 return;
             }
 
-            const stored = await loadPersistedCartItems();
+            const stored = scope ? await loadPersistedCartItems(scope) : [];
 
             if (isMounted) {
                 setCartItems(stored);
@@ -41,7 +44,7 @@ export default function PosTabScreen() {
         return () => {
             isMounted = false;
         };
-    }, [hasRouteCartParam, routeCartItems]);
+    }, [hasRouteCartParam, routeCartItems, currentUser?.accountId, currentUser?.stallNumber]);
 
     const cartTotalValue = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),

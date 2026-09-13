@@ -2,17 +2,19 @@ import { useCallback, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
-import { CATEGORY_ITEMS, getCategoryById } from '../../components/pos/data';
-import { loadMergedCategories } from '../../components/pos/categoriesStore';
+import { getCategoryById } from '../../components/pos/data';
 import { ProductCatalogItem, loadMergedProductsByCategory } from '../../components/pos/productsStore';
 import { CategoryType } from '../../lib/types';
-import { formatCurrency, inferPricePerKg, parseCart } from '../../lib/utils';
+import { formatCurrency, parseCart } from '../../lib/utils';
+import { loadListingCategories } from '../../components/pos/productsStore';
+import { useAuthSession } from '../../lib/authSession';
 
 const CategoryRoute = () => {
   const router = useRouter();
+  const { currentUser } = useAuthSession();
   const { categoryId, cart } = useLocalSearchParams();
 
-  const [categories, setCategories] = useState<CategoryType[]>(CATEGORY_ITEMS);
+  const [categories, setCategories] = useState<CategoryType[]>([]);
   const [products, setProducts] = useState<string[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductCatalogItem[]>([]);
 
@@ -21,18 +23,19 @@ const CategoryRoute = () => {
       let isMounted = true;
 
       const hydrateCategoryContext = async () => {
-        const mergedCategories = await loadMergedCategories();
+        const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
+        const mergedCategories = scope ? await loadListingCategories(scope) : [];
         const selectedCategory = typeof categoryId === 'string'
           ? getCategoryById(categoryId, mergedCategories)
           : undefined;
         const mergedProducts = typeof categoryId === 'string'
-          ? await loadMergedProductsByCategory(categoryId, selectedCategory?.label || 'Category')
+          ? (scope ? await loadMergedProductsByCategory(scope, categoryId) : [])
           : [];
 
         if (isMounted) {
           setCategories(mergedCategories);
           setCatalogProducts(mergedProducts);
-          setProducts(mergedProducts.map((product) => product.name));
+          setProducts(mergedProducts.map((product) => product.variant ? `${product.name} — ${product.variant}` : product.name));
         }
       };
 
@@ -41,7 +44,7 @@ const CategoryRoute = () => {
       return () => {
         isMounted = false;
       };
-    }, [categoryId]),
+    }, [categoryId, currentUser?.accountId, currentUser?.stallNumber]),
   );
 
   const selectedCategory =
@@ -55,27 +58,21 @@ const CategoryRoute = () => {
 
   const handleProductPress = (product: string) => {
     const catalogProduct = catalogProducts.find((item) => (
-      item.name.trim().toLowerCase() === product.trim().toLowerCase()
+      (item.variant ? `${item.name} — ${item.variant}` : item.name).trim().toLowerCase() === product.trim().toLowerCase()
     ));
 
-    const resolvedPricePerUnit = catalogProduct?.source === 'saved'
-      ? catalogProduct.pricePerUnit
-      : inferPricePerKg(product);
-    const resolvedUnit = catalogProduct?.unit ?? 'kg';
+    if (!catalogProduct) return;
 
     router.push({
       pathname: '/add-item',
       params: {
         categoryId: typeof categoryId === 'string' ? categoryId : '',
         categoryLabel: selectedCategory?.label || 'Category',
-        productId: catalogProduct?.id || '',
-        productSource: catalogProduct?.source || 'default',
-        defaultKey: catalogProduct?.defaultKey || '',
-        originalProductName: catalogProduct?.originalName || product,
+        productId: catalogProduct.id,
+        catalogProductId: catalogProduct.catalogProductId || '',
         productName: product,
-        pricePerUnit: resolvedPricePerUnit.toString(),
-        unit: resolvedUnit,
-        pricePerKg: resolvedPricePerUnit.toString(),
+        pricePerUnit: catalogProduct.pricePerUnit.toString(),
+        unit: catalogProduct.unit,
         cart: JSON.stringify(cartItems),
       },
     });

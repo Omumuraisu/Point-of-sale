@@ -50,7 +50,7 @@ const PaymentSuccess = ({
                             <View style={styles.itemMain}>
                                 <Text style={styles.itemName}>{item.name}</Text>
                                 <Text style={styles.itemSub}>
-                                    {formatCurrency(item.pricePerKg)} per {item.unit}
+                                    {formatCurrency(item.pricePerUnit)} per {item.unit}
                                 </Text>
                             </View>
                             <Text style={styles.itemPrice}>{formatCurrency(item.total)}</Text>

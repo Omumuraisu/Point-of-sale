@@ -1,10 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { clearPersistedCartItems } from '../components/pos/cartStore';
+import { useAuthSession } from '../lib/authSession';
 import PaymentSuccess from '../components/pos/PaymentSuccess';
 import { parseCart } from '../lib/utils';
 
 const PaymentSuccessRoute = () => {
     const router = useRouter();
+    const { currentUser } = useAuthSession();
+    const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
     const { cart, paidAmount } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
 
@@ -13,7 +16,7 @@ const PaymentSuccessRoute = () => {
     );
 
     const handleBackHome = async () => {
-        await clearPersistedCartItems();
+        if (scope) await clearPersistedCartItems(scope);
 
         router.replace({
             pathname: '/(tabs)/pos',

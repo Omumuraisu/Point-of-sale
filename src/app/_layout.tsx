@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { syncAllSupabaseData } from '../lib/supabaseSync';
 import { AuthSessionProvider, useAuthSession } from '../lib/authSession';
 import { VerificationFlowProvider } from '../lib/verificationFlow';
+import NetInfo from '@react-native-community/netinfo';
 
 const PUBLIC_ROUTES = new Set([
   '',
@@ -16,7 +17,7 @@ const PUBLIC_ROUTES = new Set([
 function AuthGate({ children }: React.PropsWithChildren) {
   const router = useRouter();
   const segments = useSegments();
-  const { isAuthenticated, isHydrating } = useAuthSession();
+  const { isAuthenticated, isHydrating, currentUser } = useAuthSession();
   const firstSegment = String(segments[0] ?? '');
   const isProtected = !PUBLIC_ROUTES.has(firstSegment);
 
@@ -24,15 +25,23 @@ function AuthGate({ children }: React.PropsWithChildren) {
     if (!isHydrating && isProtected && !isAuthenticated) router.replace('/');
   }, [isAuthenticated, isHydrating, isProtected, router]);
 
+  useEffect(() => {
+    if (isAuthenticated && currentUser?.stallNumber) {
+      void syncAllSupabaseData({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber });
+    }
+  }, [isAuthenticated, currentUser?.accountId, currentUser?.stallNumber]);
+
+  useEffect(() => NetInfo.addEventListener((state) => {
+    if (state.isConnected && isAuthenticated && currentUser?.stallNumber) {
+      void syncAllSupabaseData({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber });
+    }
+  }), [isAuthenticated, currentUser?.accountId, currentUser?.stallNumber]);
+
   if (isHydrating || (isProtected && !isAuthenticated)) return null;
   return <>{children}</>;
 }
 
 export default function Layout() {
-  useEffect(() => {
-    void syncAllSupabaseData();
-  }, []);
-
   return (
     <AuthSessionProvider>
       <VerificationFlowProvider>

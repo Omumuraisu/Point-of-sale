@@ -15,24 +15,6 @@ export const getCategoryType = (category: string): TransactionCategoryType => {
     return { key: 'neutral', label: 'Neutral' };
 };
 
-export const inferPricePerKg = (productName: string): number => {
-    const lowerName = productName.toLowerCase();
-
-    if (lowerName.includes('thigh')) {
-        return 170;
-    }
-
-    if (lowerName.includes('whole chicken')) {
-        return 195;
-    }
-
-    if (lowerName.includes('wings')) {
-        return 165;
-    }
-
-    return 150;
-};
-
 export const toTransaction = ({
     cartItems,
     paidAmount,

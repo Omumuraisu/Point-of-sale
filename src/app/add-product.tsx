@@ -1,80 +1,37 @@
-// @ts-ignore: suppress missing declaration file for 'react' in some environments
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import AddProductScreen from '../components/pos/addProduct';
-import { loadCustomCategories, loadMergedCategories, saveCustomCategories } from '../components/pos/categoriesStore';
-import { categoryExistsByLabel, createCustomCategory, getCategoryByLabel } from '../components/pos/data';
-import { ProductUnit, saveProductRecord } from '../components/pos/productsStore';
-import { CategoryType } from '../lib/types';
+import AddProductScreen, { AddProductPayload } from '../components/pos/addProduct';
+import { CatalogCategory, loadProductCatalog } from '../components/pos/catalogStore';
+import { ProductScope, saveProductRecord } from '../components/pos/productsStore';
+import { useAuthSession } from '../lib/authSession';
 
-interface AddProductPayload {
-    name: string;
-    category: string;
-    pricePerUnit: number;
-    unit: ProductUnit;
-}
-
-const AddProductRoute = () => {
+export default function AddProductRoute() {
     const router = useRouter();
-    const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
-
+    const { currentUser } = useAuthSession();
+    const [catalog, setCatalog] = useState<CatalogCategory[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     useEffect(() => {
-        let isMounted = true;
-
-        const hydrateCategories = async () => {
-            const mergedCategories = await loadMergedCategories();
-
-            if (isMounted) {
-                setCategoryOptions(mergedCategories.map((category) => category.label));
-            }
-        };
-
-        void hydrateCategories();
-
-        return () => {
-            isMounted = false;
-        };
+        let mounted = true;
+        void loadProductCatalog().then((data) => { if (mounted) { setCatalog(data); setLoading(false); } });
+        return () => { mounted = false; };
     }, []);
-
-    const fallbackCategories = useMemo(
-        () => ['Frozen', 'Dry Goods', 'Meat', 'Veggies', 'Fruits', 'Eggs', 'Grains', 'Seafood'],
-        [],
-    );
-
-    const handleSave = async (payload: AddProductPayload) => {
-        console.log('Save product payload:', payload);
-
-        const mergedCategories = await loadMergedCategories();
-        let resolvedCategory = getCategoryByLabel(mergedCategories, payload.category);
-
-        if (!categoryExistsByLabel(mergedCategories, payload.category)) {
-            const customCategories = await loadCustomCategories();
-            const newCategory: CategoryType = createCustomCategory(payload.category);
-
-            await saveCustomCategories([newCategory, ...customCategories]);
-            resolvedCategory = newCategory;
+    const save = async (payload: AddProductPayload) => {
+        if (!currentUser?.stallNumber) {
+            Alert.alert('No authorized stall', 'Select an authorized stall before adding products.');
+            return;
         }
-
-        if (resolvedCategory) {
-            await saveProductRecord({
-                name: payload.name,
-                categoryId: resolvedCategory.id,
-                categoryLabel: resolvedCategory.label,
-                pricePerUnit: payload.pricePerUnit,
-                unit: payload.unit,
-            });
-        }
-
-        router.back();
+        setSaving(true);
+        const scope: ProductScope = { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber };
+        try {
+            const result = await saveProductRecord(scope, payload);
+            if (!result) {
+                Alert.alert('Unable to save', 'Enter a valid product, positive selling price, and unit.');
+                return;
+            }
+            router.back();
+        } finally { setSaving(false); }
     };
-
-    return (
-        <AddProductScreen
-            onCancel={() => router.back()}
-            onSave={handleSave}
-            categoryOptions={categoryOptions.length > 0 ? categoryOptions : fallbackCategories}
-        />
-    );
-};
-
-export default AddProductRoute;
+    return <AddProductScreen catalog={catalog} loading={loading} saving={saving} onCancel={() => router.back()} onSave={save} />;
+}

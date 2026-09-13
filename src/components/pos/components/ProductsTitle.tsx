@@ -2,7 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 
 const ProductsTitle = () => (
     <View style={styles.sectionWrap}>
-        <Text style={styles.sectionTitle}>Products</Text>
+        <Text style={styles.sectionTitle}>My Products</Text>
     </View>
 );
 
