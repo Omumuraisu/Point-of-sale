@@ -1,5 +1,21 @@
 export type VerificationPurpose = 'activation' | 'recovery';
 
+type VerificationDebugLevel = 'info' | 'warn';
+
+export const logVerificationDebug = (
+    stage: string,
+    details: Record<string, unknown> = {},
+    level: VerificationDebugLevel = 'info',
+): void => {
+    if (!__DEV__) return;
+    const message = `[ACCOUNT_VERIFICATION] ${stage}`;
+    if (level === 'warn') {
+        console.warn(message, details);
+    } else {
+        console.info(message, details);
+    }
+};
+
 export const normalizePhilippinePhone = (value: string): string => {
     const digits = value.replace(/\D/g, '');
 

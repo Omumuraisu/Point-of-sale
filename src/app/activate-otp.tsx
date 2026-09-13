@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { maskPhone, readFunctionError } from '../lib/authFlow';
+import { logVerificationDebug, maskPhone, readFunctionError } from '../lib/authFlow';
 import { supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
 
@@ -34,39 +34,91 @@ export default function ActivateOtpScreen() {
 
     const handleVerify = async () => {
         if (!/^\d{6}$/.test(otp)) {
+            logVerificationDebug('otp_verification_validation_failed', {
+                purpose: flow.purpose,
+                phone: maskPhone(flow.phone),
+                reason: 'invalid_otp_format',
+            }, 'warn');
             setMessage('Enter the six-digit verification code.');
             return;
         }
         if (!supabase) {
+            logVerificationDebug('otp_verification_configuration_failed', {
+                purpose: flow.purpose,
+                reason: 'supabase_unavailable',
+            }, 'warn');
             setMessage('Verification is unavailable.');
             return;
         }
         setIsVerifying(true);
         setMessage('');
+        logVerificationDebug('otp_verification_started', {
+            purpose: flow.purpose,
+            phone: maskPhone(flow.phone),
+        });
         const { error } = await supabase.auth.verifyOtp({ phone: flow.phone, token: otp, type: 'sms' });
         setIsVerifying(false);
         if (error) {
+            logVerificationDebug('otp_verification_failed', {
+                purpose: flow.purpose,
+                phone: maskPhone(flow.phone),
+                status: error.status ?? null,
+                code: error.code ?? null,
+                message: error.message,
+            }, 'warn');
             setMessage('The verification code is invalid or has expired.');
             return;
         }
+        logVerificationDebug('otp_verification_succeeded', {
+            purpose: flow.purpose,
+            phone: maskPhone(flow.phone),
+        });
         markOtpVerified();
     };
 
     const handleResend = async () => {
-        if (!supabase || countdown > 0 || isResending) return;
+        if (!supabase || countdown > 0 || isResending) {
+            logVerificationDebug('resend_skipped', {
+                purpose: flow.purpose,
+                reason: !supabase ? 'supabase_unavailable' : countdown > 0 ? 'cooldown_active' : 'already_resending',
+                countdown,
+            });
+            return;
+        }
         setIsResending(true);
         setMessage('');
+        logVerificationDebug('resend_started', {
+            purpose: flow.purpose,
+            phone: maskPhone(flow.phone),
+        });
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
             body: { phone: flow.phone, purpose: flow.purpose },
         });
         setIsResending(false);
         if (error) {
             const parsed = await readFunctionError(error, 'Unable to resend the code.');
+            const status = (error as { context?: Response } | null)?.context?.status ?? null;
+            logVerificationDebug('resend_failed', {
+                purpose: flow.purpose,
+                phone: maskPhone(flow.phone),
+                status,
+                message: parsed.message,
+                reason: parsed.reason,
+                retryAfterSeconds: parsed.retryAfterSeconds,
+                debugId: parsed.debugId,
+            }, 'warn');
             setMessage(parsed.message);
             if (parsed.retryAfterSeconds > 0) setCountdown(parsed.retryAfterSeconds);
             return;
         }
-        setCountdown(typeof data?.resendAfterSeconds === 'number' ? data.resendAfterSeconds : 60);
+        const resendAfterSeconds = typeof data?.resendAfterSeconds === 'number' ? data.resendAfterSeconds : 60;
+        logVerificationDebug('resend_accepted', {
+            purpose: flow.purpose,
+            phone: maskPhone(flow.phone),
+            resendAfterSeconds,
+            debugId: typeof data?.debugId === 'string' ? data.debugId : null,
+        });
+        setCountdown(resendAfterSeconds);
         setMessage('A new verification code was requested.');
     };
 

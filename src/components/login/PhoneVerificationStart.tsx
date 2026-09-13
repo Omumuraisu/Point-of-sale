@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { normalizePhilippinePhone, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
+import { logVerificationDebug, maskPhone, normalizePhilippinePhone, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
 
@@ -19,22 +19,35 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
     const handleSubmit = async () => {
         const normalized = normalizePhilippinePhone(phone);
         if (!normalized) {
+            logVerificationDebug('request_validation_failed', { purpose, reason: 'invalid_phone' }, 'warn');
             setMessage('Enter a valid Philippine mobile number.');
             return;
         }
         if (!isSupabaseConfigured || !supabase) {
+            logVerificationDebug('request_configuration_failed', { purpose, reason: 'supabase_unavailable' }, 'warn');
             setMessage('Verification is unavailable. Check the app configuration.');
             return;
         }
 
         setIsSubmitting(true);
         setMessage('');
+        logVerificationDebug('request_started', { purpose, phone: maskPhone(normalized) });
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
             body: { phone: normalized, purpose },
         });
         setIsSubmitting(false);
         if (error) {
             const parsed = await readFunctionError(error, 'Unable to request a verification code.');
+            const status = (error as { context?: Response } | null)?.context?.status ?? null;
+            logVerificationDebug('request_failed', {
+                purpose,
+                phone: maskPhone(normalized),
+                status,
+                message: parsed.message,
+                reason: parsed.reason,
+                retryAfterSeconds: parsed.retryAfterSeconds,
+                debugId: parsed.debugId,
+            }, 'warn');
             setMessage(parsed.message);
             return;
         }
@@ -42,6 +55,12 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
         const resendAfterSeconds = typeof data?.resendAfterSeconds === 'number'
             ? data.resendAfterSeconds
             : 60;
+        logVerificationDebug('request_accepted', {
+            purpose,
+            phone: maskPhone(normalized),
+            resendAfterSeconds,
+            debugId: typeof data?.debugId === 'string' ? data.debugId : null,
+        });
         startFlow(normalized, purpose);
         router.push({ pathname: '/activate-otp', params: { resendAfterSeconds } });
     };
