@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
 import { getCategoryById } from '../../components/pos/data';
@@ -8,10 +9,12 @@ import { CategoryType } from '../../lib/types';
 import { formatCurrency, parseCart } from '../../lib/utils';
 import { loadListingCategories } from '../../components/pos/productsStore';
 import { useAuthSession } from '../../lib/authSession';
+import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
 
 const CategoryRoute = () => {
   const router = useRouter();
   const { currentUser } = useAuthSession();
+  const { isOpen } = useBusinessOperatingStatus();
   const { categoryId, cart } = useLocalSearchParams();
 
   const [categories, setCategories] = useState<CategoryType[]>([]);
@@ -57,6 +60,10 @@ const CategoryRoute = () => {
   );
 
   const handleProductPress = (product: string) => {
+    if (isOpen !== true) {
+      Alert.alert('Stall closed', 'Open the stall before starting a sale.');
+      return;
+    }
     const catalogProduct = catalogProducts.find((item) => (
       (item.variant ? `${item.name} — ${item.variant}` : item.name).trim().toLowerCase() === product.trim().toLowerCase()
     ));
@@ -87,6 +94,7 @@ const CategoryRoute = () => {
       onProductPress={handleProductPress}
       cartCount={cartItems.length}
       cartTotal={formatCurrency(cartTotalValue)}
+      isStallOpen={isOpen === true}
     />
   );
 };

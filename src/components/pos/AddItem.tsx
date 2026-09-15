@@ -43,6 +43,7 @@ interface AddItemScreenProps {
     onAdd: (payload: AddCartItemPayload) => void;
     onDeleteProduct: () => Promise<void> | void;
     onUpdateProduct: (payload: UpdateProductPayload) => Promise<void> | void;
+    disabled?: boolean;
 }
 
 const AddItemScreen = ({
@@ -57,6 +58,7 @@ const AddItemScreen = ({
     onAdd,
     onDeleteProduct,
     onUpdateProduct,
+    disabled = false,
 }: AddItemScreenProps) => {
     const insets = useSafeAreaInsets();
     const [quantityInput, setQuantityInput] = useState('');
@@ -82,11 +84,12 @@ const AddItemScreen = ({
     );
 
     const hasValidSellingPrice = Number.isFinite(pricePerUnit) && pricePerUnit > 0;
-    const canAdd = quantityValue > 0 && hasValidSellingPrice;
+    const canAdd = quantityValue > 0 && hasValidSellingPrice && !disabled;
     const parsedEditPrice = Number(editPrice.trim());
     const canSaveEdit = Number.isFinite(parsedEditPrice)
         && parsedEditPrice > 0
-        && !isSavingProduct;
+        && !isSavingProduct
+        && !disabled;
 
     const handleKeyPress = (key: string) => {
         if (key === 'backspace') {
@@ -184,6 +187,7 @@ const AddItemScreen = ({
                 keyboardShouldPersistTaps="handled"
             >
                 <View style={styles.contentArea}>
+                    {disabled ? <Text style={styles.unpricedWarning}>Open the stall before adding or changing products.</Text> : null}
                     <Text style={styles.categoryText}>{categoryLabel.toUpperCase()}</Text>
                     <View style={styles.productHeaderRow}>
                         <Text style={styles.productText} numberOfLines={2}>{productName}</Text>
@@ -191,12 +195,14 @@ const AddItemScreen = ({
                             <Pressable
                                 style={[styles.productActionButton, styles.editProductButton]}
                                 onPress={() => setIsEditModalVisible(true)}
+                                disabled={disabled}
                             >
                                 <Ionicons name="create-outline" size={20} color="#ffffff" />
                             </Pressable>
                             <Pressable
                                 style={[styles.productActionButton, styles.deleteProductButton]}
                                 onPress={() => setIsDeleteModalVisible(true)}
+                                disabled={disabled}
                             >
                                 <Ionicons name="trash-outline" size={20} color="#ffffff" />
                             </Pressable>
@@ -227,6 +233,7 @@ const AddItemScreen = ({
                                     key={key}
                                     style={[styles.keyButton, isDelete && styles.deleteKeyButton]}
                                     onPress={() => handleKeyPress(key)}
+                                    disabled={disabled}
                                 >
                                     {isDelete ? (
                                         <MaterialIcons name="backspace" size={24} color="#c05f5f" />

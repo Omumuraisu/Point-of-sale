@@ -107,12 +107,6 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="system-evaluation/index"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
         name="notifications"
         options={{
           href: null,

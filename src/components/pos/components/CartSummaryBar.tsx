@@ -5,10 +5,11 @@ interface CartSummaryBarProps {
     total: string;
     bottomOffset?: number;
     onPress?: () => void;
+    disabled?: boolean;
 }
 
-const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress }: CartSummaryBarProps) => (
-    <Pressable style={[styles.cartBar, { bottom: bottomOffset }]} onPress={onPress}>
+const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress, disabled = false }: CartSummaryBarProps) => (
+    <Pressable style={[styles.cartBar, disabled && styles.disabled, { bottom: bottomOffset }]} onPress={onPress} disabled={disabled}>
         <View style={styles.cartPill}>
             <Text style={styles.cartPillText}>{count} items added</Text>
         </View>
@@ -49,5 +50,9 @@ const styles = StyleSheet.create({
         fontSize: 19,
         fontWeight: '800',
         letterSpacing: 0.4,
+    },
+    disabled: {
+        backgroundColor: '#737b8e',
+        opacity: 0.8,
     },
 });

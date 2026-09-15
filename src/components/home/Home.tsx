@@ -12,6 +12,7 @@ import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvent
 import { useUnreadNotificationCount } from '../../lib/useUnreadNotificationCount';
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
 import { formatCurrency } from '../../lib/utils';
+import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -23,7 +24,7 @@ const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 export default function Home() {
     const router = useRouter();
     const { currentUser } = useAuthSession();
-    const [isOpen, setIsOpen] = useState(true);
+    const { isOpen, isLoading, isUpdating, error: statusError, canToggle, setIsOpen } = useBusinessOperatingStatus();
     const [recentSales, setRecentSales] = useState<TransactionRecord[]>([]);
     const { unreadNotificationCount } = useUnreadNotificationCount(currentUser?.accountId);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
@@ -114,19 +115,26 @@ export default function Home() {
                         </View>
                         <View>
                             <Text style={styles.stallTitle}>{stallLabel}</Text>
-                            <View style={[styles.statusPill, !isOpen && styles.statusPillClosed]}>
-                                <Text style={[styles.statusText, !isOpen && styles.statusTextClosed]}>{isOpen ? 'Open' : 'Closed'}</Text>
+                            <View style={[styles.statusPill, isOpen !== true && styles.statusPillClosed]}>
+                                <Text style={[styles.statusText, isOpen !== true && styles.statusTextClosed]}>
+                                    {isLoading && isOpen === null ? 'Loading...' : isOpen ? 'Open' : 'Closed'}
+                                </Text>
                             </View>
                         </View>
                     </View>
 
                     <Switch
-                        value={isOpen}
-                        onValueChange={setIsOpen}
+                        value={isOpen === true}
+                        onValueChange={(value) => { void setIsOpen(value); }}
+                        disabled={isLoading || isUpdating || !canToggle || isOpen === null}
                         trackColor={{ false: '#c5cada', true: '#b8c8fa' }}
                         thumbColor={isOpen ? '#2f5ada' : '#f4f4f5'}
                     />
                 </View>
+                {!canToggle && currentUser?.profileTable === 'developer' ? (
+                    <Text style={styles.statusHelp}>Developers can view status but cannot change it.</Text>
+                ) : null}
+                {statusError ? <Text style={styles.statusError}>{statusError}</Text> : null}
 
                 <View style={styles.totalCard}>
                     <View>
@@ -283,6 +291,20 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 2 },
         shadowRadius: 3,
         elevation: 2,
+    },
+    statusHelp: {
+        marginTop: -8,
+        marginBottom: 12,
+        color: '#5c6472',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    statusError: {
+        marginTop: -8,
+        marginBottom: 12,
+        color: '#a33b35',
+        fontSize: 12,
+        fontWeight: '700',
     },
     stallLeft: {
         flexDirection: 'row',

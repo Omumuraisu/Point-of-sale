@@ -10,10 +10,10 @@ export interface AddProductPayload {
   section: string; variant: string; catalogProductId?: string; pricePerUnit: number; unit: ProductUnit;
 }
 
-interface Props { catalog: CatalogCategory[]; loading?: boolean; saving?: boolean; onCancel: () => void; onSave: (payload: AddProductPayload) => void }
+interface Props { catalog: CatalogCategory[]; loading?: boolean; saving?: boolean; disabled?: boolean; onCancel: () => void; onSave: (payload: AddProductPayload) => void }
 const labels: Record<ProductUnit, string> = { pieces: 'Pieces', kg: 'Kg', g: 'G', mg: 'Mg', L: 'L', mL: 'mL' };
 
-const AddProductScreen = ({ catalog, loading = false, saving = false, onCancel, onSave }: Props) => {
+const AddProductScreen = ({ catalog, loading = false, saving = false, disabled = false, onCancel, onSave }: Props) => {
   const insets = useSafeAreaInsets();
   const [custom, setCustom] = useState(false);
   const [categoryId, setCategoryId] = useState('');
@@ -29,7 +29,7 @@ const AddProductScreen = ({ catalog, loading = false, saving = false, onCancel, 
   const parsedPrice = Number(price.trim());
   const name = custom ? customName.trim() : product?.name ?? '';
   const effectiveVariant = custom ? variant.trim() : product?.variant ?? '';
-  const valid = Boolean(category && section && name && unit && Number.isFinite(parsedPrice) && parsedPrice > 0 && !saving);
+  const valid = Boolean(category && section && name && unit && Number.isFinite(parsedPrice) && parsedPrice > 0 && !saving && !disabled);
   const chooseCategory = (id: string) => { setCategoryId(id); setSectionId(''); setProductId(''); };
   const chooseSection = (id: string) => { setSectionId(id); setProductId(''); };
   const submit = () => {
@@ -44,6 +44,7 @@ const AddProductScreen = ({ catalog, loading = false, saving = false, onCancel, 
   return <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
     <View style={styles.header}><Text style={styles.title}>Add Product</Text></View>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {disabled ? <Text style={styles.error}>Open the stall before adding products.</Text> : null}
       <View style={styles.modeRow}>
         <Pressable style={[styles.mode, !custom && styles.modeActive]} onPress={() => setCustom(false)}><Text style={styles.modeText}>Catalog Product</Text></Pressable>
         <Pressable style={[styles.mode, custom && styles.modeActive]} onPress={() => setCustom(true)}><Text style={styles.modeText}>Add Custom Product</Text></Pressable>

@@ -5,15 +5,18 @@ import { CategoryType } from '../../../lib/types';
 interface CategoryCardProps {
     item: CategoryType;
     onPress: (item: CategoryType) => void;
+    disabled?: boolean;
 }
 
-const CategoryCard = ({ item, onPress }: CategoryCardProps) => (
+const CategoryCard = ({ item, onPress, disabled = false }: CategoryCardProps) => (
     <Pressable
         style={[
             styles.card,
             { backgroundColor: item.bgColor, borderColor: item.borderColor },
+            disabled && styles.disabled,
         ]}
         onPress={() => onPress(item)}
+        disabled={disabled}
     >
         <MaterialCommunityIcons name={item.icon as any} size={58} color={item.textColor} />
         <Text style={[styles.cardText, { color: item.textColor }]}>{item.label}</Text>
@@ -40,5 +43,8 @@ const styles = StyleSheet.create({
     cardText: {
         fontSize: 10.5,
         fontWeight: '700',
+    },
+    disabled: {
+        opacity: 0.5,
     },
 });

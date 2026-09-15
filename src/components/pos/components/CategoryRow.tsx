@@ -5,10 +5,11 @@ interface CategoryRowProps {
     item: string;
     tintColor: string;
     onPress: (item: string) => void;
+    disabled?: boolean;
 }
 
-const CategoryRow = ({ item, tintColor, onPress }: CategoryRowProps) => (
-    <Pressable style={styles.row} onPress={() => onPress(item)}>
+const CategoryRow = ({ item, tintColor, onPress, disabled = false }: CategoryRowProps) => (
+    <Pressable style={[styles.row, disabled && styles.disabled]} onPress={() => onPress(item)} disabled={disabled}>
         <View style={styles.rowLeft}>
             <View style={styles.thumb}>
                 <Ionicons name="cube-outline" size={18} color={tintColor} />
@@ -47,5 +48,8 @@ const styles = StyleSheet.create({
     rowLabel: {
         fontSize: 19,
         fontWeight: '700',
+    },
+    disabled: {
+        opacity: 0.45,
     },
 });

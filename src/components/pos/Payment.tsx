@@ -11,9 +11,11 @@ interface PaymentProps {
     onBack: () => void;
     onConfirmPayment: (paidAmount: number, changeAmount: number) => void | Promise<void>;
     isConfirming?: boolean;
+    isStallOpen?: boolean;
+    errorMessage?: string | null;
 }
 
-const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false }: PaymentProps) => {
+const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false, isStallOpen = false, errorMessage }: PaymentProps) => {
     const insets = useSafeAreaInsets();
     const [amountInput, setAmountInput] = useState('');
 
@@ -23,7 +25,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false 
     }, [amountInput]);
 
     const changeAmount = Math.max(paidAmount - Number(totalDue || 0), 0);
-    const canConfirm = paidAmount >= Number(totalDue || 0) && Number(totalDue || 0) > 0 && !isConfirming;
+    const canConfirm = paidAmount >= Number(totalDue || 0) && Number(totalDue || 0) > 0 && !isConfirming && isStallOpen;
 
     const handleKeyPress = (key: string) => {
         if (key === 'backspace') {
@@ -98,6 +100,14 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false 
                         <Text style={styles.changeText}>{formatCurrency(changeAmount)}</Text>
                     </View>
                 </View>
+
+                {!isStallOpen || errorMessage ? (
+                    <View style={styles.errorBanner}>
+                        <Text style={styles.errorText}>
+                            {errorMessage ?? 'Open the stall before starting a sale.'}
+                        </Text>
+                    </View>
+                ) : null}
 
                 <View style={styles.keyboardWrap}>
                     <View style={styles.keyGrid}>
@@ -264,6 +274,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingTop: 16,
         paddingBottom: 12,
+    },
+    errorBanner: {
+        marginTop: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#e2a39e',
+        backgroundColor: '#fde8e6',
+        padding: 12,
+    },
+    errorText: {
+        color: '#8f302a',
+        fontSize: 13,
+        fontWeight: '700',
+        textAlign: 'center',
     },
     keyGrid: {
         flexDirection: 'row',

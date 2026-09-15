@@ -5,10 +5,12 @@ import { clearPersistedCartItems, savePersistedCartItems } from '../components/p
 import Receipt from '../components/pos/Receipt';
 import { parseCart } from '../lib/utils';
 import { useAuthSession } from '../lib/authSession';
+import { useBusinessOperatingStatus } from '../lib/businessOperatingStatus';
 
 const ReceiptRoute = () => {
     const router = useRouter();
     const { currentUser } = useAuthSession();
+    const { isOpen } = useBusinessOperatingStatus();
     const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
     const { cart } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
@@ -23,6 +25,7 @@ const ReceiptRoute = () => {
     );
 
     const handleClearAll = async () => {
+        if (isOpen !== true) return;
         if (scope) await clearPersistedCartItems(scope);
 
         router.replace({
@@ -35,6 +38,7 @@ const ReceiptRoute = () => {
     };
 
     const handleAddMore = async () => {
+        if (isOpen !== true) return;
         if (scope) await savePersistedCartItems(scope, cartItems);
 
         router.replace({
@@ -46,6 +50,7 @@ const ReceiptRoute = () => {
     };
 
     const handleConfirm = () => {
+        if (isOpen !== true) return;
         if (isConfirmingRef.current) {
             return;
         }
@@ -70,6 +75,7 @@ const ReceiptRoute = () => {
             onClearAll={handleClearAll}
             onConfirm={handleConfirm}
             isConfirming={isConfirming}
+            isStallOpen={isOpen === true}
         />
     );
 };

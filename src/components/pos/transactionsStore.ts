@@ -97,11 +97,16 @@ export const loadSavedTransactions = async (
     }
 };
 
-export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput): Promise<TransactionRecord | null> => {
-    const { cartItems, paidAmount, totalDue, accountId } = input;
+export interface SaveReceiptTransactionResult {
+    transaction: TransactionRecord | null;
+    error?: string;
+}
+
+export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput): Promise<SaveReceiptTransactionResult> => {
+    const { cartItems } = input;
 
     if (cartItems.length === 0 || cartItems.some((item) => !Number.isFinite(item.pricePerUnit) || item.pricePerUnit <= 0)) {
-        return null;
+        return { transaction: null, error: 'The cart contains an item without a valid selling price.' };
     }
 
     const createdAt = Date.now();
@@ -110,15 +115,6 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
         createdAt,
     }));
 
-    const existing = await loadSavedTransactions(transaction.accountId);
-    const updated = [transaction, ...existing];
-
-    const didSave = await saveTransactions(transaction.accountId ?? 0, updated);
-
-    if (!didSave) {
-        return null;
-    }
-
     try {
         const { syncTransactionRecordWithResult } = await import('../../lib/transactionsSync');
         const result = await syncTransactionRecordWithResult(transaction);
@@ -126,51 +122,25 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
 
         if (result.success) {
             const syncedAt = Date.now();
-
-            await updateTransactionSyncState(accountId, transaction.id, {
-                synced: true,
-                syncedAt,
-                syncError: undefined,
-                syncAttempts,
-            });
-
-            return {
+            const syncedTransaction: TransactionRecord = {
                 ...transaction,
                 synced: true,
                 syncedAt,
                 syncError: undefined,
                 syncAttempts,
             };
+            const existing = await loadSavedTransactions(transaction.accountId);
+            await saveTransactions(transaction.accountId ?? 0, [syncedTransaction, ...existing]);
+            const { notifyTransactionSyncChanged } = await import('../../lib/transactionSyncEvents');
+            notifyTransactionSyncChanged();
+
+            return { transaction: syncedTransaction };
         }
 
-        await updateTransactionSyncState(accountId, transaction.id, {
-            synced: false,
-            syncError: result.error,
-            syncAttempts,
-        });
-
-        return {
-            ...transaction,
-            synced: false,
-            syncError: result.error,
-            syncAttempts,
-        };
+        return { transaction: null, error: result.error ?? 'Unable to record the sale. Please try again.' };
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to start Supabase transaction sync';
-        const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
-
-        await updateTransactionSyncState(accountId, transaction.id, {
-            synced: false,
-            syncError: message,
-            syncAttempts,
-        });
-
-        return {
-            ...transaction,
-            synced: false,
-            syncError: message,
-            syncAttempts,
-        };
+        return { transaction: null, error: message };
     }
 };
 

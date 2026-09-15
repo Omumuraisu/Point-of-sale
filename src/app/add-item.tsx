@@ -7,10 +7,12 @@ import { ProductScope, ProductUnit, deleteProductRecord, isProductUnit, updatePr
 import { AddCartItemPayload } from '../lib/types';
 import { parseCart } from '../lib/utils';
 import { useAuthSession } from '../lib/authSession';
+import { useBusinessOperatingStatus } from '../lib/businessOperatingStatus';
 
 export default function AddItemRoute() {
     const router = useRouter();
     const { currentUser } = useAuthSession();
+    const { isOpen } = useBusinessOperatingStatus();
     const params = useLocalSearchParams();
     const parsedPrice = Number.parseFloat(typeof params.pricePerUnit === 'string' ? params.pricePerUnit : '0');
     const parsedUnit = isProductUnit(params.unit) ? params.unit : 'pieces';
@@ -27,6 +29,10 @@ export default function AddItemRoute() {
         ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
 
     const add = async (payload: AddCartItemPayload) => {
+        if (isOpen !== true) {
+            Alert.alert('Stall closed', 'Open the stall before starting a sale.');
+            return;
+        }
         if (!scope || !Number.isFinite(payload.pricePerUnit) || payload.pricePerUnit <= 0) {
             Alert.alert('Price required', 'Set a positive selling price before adding this product.');
             return;
@@ -37,16 +43,24 @@ export default function AddItemRoute() {
         router.replace({ pathname: '/(tabs)/pos', params: { cart: JSON.stringify(updated), updatedAt: Date.now().toString() } });
     };
     const remove = async () => {
+        if (isOpen !== true) {
+            Alert.alert('Stall closed', 'Open the stall before changing products.');
+            return;
+        }
         if (!scope) return;
         await deleteProductRecord(scope, product.id);
         router.replace({ pathname: '/category', params: { categoryId: product.categoryId, cart: typeof params.cart === 'string' ? params.cart : '[]' } });
     };
     const update = async ({ pricePerUnit, unit }: { pricePerUnit: number; unit: ProductUnit }) => {
+        if (isOpen !== true) {
+            Alert.alert('Stall closed', 'Open the stall before changing products.');
+            return;
+        }
         if (!scope) return;
         const saved = await updateProductRecord(scope, product.id, pricePerUnit, unit);
         if (saved) setProduct((current) => ({ ...current, pricePerUnit: saved.pricePerUnit, unit: saved.unit }));
     };
     return <AddItemScreen productName={product.name} categoryId={product.categoryId} categoryLabel={product.categoryLabel}
         productId={product.id} catalogProductId={product.catalogProductId} pricePerUnit={product.pricePerUnit} unit={product.unit}
-        onBack={() => router.back()} onAdd={add} onDeleteProduct={remove} onUpdateProduct={update} />;
+        disabled={isOpen !== true} onBack={() => router.back()} onAdd={add} onDeleteProduct={remove} onUpdateProduct={update} />;
 }

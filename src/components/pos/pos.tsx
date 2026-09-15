@@ -16,6 +16,7 @@ import POSHeader from './components/POSHeader';
 import ProductsTitle from './components/ProductsTitle';
 import CategoryCard from './components/CategoryCard';
 import CartSummaryBar from './components/CartSummaryBar';
+import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
 
 interface POSProps {
   cartItems?: CartItem[];
@@ -31,6 +32,8 @@ const POS = ({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currentUser } = useAuthSession();
+  const { isOpen, isLoading, error: statusError } = useBusinessOperatingStatus();
+  const salesDisabled = isOpen !== true;
   const [categories, setCategories] = useState<CategoryType[]>([]);
 
   useFocusEffect(
@@ -56,6 +59,7 @@ const POS = ({
   );
 
   const handleCategoryPress = (item: CategoryType) => {
+    if (salesDisabled) return;
     router.push({
       pathname: '/category',
       params: {
@@ -66,10 +70,12 @@ const POS = ({
   };
 
   const handleAddNewProduct = () => {
+    if (salesDisabled) return;
     router.push('/add-product');
   };
 
   const handleOpenReceipt = () => {
+    if (salesDisabled) return;
     router.push({
       pathname: '/receipt',
       params: {
@@ -85,19 +91,27 @@ const POS = ({
           data={categories}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <CategoryCard item={item} onPress={handleCategoryPress} />
+            <CategoryCard item={item} onPress={handleCategoryPress} disabled={salesDisabled} />
           )}
           numColumns={2}
           columnWrapperStyle={styles.columnWrap}
           ListHeaderComponent={
             <>
               <POSHeader />
+              {salesDisabled ? (
+                <View style={styles.closedBanner}>
+                  <Text style={styles.closedBannerTitle}>{isLoading ? 'Checking stall status...' : 'Stall Closed'}</Text>
+                  <Text style={styles.closedBannerText}>
+                    {statusError ?? 'Open the stall before starting a sale.'}
+                  </Text>
+                </View>
+              ) : null}
               <ProductsTitle />
             </>
           }
           ListFooterComponent={
             <View style={styles.footerWrap}>
-              <Pressable style={styles.addProductsButton} onPress={handleAddNewProduct}>
+              <Pressable style={[styles.addProductsButton, salesDisabled && styles.disabledButton]} onPress={handleAddNewProduct} disabled={salesDisabled}>
                 <Text style={styles.addProductsText}>Add New Products</Text>
               </Pressable>
             </View>
@@ -113,6 +127,7 @@ const POS = ({
           total={cartTotal}
           bottomOffset={0}
           onPress={handleOpenReceipt}
+          disabled={salesDisabled}
         />
       </View>
     </SafeAreaView>
@@ -160,5 +175,27 @@ const styles = StyleSheet.create({
     color: '#f3f5fb',
     fontSize: 17,
     fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  closedBanner: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2a39e',
+    backgroundColor: '#fde8e6',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  closedBannerTitle: {
+    color: '#8f302a',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  closedBannerText: {
+    marginTop: 3,
+    color: '#7c443f',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

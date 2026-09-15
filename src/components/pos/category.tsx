@@ -12,6 +12,7 @@ interface CategoryScreenProps {
     onProductPress: (product: string) => void;
     cartCount?: number;
     cartTotal?: string;
+    isStallOpen?: boolean;
 }
 
 const CategoryScreen = ({
@@ -22,6 +23,7 @@ const CategoryScreen = ({
     onProductPress,
     cartCount = 0,
     cartTotal = 'P 00.00',
+    isStallOpen = false,
 }: CategoryScreenProps) => {
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -33,12 +35,13 @@ const CategoryScreen = ({
             </View>
 
             <Text style={[styles.categoryName, { color: tintColor }]}>{categoryLabel}</Text>
+            {!isStallOpen ? <Text style={styles.closedText}>Open the stall before starting a sale.</Text> : null}
 
             <FlatList
                 data={products}
                 keyExtractor={(item) => item}
                 renderItem={({ item }) => (
-                    <CategoryRow item={item} tintColor={tintColor} onPress={onProductPress} />
+                    <CategoryRow item={item} tintColor={tintColor} onPress={onProductPress} disabled={!isStallOpen} />
                 )}
                 ListEmptyComponent={(
                     <View style={styles.emptyStateWrap}>
@@ -92,6 +95,17 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         textAlign: 'center',
         fontSize: 34 / 2,
+        fontWeight: '700',
+    },
+    closedText: {
+        marginHorizontal: 18,
+        marginBottom: 10,
+        borderRadius: 8,
+        backgroundColor: '#fde8e6',
+        color: '#8f302a',
+        padding: 10,
+        textAlign: 'center',
+        fontSize: 13,
         fontWeight: '700',
     },
     listContent: {

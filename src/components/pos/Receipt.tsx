@@ -11,9 +11,10 @@ interface ReceiptProps {
     onClearAll: () => void;
     onConfirm: () => void;
     isConfirming?: boolean;
+    isStallOpen?: boolean;
 }
 
-const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isConfirming = false }: ReceiptProps) => {
+const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isConfirming = false, isStallOpen = false }: ReceiptProps) => {
     const insets = useSafeAreaInsets();
     const totalAmount = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -29,11 +30,17 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
 
                 <Text style={styles.headerTitle}>Receipt</Text>
 
-                <Pressable style={styles.clearBtn} onPress={onClearAll}>
+                <Pressable style={[styles.clearBtn, !isStallOpen && styles.muted]} onPress={onClearAll} disabled={!isStallOpen}>
                     <Ionicons name="trash-outline" size={15} color="#d85647" />
                     <Text style={styles.clearText}>Clear All</Text>
                 </Pressable>
             </View>
+
+            {!isStallOpen ? (
+                <View style={styles.closedBanner}>
+                    <Text style={styles.closedBannerText}>Open the stall before starting a sale.</Text>
+                </View>
+            ) : null}
 
             <View style={styles.card}>
                 <Text style={styles.amountLabel}>Total Amount</Text>
@@ -64,7 +71,7 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                         </View>
                     ))}
 
-                    <Pressable style={styles.addMoreRow} onPress={onAddMore}>
+                    <Pressable style={[styles.addMoreRow, !isStallOpen && styles.muted]} onPress={onAddMore} disabled={!isStallOpen}>
                         <Ionicons name="add-circle" size={20} color="#1e2a33" />
                         <Text style={styles.addMoreText}>Add More</Text>
                     </Pressable>
@@ -79,11 +86,11 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
             <Pressable
                 style={[
                     styles.confirmBtn,
-                    isConfirming ? styles.confirmBtnDisabled : null,
+                    (isConfirming || !isStallOpen) ? styles.confirmBtnDisabled : null,
                     { marginBottom: Math.max(insets.bottom, 10) + 10 },
                 ]}
                 onPress={onConfirm}
-                disabled={isConfirming}
+                disabled={isConfirming || !isStallOpen}
             >
                 <Ionicons name="wallet" size={31} color="#ffffff" />
                 <Text style={styles.confirmText}>{isConfirming ? 'Opening Payment...' : 'Confirm'}</Text>
@@ -144,6 +151,23 @@ const styles = StyleSheet.create({
         paddingHorizontal: 18,
         paddingTop: 24,
         paddingBottom: 14,
+    },
+    closedBanner: {
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#e2a39e',
+        backgroundColor: '#fde8e6',
+        padding: 10,
+        marginBottom: 10,
+    },
+    closedBannerText: {
+        color: '#8f302a',
+        fontSize: 13,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    muted: {
+        opacity: 0.45,
     },
     amountLabel: {
         textAlign: 'center',

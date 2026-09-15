@@ -5,10 +5,12 @@ import AddProductScreen, { AddProductPayload } from '../components/pos/addProduc
 import { CatalogCategory, loadProductCatalog } from '../components/pos/catalogStore';
 import { ProductScope, saveProductRecord } from '../components/pos/productsStore';
 import { useAuthSession } from '../lib/authSession';
+import { useBusinessOperatingStatus } from '../lib/businessOperatingStatus';
 
 export default function AddProductRoute() {
     const router = useRouter();
     const { currentUser } = useAuthSession();
+    const { isOpen } = useBusinessOperatingStatus();
     const [catalog, setCatalog] = useState<CatalogCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -18,6 +20,10 @@ export default function AddProductRoute() {
         return () => { mounted = false; };
     }, []);
     const save = async (payload: AddProductPayload) => {
+        if (isOpen !== true) {
+            Alert.alert('Stall closed', 'Open the stall before starting a sale.');
+            return;
+        }
         if (!currentUser?.stallNumber) {
             Alert.alert('No authorized stall', 'Select an authorized stall before adding products.');
             return;
@@ -33,5 +39,5 @@ export default function AddProductRoute() {
             router.back();
         } finally { setSaving(false); }
     };
-    return <AddProductScreen catalog={catalog} loading={loading} saving={saving} onCancel={() => router.back()} onSave={save} />;
+    return <AddProductScreen catalog={catalog} loading={loading} saving={saving} disabled={isOpen !== true} onCancel={() => router.back()} onSave={save} />;
 }

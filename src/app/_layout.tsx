@@ -4,6 +4,7 @@ import { syncAllSupabaseData } from '../lib/supabaseSync';
 import { AuthSessionProvider, useAuthSession } from '../lib/authSession';
 import { VerificationFlowProvider } from '../lib/verificationFlow';
 import NetInfo from '@react-native-community/netinfo';
+import { BusinessOperatingStatusProvider } from '../lib/businessOperatingStatus';
 
 const PUBLIC_ROUTES = new Set([
   '',
@@ -44,6 +45,7 @@ function AuthGate({ children }: React.PropsWithChildren) {
 export default function Layout() {
   return (
     <AuthSessionProvider>
+      <BusinessOperatingStatusProvider>
       <VerificationFlowProvider>
       <AuthGate>
       <Stack initialRouteName="index">
@@ -174,6 +176,7 @@ export default function Layout() {
       </Stack>
       </AuthGate>
       </VerificationFlowProvider>
+      </BusinessOperatingStatusProvider>
     </AuthSessionProvider>
   );
 }

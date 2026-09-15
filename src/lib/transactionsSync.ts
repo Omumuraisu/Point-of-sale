@@ -6,6 +6,7 @@ import { notifyTransactionSyncChanged } from './transactionSyncEvents';
 
 interface SalesTransactionRow {
     transaction_id: number;
+    business_id: number | null;
     stall_id: string;
     stall_number: string | null;
     account_id: number;
@@ -131,6 +132,7 @@ const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
     return {
         id: `#${row.transaction_id}`,
         accountId: row.account_id,
+        businessId: row.business_id,
         username: row.username,
         stallId: row.stall_id,
         stallNumber: row.stall_number,
@@ -184,6 +186,10 @@ const getMissingSyncFields = (transaction: TransactionRecord): string[] => {
 
     if (!transaction.accountId) {
         missingFields.push('accountId');
+    }
+
+    if (!transaction.businessId) {
+        missingFields.push('businessId');
     }
 
     if (!(transaction.stallId ?? transaction.stallNumber)) {
@@ -347,7 +353,7 @@ const resolveTransactionContext = async (accountId?: number): Promise<Transactio
 };
 
 const enrichTransactionContext = async (transaction: TransactionRecord): Promise<TransactionRecord> => {
-    if (transaction.stallId ?? transaction.stallNumber) {
+    if (transaction.businessId && (transaction.stallId ?? transaction.stallNumber)) {
         return transaction;
     }
 
@@ -420,9 +426,14 @@ export const syncTransactionRecordWithResult = async (
             rows,
         });
 
-        const { error } = await supabase
-            .from('sales_transaction')
-            .insert(rows);
+        if (!transactionForSync.businessId) {
+            return { success: false, error: 'Transaction is missing required sync fields: businessId.' };
+        }
+
+        const { error } = await supabase.rpc('record_open_stall_sale', {
+            p_business_id: transactionForSync.businessId,
+            p_rows: rows,
+        });
 
         if (error) {
             logSyncError('sales_transaction insert failed', {
@@ -436,12 +447,16 @@ export const syncTransactionRecordWithResult = async (
 
             return {
                 success: false,
-                error: [
+                error: error.message.includes('STALL_CLOSED')
+                    ? 'Open the stall before starting a sale.'
+                    : /fetch|network/i.test(error.message)
+                        ? 'Unable to reach the server. Check your connection and try again.'
+                    : [
                     error.message,
                     error.details,
                     error.hint,
                     error.code ? `Code: ${error.code}` : undefined,
-                ].filter(Boolean).join(' | '),
+                    ].filter(Boolean).join(' | '),
             };
         }
 
@@ -456,7 +471,9 @@ export const syncTransactionRecordWithResult = async (
 
         return {
             success: false,
-            error: getErrorMessage(error),
+            error: /fetch|network/i.test(getErrorMessage(error))
+                ? 'Unable to reach the server. Check your connection and try again.'
+                : getErrorMessage(error),
         };
     }
 };
@@ -487,7 +504,7 @@ export const loadRemoteSalesTransactions = async ({
 
     let query = supabase
         .from('sales_transaction')
-        .select('transaction_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date, product_listing_id, catalog_product_id, sold_quantity, sold_unit')
+        .select('transaction_id, business_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date, product_listing_id, catalog_product_id, sold_quantity, sold_unit')
         .order('transaction_date', { ascending: false });
 
     // Sales belong to a stall. The account filter is only a safe fallback for

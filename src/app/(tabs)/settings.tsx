@@ -34,13 +34,6 @@ const SETTINGS_ITEMS = [
         iconName: 'information-circle',
     },
     {
-        id: 'system-evaluation',
-        title: 'System Evaluation',
-        subtitle: 'Page for system evaluation',
-        iconSet: 'material',
-        iconName: 'clipboard-text-search-outline',
-    },
-    {
         id: 'test-sms',
         title: 'Test SMS',
         subtitle: 'Test developer OTP activation',
@@ -50,7 +43,7 @@ const SETTINGS_ITEMS = [
 ] as const;
 
 type IconSet = 'ionicons' | 'material';
-type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'system-evaluation' | 'test-sms';
+type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'test-sms';
 
 interface SettingItem {
     id: SettingId;
@@ -97,11 +90,6 @@ const Settings = () => {
 
         if (id === 'security') {
             router.push('/security');
-            return;
-        }
-
-        if (id === 'system-evaluation') {
-            router.push('/system-evaluation');
             return;
         }
 
