@@ -6,7 +6,12 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
+    Platform,
+    Alert,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -147,7 +152,117 @@ interface ChartViewProps {
 interface TransactionsViewProps {
     transactions: TransactionRecord[];
     onTransactionPress: (transactionId: string) => void;
+    businessName?: string | null;
+    stallNumber?: string | null;
 }
+
+const SALES_DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+});
+
+const MANILA_DATE_KEY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+const getDateKeyFromParts = (date: Date): string => (
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+);
+
+const getManilaTransactionDateKey = (createdAt: number): string => {
+    const date = new Date(createdAt);
+    if (Number.isNaN(date.getTime())) return '';
+    const parts = MANILA_DATE_KEY_FORMATTER.formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    return year && month && day ? `${year}-${month}-${day}` : '';
+};
+
+const escapeHtml = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const getTransactionNumericTotal = (transaction: TransactionRecord): number => {
+    if (Number.isFinite(transaction.totalDue)) return Number(transaction.totalDue);
+    return transaction.cartItems?.reduce((sum, item) => (
+        sum + (Number.isFinite(item.total) ? item.total : 0)
+    ), 0) ?? 0;
+};
+
+const createSalesPdfHtml = ({
+    transactions,
+    businessName,
+    stallNumber,
+    dateLabel,
+    categoryLabel,
+}: {
+    transactions: TransactionRecord[];
+    businessName?: string | null;
+    stallNumber?: string | null;
+    dateLabel: string;
+    categoryLabel: string;
+}): string => {
+    const totalSales = transactions.reduce((sum, transaction) => sum + getTransactionNumericTotal(transaction), 0);
+    const generatedAt = MANILA_DATE_TIME_FORMATTER.format(new Date());
+    const rows = transactions.map((transaction) => `
+        <tr>
+            <td>${escapeHtml(transaction.id)}</td>
+            <td>${escapeHtml(transaction.dateLabel)}</td>
+            <td>${escapeHtml(transaction.item)}</td>
+            <td>${escapeHtml(transaction.category)}</td>
+            <td class="amount">${escapeHtml(formatCurrency(getTransactionNumericTotal(transaction)))}</td>
+            <td>${transaction.synced ? 'Synced' : 'Pending'}</td>
+        </tr>
+    `).join('');
+
+    return `<!doctype html>
+    <html>
+        <head>
+            <meta charset="utf-8" />
+            <style>
+                @page { size: A4; margin: 34px; }
+                * { box-sizing: border-box; }
+                body { font-family: Arial, sans-serif; color: #20242d; font-size: 10px; margin: 0; }
+                h1 { color: #284aa8; font-size: 24px; margin: 0 0 4px; }
+                .subtitle { color: #626b7b; font-size: 11px; margin-bottom: 18px; }
+                .summary { display: flex; gap: 10px; margin-bottom: 18px; }
+                .summary-card { border: 1px solid #ccd3e2; border-radius: 8px; padding: 10px; flex: 1; }
+                .summary-label { color: #70798a; font-size: 9px; text-transform: uppercase; margin-bottom: 4px; }
+                .summary-value { color: #20242d; font-size: 14px; font-weight: bold; }
+                table { border-collapse: collapse; width: 100%; }
+                thead { display: table-header-group; }
+                th { background: #315bd7; color: white; padding: 8px 6px; text-align: left; }
+                td { border-bottom: 1px solid #dce0e8; padding: 8px 6px; vertical-align: top; }
+                tr { page-break-inside: avoid; }
+                .amount { text-align: right; white-space: nowrap; font-weight: bold; }
+                .footer { margin-top: 16px; border-top: 1px solid #ccd3e2; padding-top: 8px; color: #737b8a; }
+            </style>
+        </head>
+        <body>
+            <h1>Sales Report</h1>
+            <div class="subtitle">${escapeHtml(businessName || 'Point of Sale')} - ${escapeHtml(stallNumber ? `Stall ${stallNumber}` : 'No stall assigned')}</div>
+            <div class="summary">
+                <div class="summary-card"><div class="summary-label">Date</div><div class="summary-value">${escapeHtml(dateLabel)}</div></div>
+                <div class="summary-card"><div class="summary-label">Category</div><div class="summary-value">${escapeHtml(categoryLabel)}</div></div>
+                <div class="summary-card"><div class="summary-label">Transactions</div><div class="summary-value">${transactions.length}</div></div>
+                <div class="summary-card"><div class="summary-label">Total Sales</div><div class="summary-value">${escapeHtml(formatCurrency(totalSales))}</div></div>
+            </div>
+            <table>
+                <thead><tr><th>ID</th><th>Date</th><th>Items</th><th>Category</th><th class="amount">Amount</th><th>Status</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <div class="footer">Generated ${escapeHtml(generatedAt)} (Asia/Manila)</div>
+        </body>
+    </html>`;
+};
 
 const Sales = () => {
     const router = useRouter();
@@ -325,6 +440,8 @@ const Sales = () => {
                     : (
                         <TransactionsView
                             transactions={savedTransactions}
+                            businessName={currentUser?.businessName}
+                            stallNumber={currentUser?.stallNumber}
                             onTransactionPress={(transactionId) => {
                                 router.push({
                                     pathname: '/transaction-detail',
@@ -647,9 +764,14 @@ const ChartView = ({
 const TransactionsView = ({
     transactions = [],
     onTransactionPress,
+    businessName,
+    stallNumber,
 }: TransactionsViewProps) => {
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [isCategoryMenuOpen, setCategoryMenuOpen] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [isDatePickerOpen, setDatePickerOpen] = useState(false);
+    const [isExporting, setExporting] = useState(false);
 
     const categoryOptions = useMemo(() => {
         const uniqueCategories = Array.from(
@@ -664,12 +786,55 @@ const TransactionsView = ({
     }, [transactions]);
 
     const filteredTransactions = useMemo(() => {
-        if (selectedCategory === 'All') {
-            return transactions;
+        const selectedDateKey = selectedDate ? getDateKeyFromParts(selectedDate) : null;
+        return transactions.filter((transaction) => (
+            (selectedCategory === 'All' || transaction.category === selectedCategory)
+            && (!selectedDateKey || getManilaTransactionDateKey(transaction.createdAt) === selectedDateKey)
+        ));
+    }, [selectedCategory, selectedDate, transactions]);
+
+    const handleDateChange = (event: DateTimePickerEvent, nextDate?: Date) => {
+        if (Platform.OS === 'android') setDatePickerOpen(false);
+        if (event.type === 'set' && nextDate) setSelectedDate(nextDate);
+    };
+
+    const handleExportPdf = async () => {
+        if (filteredTransactions.length === 0 || isExporting) {
+            if (filteredTransactions.length === 0) {
+                Alert.alert('Nothing to export', 'No transactions match the selected filters.');
+            }
+            return;
         }
 
-        return transactions.filter((transaction) => transaction.category === selectedCategory);
-    }, [selectedCategory, transactions]);
+        setExporting(true);
+        try {
+            const dateLabel = selectedDate ? SALES_DATE_LABEL_FORMATTER.format(selectedDate) : 'All dates';
+            const html = createSalesPdfHtml({
+                transactions: filteredTransactions,
+                businessName,
+                stallNumber,
+                dateLabel,
+                categoryLabel: selectedCategory,
+            });
+            const canShare = await Sharing.isAvailableAsync();
+
+            if (canShare) {
+                const { uri } = await Print.printToFileAsync({ html, base64: false });
+                await Sharing.shareAsync(uri, {
+                    mimeType: 'application/pdf',
+                    dialogTitle: 'Save or share sales report',
+                    UTI: 'com.adobe.pdf',
+                });
+            } else {
+                await Print.printAsync({ html });
+            }
+        } catch (error) {
+            if (__DEV__) console.error('[SALES_EXPORT] PDF export failed:', error);
+            Alert.alert('Export failed', 'Unable to generate the sales PDF. Please try again.');
+        } finally {
+            setExporting(false);
+        }
+    };
 
     useEffect(() => {
         if (!categoryOptions.includes(selectedCategory)) {
@@ -680,10 +845,20 @@ const TransactionsView = ({
     return (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             <View style={styles.filtersRow}>
-                <View style={styles.filterPill}>
+                <Pressable
+                    style={[styles.filterPill, isDatePickerOpen && styles.filterPillActive]}
+                    onPress={() => {
+                        setCategoryMenuOpen(false);
+                        setDatePickerOpen(true);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Filter sales by date"
+                >
                     <Ionicons name="calendar" size={16} color="#2a2d34" />
-                    <Text style={styles.filterText}>mm/dd/yyyy</Text>
-                </View>
+                    <Text style={styles.filterText}>
+                        {selectedDate ? SALES_DATE_LABEL_FORMATTER.format(selectedDate) : 'All dates'}
+                    </Text>
+                </Pressable>
                 <Pressable
                     style={[styles.filterPill, isCategoryMenuOpen && styles.filterPillActive]}
                     onPress={() => setCategoryMenuOpen((previous) => !previous)}
@@ -695,11 +870,53 @@ const TransactionsView = ({
                         color="#6a6e77"
                     />
                 </Pressable>
-                <View style={[styles.filterPill, styles.exportPill]}>
-                    <MaterialCommunityIcons name="tray-arrow-down" size={16} color="#d85647" />
-                    <Text style={styles.exportText}>Export</Text>
-                </View>
+                <Pressable
+                    style={[
+                        styles.filterPill,
+                        styles.exportPill,
+                        (isExporting || filteredTransactions.length === 0) && styles.exportPillDisabled,
+                    ]}
+                    onPress={() => { void handleExportPdf(); }}
+                    disabled={isExporting}
+                    accessibilityRole="button"
+                    accessibilityLabel="Save displayed sales as PDF"
+                >
+                    {isExporting
+                        ? <ActivityIndicator size="small" color="#d85647" />
+                        : <MaterialCommunityIcons name="file-pdf-box" size={17} color="#d85647" />}
+                    <Text style={styles.exportText}>{isExporting ? 'Creating' : 'PDF'}</Text>
+                </Pressable>
             </View>
+
+            {isDatePickerOpen ? (
+                <View style={styles.datePickerCard}>
+                    <DateTimePicker
+                        value={selectedDate ?? new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                        maximumDate={new Date()}
+                        onChange={handleDateChange}
+                    />
+                    {Platform.OS === 'ios' ? (
+                        <Pressable style={styles.datePickerDone} onPress={() => setDatePickerOpen(false)}>
+                            <Text style={styles.datePickerDoneText}>Done</Text>
+                        </Pressable>
+                    ) : null}
+                </View>
+            ) : null}
+
+            {selectedDate ? (
+                <Pressable
+                    style={styles.clearDateButton}
+                    onPress={() => {
+                        setSelectedDate(null);
+                        setDatePickerOpen(false);
+                    }}
+                >
+                    <Ionicons name="close-circle-outline" size={16} color="#9a3f38" />
+                    <Text style={styles.clearDateText}>Clear date filter</Text>
+                </Pressable>
+            ) : null}
 
             {isCategoryMenuOpen ? (
                 <View style={styles.categoryMenuCard}>
@@ -743,7 +960,7 @@ const TransactionsView = ({
                 <View style={styles.emptyTransactionsWrap}>
                     <Text style={styles.emptyTransactionsTitle}>No matching transactions</Text>
                     <Text style={styles.emptyTransactionsText}>
-                        No transactions found for the selected category.
+                        No transactions found for the selected filters.
                     </Text>
                 </View>
             ) : null}
@@ -855,6 +1072,39 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         paddingBottom: 26,
+    },
+    datePickerCard: {
+        marginBottom: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#c7ccd9',
+        backgroundColor: '#f4f4f5',
+        overflow: 'hidden',
+    },
+    datePickerDone: {
+        alignSelf: 'flex-end',
+        marginRight: 12,
+        marginBottom: 10,
+        borderRadius: 8,
+        backgroundColor: '#2f5ada',
+        paddingHorizontal: 18,
+        paddingVertical: 9,
+    },
+    datePickerDoneText: {
+        color: '#ffffff',
+        fontWeight: '800',
+    },
+    clearDateButton: {
+        alignSelf: 'flex-start',
+        marginBottom: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    clearDateText: {
+        color: '#9a3f38',
+        fontSize: 12,
+        fontWeight: '700',
     },
     summaryWrap: {
         alignItems: 'center',
@@ -1199,6 +1449,9 @@ const styles = StyleSheet.create({
         borderColor: '#e16b5f',
         backgroundColor: '#fcefed',
         flex: 0.9,
+    },
+    exportPillDisabled: {
+        opacity: 0.55,
     },
     exportText: {
         fontSize: 14,
