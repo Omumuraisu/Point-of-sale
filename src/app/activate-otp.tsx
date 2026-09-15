@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,17 +11,22 @@ import { useVerificationFlow } from '../lib/verificationFlow';
 export default function ActivateOtpScreen() {
     const router = useRouter();
     const params = useLocalSearchParams<{ resendAfterSeconds?: string }>();
-    const { flow, markOtpVerified } = useVerificationFlow();
+    const { flow, markOtpVerified, clearFlow } = useVerificationFlow();
     const initialCountdown = Math.max(0, Number(params.resendAfterSeconds) || 60);
     const [otp, setOtp] = useState('');
     const [message, setMessage] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
     const [isResending, setIsResending] = useState(false);
     const [countdown, setCountdown] = useState(initialCountdown);
+    const isCancellingRef = useRef(false);
 
     useEffect(() => {
-        if (!flow) router.replace('/');
-        else if (flow.stage === 'password') router.replace('/create-password');
+        if (!flow) {
+            if (!isCancellingRef.current) router.replace('/');
+            return;
+        }
+
+        if (flow.stage === 'password') router.replace('/create-password');
     }, [flow, router]);
 
     useEffect(() => {
@@ -31,6 +36,22 @@ export default function ActivateOtpScreen() {
     }, [countdown]);
 
     if (!flow || flow.stage !== 'otp') return null;
+
+    const handleCancel = () => {
+        const origin = flow.origin;
+        isCancellingRef.current = true;
+        clearFlow();
+
+        if (origin === 'security') {
+            router.replace('/security');
+        } else if (origin === 'activation') {
+            router.replace('/activate-account');
+        } else if (origin === 'developer-test') {
+            router.replace('/activate-account');
+        } else {
+            router.replace('/forgot-password');
+        }
+    };
 
     const handleVerify = async () => {
         if (!/^\d{6}$/.test(otp)) {
@@ -124,11 +145,13 @@ export default function ActivateOtpScreen() {
 
     return (
         <SafeAreaView style={styles.screen}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={handleCancel}>
                 <Ionicons name="chevron-back" size={20} color="#fff" />
             </TouchableOpacity>
             <View style={styles.contentWrap}>
-                <Text style={styles.title}>Verify your Number</Text>
+                <Text style={styles.title}>
+                    {flow.origin === 'security' ? 'Verify Password Change' : 'Verify your Number'}
+                </Text>
                 <Text style={styles.subtitle}>Enter the 6-digit OTP sent to</Text>
                 <Text style={styles.subtitle}>{maskPhone(flow.phone)}</Text>
                 <View style={styles.iconCircle}>

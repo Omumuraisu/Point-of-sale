@@ -3,16 +3,18 @@ import React, { createContext, ReactNode, useContext, useMemo, useState } from '
 import type { VerificationPurpose } from './authFlow';
 
 type VerificationStage = 'otp' | 'password';
+export type VerificationOrigin = 'activation' | 'forgot-password' | 'security' | 'developer-test';
 
 export interface VerificationFlow {
     phone: string;
     purpose: VerificationPurpose;
+    origin: VerificationOrigin;
     stage: VerificationStage;
 }
 
 interface VerificationFlowContextValue {
     flow: VerificationFlow | null;
-    startFlow: (phone: string, purpose: VerificationPurpose) => void;
+    startFlow: (phone: string, purpose: VerificationPurpose, origin: VerificationOrigin) => void;
     markOtpVerified: () => void;
     clearFlow: () => void;
 }
@@ -24,7 +26,7 @@ export const VerificationFlowProvider = ({ children }: { children: ReactNode }) 
 
     const value = useMemo<VerificationFlowContextValue>(() => ({
         flow,
-        startFlow: (phone, purpose) => setFlow({ phone, purpose, stage: 'otp' }),
+        startFlow: (phone, purpose, origin) => setFlow({ phone, purpose, origin, stage: 'otp' }),
         markOtpVerified: () => setFlow((current) => (
             current ? { ...current, stage: 'password' } : null
         )),

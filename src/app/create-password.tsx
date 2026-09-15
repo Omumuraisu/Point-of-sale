@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -19,12 +19,29 @@ export default function CreatePasswordScreen() {
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [message, setMessage] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const isCancellingRef = useRef(false);
 
     useEffect(() => {
-        if (!flow || flow.stage !== 'password') router.replace('/');
+        if ((!flow || flow.stage !== 'password') && !isCancellingRef.current) router.replace('/');
     }, [flow, router]);
 
     if (!flow || flow.stage !== 'password') return null;
+
+    const handleCancel = () => {
+        const origin = flow.origin;
+        isCancellingRef.current = true;
+        clearFlow();
+
+        if (origin === 'security') {
+            router.replace('/security');
+        } else if (origin === 'activation') {
+            router.replace('/activate-account');
+        } else if (origin === 'developer-test') {
+            router.replace('/activate-account');
+        } else {
+            router.replace('/forgot-password');
+        }
+    };
 
     const handleSubmit = async () => {
         if (!isStrongPassword(password)) {
@@ -87,11 +104,17 @@ export default function CreatePasswordScreen() {
 
     return (
         <SafeAreaView style={styles.screen}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={handleCancel}>
                 <Ionicons name="chevron-back" size={20} color="#fff" />
             </TouchableOpacity>
             <View style={styles.contentWrap}>
-                <Text style={styles.title}>{flow.purpose === 'activation' ? 'Create Password' : 'New Password'}</Text>
+                <Text style={styles.title}>
+                    {flow.origin === 'security'
+                        ? 'Change Password'
+                        : flow.purpose === 'activation'
+                            ? 'Create Password'
+                            : 'New Password'}
+                </Text>
                 <Text style={styles.subtitle}>Use at least 8 characters with uppercase, lowercase, and a number.</Text>
                 <View style={styles.iconCircle}><Ionicons name="key" size={52} color="#212831" /></View>
                 {field('New Password', password, setPassword, showPassword, () => setShowPassword((value) => !value))}

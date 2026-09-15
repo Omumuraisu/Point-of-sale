@@ -61,7 +61,7 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
             resendAfterSeconds,
             debugId: typeof data?.debugId === 'string' ? data.debugId : null,
         });
-        startFlow(normalized, purpose);
+        startFlow(normalized, purpose, isActivation ? 'activation' : 'forgot-password');
         router.push({ pathname: '/activate-otp', params: { resendAfterSeconds } });
     };
 

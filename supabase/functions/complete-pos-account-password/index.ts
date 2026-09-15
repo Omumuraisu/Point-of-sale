@@ -8,6 +8,13 @@ type AccountRow = {
   user_type: string;
 };
 
+type AuthenticationMethod = string | {
+  method?: unknown;
+  timestamp?: unknown;
+};
+
+const MAX_OTP_AGE_SECONDS = 10 * 60;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -22,6 +29,40 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 
 const isStrongPassword = (password: string): boolean =>
   password.length >= 8 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password);
+
+const decodeJwtClaims = (token: string): Record<string, unknown> | null => {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const claims = JSON.parse(atob(padded));
+    return claims && typeof claims === "object" ? claims as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
+const hasRecentOtpAuthentication = (token: string): boolean => {
+  const claims = decodeJwtClaims(token);
+  const methods = Array.isArray(claims?.amr) ? claims.amr as AuthenticationMethod[] : [];
+  const issuedAt = typeof claims?.iat === "number" ? claims.iat : null;
+  const now = Math.floor(Date.now() / 1000);
+
+  return methods.some((entry) => {
+    const method = typeof entry === "string" ? entry : entry?.method;
+    if (method !== "otp") return false;
+
+    const rawTimestamp = typeof entry === "object" && typeof entry?.timestamp === "number"
+      ? entry.timestamp
+      : issuedAt;
+    if (rawTimestamp === null) return false;
+
+    const timestamp = rawTimestamp > 1_000_000_000_000 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
+    const ageSeconds = now - timestamp;
+    return ageSeconds >= -60 && ageSeconds <= MAX_OTP_AGE_SECONDS;
+  });
+};
 
 const hasEligibleProfile = async (
   admin: ReturnType<typeof createClient>,
@@ -84,6 +125,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const { data: userData, error: userError } = await authClient.auth.getUser(token);
   if (userError || !userData.user?.phone_confirmed_at) {
     return jsonResponse({ error: { message: "Verification has expired" } }, 401);
+  }
+  if (!hasRecentOtpAuthentication(token)) {
+    return jsonResponse({ error: { message: "Verify the one-time code before changing your password" } }, 401);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {

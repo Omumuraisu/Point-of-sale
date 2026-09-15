@@ -113,7 +113,7 @@ export default function TestSmsScreen() {
         const resendAfterSeconds = typeof data.resendAfterSeconds === 'number'
             ? data.resendAfterSeconds
             : 60;
-        startFlow(phone, 'activation');
+        startFlow(phone, 'activation', 'developer-test');
         debugLog('Activation flow initialized.', {
             debugId: data.debugId ?? null,
             phone: maskPhone(phone),
