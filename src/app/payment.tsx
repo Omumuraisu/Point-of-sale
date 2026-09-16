@@ -10,8 +10,11 @@ const PaymentRoute = () => {
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { isOpen } = useBusinessOperatingStatus();
-    const { cart } = useLocalSearchParams();
+    const { cart, preparedAt } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
+    const parsedPreparedAt = Number(typeof preparedAt === 'string' ? preparedAt : '');
+    const preparedAtRef = useRef(Number.isFinite(parsedPreparedAt) && parsedPreparedAt > 0 ? parsedPreparedAt : Date.now());
+    const clientOrderKeyRef = useRef(`checkout:${currentUser?.accountId ?? 'unknown'}:${preparedAtRef.current}`);
     const isSavingPaymentRef = useRef(false);
     const [isSavingPayment, setIsSavingPayment] = useState(false);
     const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -49,6 +52,8 @@ const PaymentRoute = () => {
                 totalDue,
                 accountId: currentUser.accountId,
                 username: currentUser.displayName,
+                clientOrderKey: clientOrderKeyRef.current,
+                preparedAt: preparedAtRef.current,
                 businessId: currentUser.businessId,
                 stallId: currentUser.stallId,
                 stallNumber: currentUser.stallNumber,
@@ -74,8 +79,11 @@ const PaymentRoute = () => {
                 pathname: '/payment-success',
                 params: {
                     cart: JSON.stringify(cartItems),
-                    paidAmount: Number.isFinite(paidAmount) ? paidAmount.toString() : '0',
-                    updatedAt: Date.now().toString(),
+                    orderId: result.transaction.orderId?.toString() ?? '',
+                    completedAt: result.transaction.completedAt?.toString() ?? '',
+                    paidAmount: result.transaction.paidAmount?.toString() ?? '0',
+                    totalDue: result.transaction.totalDue?.toString() ?? '0',
+                    changeAmount: result.transaction.changeAmount?.toString() ?? '0',
                 },
             });
         } catch (error) {
@@ -97,6 +105,7 @@ const PaymentRoute = () => {
             isConfirming={isSavingPayment}
             isStallOpen={isOpen === true}
             errorMessage={paymentError}
+            preparedAt={preparedAtRef.current}
         />
     );
 };

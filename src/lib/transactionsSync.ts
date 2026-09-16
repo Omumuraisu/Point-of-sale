@@ -6,6 +6,7 @@ import { notifyTransactionSyncChanged } from './transactionSyncEvents';
 
 interface SalesTransactionRow {
     transaction_id: number;
+    order_id: number | null;
     business_id: number | null;
     stall_id: string;
     stall_number: string | null;
@@ -21,11 +22,28 @@ interface SalesTransactionRow {
     catalog_product_id: string | null;
     sold_quantity: number | null;
     sold_unit: string | null;
+    sales_order: SalesOrderRow | SalesOrderRow[] | null;
+}
+
+interface SalesOrderRow {
+    order_id: number;
+    client_order_key: string;
+    total_due_php: number;
+    paid_amount_php: number;
+    change_amount_php: number;
+    completed_at: string;
 }
 
 interface TransactionSyncResult {
     success: boolean;
     error?: string;
+    order?: {
+        orderId: number;
+        completedAt: number;
+        totalDue: number;
+        paidAmount: number;
+        changeAmount: number;
+    };
 }
 
 interface OwnerContextRow {
@@ -111,12 +129,16 @@ const toTimestamp = (value: string): number => {
     return Number.isFinite(timestamp) ? timestamp : Date.now();
 };
 
-const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
+const getSalesOrder = (row: SalesTransactionRow): SalesOrderRow | null => (
+    Array.isArray(row.sales_order) ? row.sales_order[0] ?? null : row.sales_order
+);
+
+const toCartItem = (row: SalesTransactionRow): CartItem => {
     const createdAt = toTimestamp(row.transaction_date);
     const quantity = Number(row.sold_quantity ?? row.quantity_sold_kg) || 0;
     const unitPrice = Number(row.unit_price_php) || 0;
     const total = Number(row.total_revenue_php) || quantity * unitPrice;
-    const cartItem: CartItem = {
+    return {
         id: `sales-item-${row.transaction_id}`,
         name: row.product,
         category: row.category,
@@ -128,6 +150,14 @@ const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
         total,
         createdAt,
     };
+};
+
+const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
+    const createdAt = toTimestamp(row.transaction_date);
+    const cartItem = toCartItem(row);
+    const total = cartItem.total;
+    const quantity = cartItem.quantity;
+    const unitPrice = cartItem.pricePerUnit;
 
     return {
         id: `#${row.transaction_id}`,
@@ -146,6 +176,46 @@ const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
         cartItems: [cartItem],
         paidAmount: total,
         totalDue: total,
+        synced: true,
+        syncedAt: Date.now(),
+        syncAttempts: 0,
+    };
+};
+
+const toOrderTransactionRecord = (rows: SalesTransactionRow[]): TransactionRecord => {
+    const first = rows[0];
+    const order = getSalesOrder(first);
+    const cartItems = rows.map(toCartItem);
+    const completedAt = toTimestamp(order?.completed_at ?? first.transaction_date);
+    const calculatedTotal = cartItems.reduce((sum, item) => sum + item.total, 0);
+    const totalDue = Number(order?.total_due_php ?? calculatedTotal) || calculatedTotal;
+    const paidAmount = Number(order?.paid_amount_php ?? totalDue) || totalDue;
+    const categories = Array.from(new Set(cartItems.map((item) => item.category).filter(Boolean)));
+    const category = categories.length === 1 ? categories[0] : 'Mixed';
+    const firstItem = cartItems[0];
+    const item = cartItems.length > 1 ? `${firstItem.name} +${cartItems.length - 1} more` : firstItem.name;
+
+    return {
+        id: `#${order?.order_id ?? first.order_id}`,
+        orderId: order?.order_id ?? first.order_id ?? undefined,
+        clientOrderKey: order?.client_order_key,
+        accountId: first.account_id,
+        businessId: first.business_id,
+        username: first.username,
+        stallId: first.stall_id,
+        stallNumber: first.stall_number,
+        item,
+        amount: formatCurrency(totalDue),
+        subtitle: `${cartItems.length} item${cartItems.length === 1 ? '' : 's'} • Paid ${formatCurrency(paidAmount)}`,
+        category,
+        categoryType: getCategoryType(category),
+        dateLabel: formatTransactionDate(completedAt),
+        createdAt: completedAt,
+        completedAt,
+        cartItems,
+        paidAmount,
+        totalDue,
+        changeAmount: Number(order?.change_amount_php ?? Math.max(paidAmount - totalDue, 0)),
         synced: true,
         syncedAt: Date.now(),
         syncAttempts: 0,
@@ -430,8 +500,13 @@ export const syncTransactionRecordWithResult = async (
             return { success: false, error: 'Transaction is missing required sync fields: businessId.' };
         }
 
-        const { error } = await supabase.rpc('record_open_stall_sale', {
+        const clientOrderKey = transactionForSync.clientOrderKey
+            ?? `legacy:${transactionForSync.accountId}:${transactionForSync.createdAt}:${transactionForSync.id}`;
+        const paidAmount = transactionForSync.paidAmount ?? transactionForSync.totalDue ?? 0;
+        const { data, error } = await supabase.rpc('record_open_stall_sale', {
             p_business_id: transactionForSync.businessId,
+            p_client_order_key: clientOrderKey,
+            p_paid_amount: paidAmount,
             p_rows: rows,
         });
 
@@ -460,9 +535,30 @@ export const syncTransactionRecordWithResult = async (
             };
         }
 
-        logSyncDebug('transaction synced', { transactionId: transaction.id });
+        const response = (Array.isArray(data) ? data[0] : data) as {
+            order_id?: number;
+            completed_at?: string;
+            total_due_php?: number;
+            paid_amount_php?: number;
+            change_amount_php?: number;
+        } | null;
 
-        return { success: true };
+        if (!response?.order_id || !response.completed_at) {
+            return { success: false, error: 'The server recorded no order metadata. Please try again.' };
+        }
+
+        logSyncDebug('transaction synced', { transactionId: transaction.id, orderId: response.order_id });
+
+        return {
+            success: true,
+            order: {
+                orderId: Number(response.order_id),
+                completedAt: toTimestamp(response.completed_at),
+                totalDue: Number(response.total_due_php ?? transactionForSync.totalDue ?? 0),
+                paidAmount: Number(response.paid_amount_php ?? paidAmount),
+                changeAmount: Number(response.change_amount_php ?? 0),
+            },
+        };
     } catch (error) {
         logSyncError('sales_transaction sync threw exception', {
             transactionId: transaction.id,
@@ -504,7 +600,7 @@ export const loadRemoteSalesTransactions = async ({
 
     let query = supabase
         .from('sales_transaction')
-        .select('transaction_id, business_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date, product_listing_id, catalog_product_id, sold_quantity, sold_unit')
+        .select('transaction_id, order_id, business_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date, product_listing_id, catalog_product_id, sold_quantity, sold_unit, sales_order(order_id, client_order_key, total_due_php, paid_amount_php, change_amount_php, completed_at)')
         .order('transaction_date', { ascending: false });
 
     // Sales belong to a stall. The account filter is only a safe fallback for
@@ -523,7 +619,24 @@ export const loadRemoteSalesTransactions = async ({
         return [];
     }
 
-    return (data as SalesTransactionRow[]).map(toTransactionRecord);
+    const rows = data as unknown as SalesTransactionRow[];
+    const groupedRows = new Map<number, SalesTransactionRow[]>();
+    const legacyTransactions: TransactionRecord[] = [];
+
+    rows.forEach((row) => {
+        if (!row.order_id) {
+            legacyTransactions.push(toTransactionRecord(row));
+            return;
+        }
+        const existing = groupedRows.get(row.order_id) ?? [];
+        existing.push(row);
+        groupedRows.set(row.order_id, existing);
+    });
+
+    return [
+        ...Array.from(groupedRows.values()).map(toOrderTransactionRecord),
+        ...legacyTransactions,
+    ].sort((first, second) => second.createdAt - first.createdAt);
 };
 
 export const syncUnsyncedTransactions = async (accountId?: number): Promise<{ attempted: number; synced: number }> => {

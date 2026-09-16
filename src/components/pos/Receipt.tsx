@@ -1,8 +1,9 @@
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { CartItem } from '../../lib/types';
 import { formatCurrency } from '../../lib/utils';
+import { formatTransactionDate } from '../../lib/utils';
 
 interface ReceiptProps {
     cartItems?: CartItem[];
@@ -12,9 +13,10 @@ interface ReceiptProps {
     onConfirm: () => void;
     isConfirming?: boolean;
     isStallOpen?: boolean;
+    preparedAt: number;
 }
 
-const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isConfirming = false, isStallOpen = false }: ReceiptProps) => {
+const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isConfirming = false, isStallOpen = false, preparedAt }: ReceiptProps) => {
     const insets = useSafeAreaInsets();
     const totalAmount = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -63,10 +65,6 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                             </View>
                             <View style={styles.itemRight}>
                                 <Text style={styles.itemPrice}>{formatCurrency(item.total)}</Text>
-                                <View style={styles.rowActions}>
-                                    <Ionicons name="trash-outline" size={14} color="#8f9196" />
-                                    <Ionicons name="create-outline" size={14} color="#8f9196" />
-                                </View>
                             </View>
                         </View>
                     ))}
@@ -78,8 +76,8 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                 </ScrollView>
 
                 <View style={styles.cardFooter}>
-                    <Text style={styles.orderText}>Order No. 123</Text>
-                    <Text style={styles.orderText}>February 12, 2026 * 11:46 AM</Text>
+                    <Text style={styles.orderText}>Order No. Pending</Text>
+                    <Text style={styles.orderText}>Prepared {formatTransactionDate(preparedAt)}</Text>
                 </View>
             </View>
 
@@ -226,11 +224,6 @@ const styles = StyleSheet.create({
         fontSize: 33 / 2,
         fontWeight: '800',
         color: '#12131a',
-    },
-    rowActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
     },
     addMoreRow: {
         marginTop: 12,

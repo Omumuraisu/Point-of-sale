@@ -1011,7 +1011,9 @@ const TransactionsView = ({
 
                             <View style={styles.transactionFooterRow}>
                                 <View style={styles.transactionFooterLeft}>
-                                    <Text style={styles.transactionFooterBold}>Transaction ID: {transaction.id}</Text>
+                                    <Text style={styles.transactionFooterBold}>
+                                        {transaction.orderId ? `Order No. #${transaction.orderId}` : `Transaction ID: ${transaction.id}`}
+                                    </Text>
                                     <View style={[styles.syncPill, syncStatus.pillStyle]}>
                                         <Text style={[styles.syncText, syncStatus.textStyle]}>{syncStatus.label}</Text>
                                     </View>
@@ -1021,7 +1023,7 @@ const TransactionsView = ({
                                         </Text>
                                     ) : null}
                                 </View>
-                                <Text style={styles.transactionFooter}>{transaction.dateLabel || 'Feb. 12, 2026 | 11:24AM'}</Text>
+                                <Text style={styles.transactionFooter}>{transaction.dateLabel || 'Date unavailable'}</Text>
                             </View>
                         </Pressable>
                     );

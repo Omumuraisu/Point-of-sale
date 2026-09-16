@@ -22,6 +22,8 @@ export const toTransaction = ({
     createdAt,
     accountId,
     username,
+    clientOrderKey,
+    preparedAt,
     businessId,
     stallId,
     stallNumber,
@@ -52,6 +54,7 @@ export const toTransaction = ({
 
     return {
         id: transactionId,
+        clientOrderKey,
         accountId,
         username,
         businessId: businessId ?? null,
@@ -64,6 +67,7 @@ export const toTransaction = ({
         categoryType: getCategoryType(category),
         dateLabel: formatTransactionDate(createdAt),
         createdAt,
+        preparedAt,
         cartItems,
         paidAmount: paidValue,
         totalDue: settledAmount,

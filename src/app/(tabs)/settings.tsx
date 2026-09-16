@@ -8,7 +8,7 @@ const SETTINGS_ITEMS = [
     {
         id: 'profile',
         title: 'Profile',
-        subtitle: 'Change name, picture, number',
+        subtitle: 'Change name and picture',
         iconSet: 'ionicons',
         iconName: 'person',
     },

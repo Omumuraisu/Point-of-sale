@@ -49,13 +49,11 @@ const Profile = () => {
     const router = useRouter();
     const { currentUser, updateCurrentUser } = useAuthSession();
     const [name, setName] = useState('');
-    const [phone, setPhone] = useState('');
     const [selectedPhoto, setSelectedPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         setName(currentUser?.displayName ?? '');
-        setPhone(currentUser?.phoneNumber ?? '');
         setSelectedPhoto(null);
     }, [currentUser]);
 
@@ -211,14 +209,12 @@ const Profile = () => {
                     />
 
                     <Text style={styles.sectionTitle}>Verified Phone Number</Text>
-                    <TextInput
-                        style={[styles.input, styles.readOnlyInput]}
-                        value={phone}
-                        placeholder="Phone number"
-                        placeholderTextColor="#8f939c"
-                        keyboardType="phone-pad"
-                        editable={false}
-                    />
+                    <View style={styles.phoneInfoRow}>
+                        <Ionicons name="call-outline" size={20} color="#626976" />
+                        <Text style={styles.phoneInfoText}>
+                            {currentUser?.phoneNumber ?? 'No verified phone number'}
+                        </Text>
+                    </View>
 
                     <View style={styles.saveRow}>
                         <Pressable style={styles.saveBtn} onPress={handleSave} disabled={isSaving}>
@@ -338,7 +334,24 @@ const styles = StyleSheet.create({
         color: '#242a32',
         marginBottom: 8,
     },
-    readOnlyInput: { color: '#6f7480', backgroundColor: '#e5e7ed' },
+    phoneInfoRow: {
+        minHeight: 48,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#c5c9d3',
+        backgroundColor: '#e5e7ed',
+        paddingHorizontal: 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 8,
+    },
+    phoneInfoText: {
+        flex: 1,
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#565d69',
+    },
     saveRow: {
         marginTop: 14,
         alignItems: 'flex-end',

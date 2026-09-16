@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthSession } from '../../../lib/authSession';
 import { useUnreadNotificationCount } from '../../../lib/useUnreadNotificationCount';
@@ -42,9 +42,6 @@ const POSHeader = () => {
                             </Text>
                         </View>
                     ) : null}
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.primaryActionBtn]}>
-                    <MaterialCommunityIcons name="cash-register" size={20} color="#ffffff" />
                 </TouchableOpacity>
             </View>
         </View>
@@ -104,10 +101,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#d3d7e1',
         position: 'relative',
-    },
-    primaryActionBtn: {
-        backgroundColor: '#305ddf',
-        borderColor: '#305ddf',
     },
     badgeDot: {
         minWidth: 18,

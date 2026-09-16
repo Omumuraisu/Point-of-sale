@@ -2,11 +2,15 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CartItem } from '../../lib/types';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatTransactionDate } from '../../lib/utils';
 
 interface PaymentSuccessProps {
     cartItems?: CartItem[];
     paidAmount?: number;
+    totalDue?: number;
+    changeAmount?: number;
+    orderId: number;
+    completedAt: number;
     onNewSale: () => void;
     onBackHome: () => void;
 }
@@ -14,14 +18,19 @@ interface PaymentSuccessProps {
 const PaymentSuccess = ({
     cartItems = [],
     paidAmount = 0,
+    totalDue,
+    changeAmount = 0,
+    orderId,
+    completedAt,
     onNewSale,
     onBackHome,
 }: PaymentSuccessProps) => {
     const insets = useSafeAreaInsets();
-    const totalAmount = cartItems.reduce(
+    const cartTotal = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
         0,
     );
+    const totalAmount = Number.isFinite(totalDue) ? Number(totalDue) : cartTotal;
 
     return (
         <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -36,7 +45,7 @@ const PaymentSuccess = ({
 
             <View style={styles.card}>
                 <Text style={styles.amountLabel}>Total Amount Paid</Text>
-                <Text style={styles.amountValue}>{formatCurrency(totalAmount)}</Text>
+                <Text style={styles.amountValue}>{formatCurrency(paidAmount)}</Text>
 
                 <Text style={styles.sectionTitle}>Receipt Details</Text>
 
@@ -59,9 +68,11 @@ const PaymentSuccess = ({
                 </ScrollView>
 
                 <View style={styles.cardFooter}>
-                    <Text style={styles.orderText}>Transaction ID: #{Math.floor(Date.now() / 1000)}</Text>
-                    <Text style={styles.orderText}>{new Date().toLocaleString()}</Text>
+                    <Text style={styles.orderText}>{orderId > 0 ? `Order No. #${orderId}` : 'Order number unavailable'}</Text>
+                    <Text style={styles.orderText}>{completedAt > 0 ? formatTransactionDate(completedAt) : 'Completion time unavailable'}</Text>
+                    <Text style={styles.orderText}>Total: {formatCurrency(totalAmount)}</Text>
                     <Text style={styles.orderText}>Paid: {formatCurrency(Number(paidAmount || 0))}</Text>
+                    <Text style={styles.orderText}>Change: {formatCurrency(changeAmount)}</Text>
                 </View>
             </View>
 

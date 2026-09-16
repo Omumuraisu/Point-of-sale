@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SaveReceiptTransactionInput, TransactionRecord } from '../../lib/types';
-import { isTransactionRecord, toTransaction } from '../../lib/utils';
+import { formatCurrency, formatTransactionDate, isTransactionRecord, toTransaction } from '../../lib/utils';
 
 const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
 const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
@@ -120,10 +120,21 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
         const result = await syncTransactionRecordWithResult(transaction);
         const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
 
-        if (result.success) {
+        if (result.success && result.order) {
             const syncedAt = Date.now();
+            const itemCount = transaction.cartItems?.length ?? 0;
             const syncedTransaction: TransactionRecord = {
                 ...transaction,
+                id: `#${result.order.orderId}`,
+                orderId: result.order.orderId,
+                createdAt: result.order.completedAt,
+                completedAt: result.order.completedAt,
+                dateLabel: formatTransactionDate(result.order.completedAt),
+                amount: formatCurrency(result.order.totalDue),
+                subtitle: `${itemCount} item${itemCount === 1 ? '' : 's'} • Paid ${formatCurrency(result.order.paidAmount)}`,
+                totalDue: result.order.totalDue,
+                paidAmount: result.order.paidAmount,
+                changeAmount: result.order.changeAmount,
                 synced: true,
                 syncedAt,
                 syncError: undefined,

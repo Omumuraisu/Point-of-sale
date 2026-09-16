@@ -26,6 +26,10 @@ const TransactionDetail = ({ transaction, onBack }: TransactionDetailProps) => {
         ? Number(transaction?.paidAmount)
         : totalAmount;
 
+    const changeAmount = Number.isFinite(transaction?.changeAmount)
+        ? Number(transaction?.changeAmount)
+        : Math.max(paidAmount - totalAmount, 0);
+
     const fallbackItem: CartItem[] = transaction
         ? [
             {
@@ -81,9 +85,13 @@ const TransactionDetail = ({ transaction, onBack }: TransactionDetailProps) => {
                         </ScrollView>
 
                         <View style={styles.cardFooter}>
-                            <Text style={styles.orderText}>Transaction ID: {transaction.id}</Text>
+                            <Text style={styles.orderText}>
+                                {transaction.orderId ? `Order No. #${transaction.orderId}` : `Transaction ID: ${transaction.id}`}
+                            </Text>
                             <Text style={styles.orderText}>{transaction.dateLabel}</Text>
+                            <Text style={styles.orderText}>Total: {formatCurrency(totalAmount)}</Text>
                             <Text style={styles.orderText}>Paid: {formatCurrency(paidAmount)}</Text>
+                            <Text style={styles.orderText}>Change: {formatCurrency(changeAmount)}</Text>
                         </View>
                     </>
                 ) : (

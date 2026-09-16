@@ -3,6 +3,8 @@ import { TransactionCategoryType } from './category';
 
 export interface TransactionRecord {
     id: string;
+    orderId?: number;
+    clientOrderKey?: string;
     accountId?: number;
     username?: string;
     businessId?: number | null;
@@ -15,9 +17,12 @@ export interface TransactionRecord {
     categoryType: TransactionCategoryType;
     dateLabel: string;
     createdAt: number;
+    preparedAt?: number;
+    completedAt?: number;
     cartItems?: CartItem[];
     paidAmount?: number;
     totalDue?: number;
+    changeAmount?: number;
     synced?: boolean;
     syncedAt?: number;
     syncError?: string;
@@ -30,6 +35,8 @@ export interface SaveReceiptTransactionInput {
     totalDue: number;
     accountId: number;
     username: string;
+    clientOrderKey: string;
+    preparedAt: number;
     businessId?: number | null;
     stallId?: string | null;
     stallNumber?: string | null;

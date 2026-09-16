@@ -57,6 +57,11 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
 
     const hasValidUsername = value.username === undefined || typeof value.username === 'string';
 
+    const hasValidOrderId = value.orderId === undefined
+        || (typeof value.orderId === 'number' && Number.isFinite(value.orderId));
+
+    const hasValidClientOrderKey = value.clientOrderKey === undefined || typeof value.clientOrderKey === 'string';
+
     const hasValidBusinessId = value.businessId === undefined
         || value.businessId === null
         || (typeof value.businessId === 'number' && Number.isFinite(value.businessId));
@@ -74,6 +79,15 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
 
     const hasValidTotalDue = value.totalDue === undefined
         || (typeof value.totalDue === 'number' && Number.isFinite(value.totalDue));
+
+    const hasValidPreparedAt = value.preparedAt === undefined
+        || (typeof value.preparedAt === 'number' && Number.isFinite(value.preparedAt));
+
+    const hasValidCompletedAt = value.completedAt === undefined
+        || (typeof value.completedAt === 'number' && Number.isFinite(value.completedAt));
+
+    const hasValidChangeAmount = value.changeAmount === undefined
+        || (typeof value.changeAmount === 'number' && Number.isFinite(value.changeAmount));
 
     const hasValidSynced = value.synced === undefined || typeof value.synced === 'boolean';
 
@@ -96,12 +110,17 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
         && Number.isFinite(value.createdAt)
         && hasValidAccountId
         && hasValidUsername
+        && hasValidOrderId
+        && hasValidClientOrderKey
         && hasValidBusinessId
         && hasValidStallId
         && hasValidStallNumber
         && hasValidCartItems
         && hasValidPaidAmount
         && hasValidTotalDue
+        && hasValidPreparedAt
+        && hasValidCompletedAt
+        && hasValidChangeAmount
         && hasValidSynced
         && hasValidSyncedAt
         && hasValidSyncError

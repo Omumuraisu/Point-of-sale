@@ -15,6 +15,7 @@ const ReceiptRoute = () => {
     const { cart } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
     const isConfirmingRef = useRef(false);
+    const preparedAtRef = useRef(Date.now());
     const [isConfirming, setIsConfirming] = useState(false);
 
     useFocusEffect(
@@ -62,6 +63,7 @@ const ReceiptRoute = () => {
             pathname: '/payment',
             params: {
                 cart: JSON.stringify(cartItems),
+                preparedAt: preparedAtRef.current.toString(),
                 updatedAt: Date.now().toString(),
             },
         });
@@ -76,6 +78,7 @@ const ReceiptRoute = () => {
             onConfirm={handleConfirm}
             isConfirming={isConfirming}
             isStallOpen={isOpen === true}
+            preparedAt={preparedAtRef.current}
         />
     );
 };

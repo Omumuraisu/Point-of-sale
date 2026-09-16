@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatTransactionDate } from '../../lib/utils';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 
@@ -13,9 +13,10 @@ interface PaymentProps {
     isConfirming?: boolean;
     isStallOpen?: boolean;
     errorMessage?: string | null;
+    preparedAt: number;
 }
 
-const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false, isStallOpen = false, errorMessage }: PaymentProps) => {
+const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false, isStallOpen = false, errorMessage, preparedAt }: PaymentProps) => {
     const insets = useSafeAreaInsets();
     const [amountInput, setAmountInput] = useState('');
 
@@ -85,7 +86,8 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
                         <View style={styles.cartBadge}>
                             <Ionicons name="cart" size={28} color="#315bd7" />
                         </View>
-                        <Text style={styles.orderText}>Order No. 123</Text>
+                        <Text style={styles.orderText}>Order No. Pending</Text>
+                        <Text style={styles.orderDateText}>{formatTransactionDate(preparedAt)}</Text>
                     </View>
                 </View>
 
@@ -274,6 +276,14 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingTop: 16,
         paddingBottom: 12,
+    },
+    orderDateText: {
+        marginTop: 3,
+        maxWidth: 125,
+        textAlign: 'center',
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#969aa4',
     },
     errorBanner: {
         marginTop: 12,

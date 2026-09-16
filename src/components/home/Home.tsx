@@ -102,9 +102,6 @@ export default function Home() {
                                 </View>
                             ) : null}
                         </Pressable>
-                        <Pressable style={[styles.actionBtn, styles.primaryBtn]}>
-                            <Ionicons name="print-outline" size={18} color="#ffffff" />
-                        </Pressable>
                     </View>
                 </View>
 
@@ -250,10 +247,6 @@ const styles = StyleSheet.create({
     },
     lightBtn: {
         backgroundColor: '#f3f3f3',
-    },
-    primaryBtn: {
-        backgroundColor: '#305ddf',
-        borderColor: '#305ddf',
     },
     dot: {
         position: 'absolute',
