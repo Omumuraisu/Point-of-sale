@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { CategoryType } from '../../lib/types';
 import { CATEGORY_ITEMS, createCustomCategory, normalizeCategoryLabel } from './data';
 import { flattenCatalog, loadProductCatalog } from './catalogStore';
+import { debugError, debugLog, debugWarn } from '../../lib/debugLogging';
 
 const LEGACY_PRODUCTS_KEY = '@pos/products';
 const LEGACY_PRODUCTS_FALLBACK_KEY = 'pos-products';
@@ -39,6 +40,23 @@ export interface SavedProductRecord {
     syncError?: string;
 }
 
+export interface ProductMutationResult {
+    product: SavedProductRecord | null;
+    localSaved: boolean;
+    synced: boolean;
+    syncState: ProductSyncState;
+    pendingAction?: ProductPendingAction;
+    error?: string;
+}
+
+export interface ProductSyncSummary {
+    attempted: number;
+    synced: number;
+    failed: number;
+    pending: number;
+    error?: string;
+}
+
 export type ProductCatalogItem = SavedProductRecord;
 
 export interface SaveProductInput {
@@ -66,6 +84,13 @@ const identity = (product: Pick<SavedProductRecord, 'catalogProductId' | 'mainCa
     product.catalogProductId ?? [product.mainCategory, product.section, product.name, product.variant]
         .map((value) => normalizeCategoryLabel(value).toLowerCase()).join('::');
 const newListingId = () => `pos-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+const productSyncListeners = new Set<() => void>();
+const emitProductSyncChange = () => productSyncListeners.forEach((listener) => listener());
+
+export const subscribeToProductSyncChanges = (listener: () => void) => {
+    productSyncListeners.add(listener);
+    return () => { productSyncListeners.delete(listener); };
+};
 
 const isSavedProduct = (value: unknown): value is SavedProductRecord => {
     if (!value || typeof value !== 'object') return false;
@@ -149,15 +174,31 @@ export const migrateLegacyProducts = async (scope: ProductScope) => {
 };
 
 export const loadScopedProducts = async (scope: ProductScope): Promise<SavedProductRecord[]> => {
+    const startedAt = Date.now();
     await migrateLegacyProducts(scope);
     const local = await loadSavedProducts(scope);
-    if (!isSupabaseConfigured || !supabase) return local.filter((item) => !item.archivedAt);
+    if (!isSupabaseConfigured || !supabase) {
+        debugWarn('product-sync', 'product load using local cache', {
+            stallNumber: scope.stallNumber, localCount: local.length, reason: 'Supabase is not configured.',
+        });
+        return local.filter((item) => !item.archivedAt);
+    }
     const { data, error } = await supabase.rpc('get_catalog_listings', { p_stall_number: scope.stallNumber });
-    if (error) return local.filter((item) => !item.archivedAt);
+    if (error) {
+        debugError('product-sync', 'remote product load failed', {
+            stallNumber: scope.stallNumber, localCount: local.length, message: error.message,
+            durationMs: Date.now() - startedAt,
+        });
+        return local.filter((item) => !item.archivedAt);
+    }
     const remote = (await Promise.all(((data ?? []) as ProductsListRow[]).map((row) => fromRemote(scope, row))))
         .filter((item): item is SavedProductRecord => Boolean(item));
     const merged = mergeByIdentity(remote, local.filter((item) => item.syncState !== 'synced'));
     await persist(scope, merged);
+    debugLog('product-sync', 'products loaded and merged', {
+        stallNumber: scope.stallNumber, localCount: local.length, remoteCount: remote.length,
+        mergedCount: merged.length, durationMs: Date.now() - startedAt,
+    });
     return merged.filter((item) => !item.archivedAt);
 };
 
@@ -187,8 +228,43 @@ export const getListingIdAliases = async (scope: ProductScope): Promise<Record<s
     } catch { return {}; }
 };
 
-export const syncProductRecord = async (scope: ProductScope, product: SavedProductRecord): Promise<SavedProductRecord | null> => {
-    if (!isSupabaseConfigured || !supabase) return null;
+const failedResult = async (
+    scope: ProductScope,
+    product: SavedProductRecord,
+    message: string,
+): Promise<ProductMutationResult> => {
+    const failed = { ...product, syncState: 'error' as const, syncError: message };
+    const all = await loadSavedProducts(scope);
+    await persist(scope, all.map((item) => item.id === product.id ? failed : item));
+    emitProductSyncChange();
+    return {
+        product: failed,
+        localSaved: true,
+        synced: false,
+        syncState: 'error',
+        pendingAction: failed.pendingAction,
+        error: message,
+    };
+};
+
+export const syncProductRecord = async (
+    scope: ProductScope,
+    product: SavedProductRecord,
+    trigger: 'mutation' | 'automatic' | 'manual' = 'mutation',
+): Promise<ProductMutationResult> => {
+    const startedAt = Date.now();
+    const operation = product.pendingAction ?? 'create';
+    debugLog('product-sync', 'product sync started', {
+        trigger, operation, listingId: product.id, stallNumber: scope.stallNumber,
+    });
+    if (!isSupabaseConfigured || !supabase) {
+        const message = 'Unable to sync this product because Supabase is not configured.';
+        debugError('product-sync', 'product sync unavailable', {
+            trigger, operation, listingId: product.id, stallNumber: scope.stallNumber,
+            message, durationMs: Date.now() - startedAt,
+        });
+        return failedResult(scope, product, message);
+    }
     const rpc = product.pendingAction === 'archive' ? 'archive_catalog_listing'
         : product.pendingAction === 'update' ? 'update_catalog_listing' : 'create_catalog_listing';
     const args = product.pendingAction === 'archive'
@@ -199,23 +275,56 @@ export const syncProductRecord = async (scope: ProductScope, product: SavedProdu
                 p_main_category: product.mainCategory, p_section: product.section, p_price: product.pricePerUnit,
                 p_unit: product.unit, p_category_id: product.categoryId, p_category_label: product.categoryLabel,
                 p_variant: product.variant };
-    const { data, error } = await supabase.rpc(rpc, args);
-    if (error) {
-        const all = await loadSavedProducts(scope);
-        await persist(scope, all.map((item) => item.id === product.id ? { ...item, syncState: 'error', syncError: error.message } : item));
-        return null;
+    try {
+        const { data, error } = await supabase.rpc(rpc, args);
+        if (error) {
+            debugError('product-sync', 'product sync failed', {
+                trigger, operation, rpc, listingId: product.id, stallNumber: scope.stallNumber,
+                message: error.message, code: error.code, durationMs: Date.now() - startedAt,
+            });
+            return failedResult(scope, product, error.message);
+        }
+        if (product.pendingAction === 'archive') {
+            const all = await loadSavedProducts(scope);
+            await persist(scope, all.filter((item) => item.id !== product.id));
+            emitProductSyncChange();
+            debugLog('product-sync', 'product sync succeeded', {
+                trigger, operation, rpc, listingId: product.id, stallNumber: scope.stallNumber,
+                durationMs: Date.now() - startedAt,
+            });
+            return { product: { ...product, syncState: 'synced', pendingAction: undefined, syncError: undefined },
+                localSaved: true, synced: true, syncState: 'synced' };
+        }
+        const synced = await applyRpcResult(scope, product.id, (Array.isArray(data) ? data[0] : data) as ProductsListRow);
+        if (!synced) {
+            const message = 'The server returned an invalid product record.';
+            debugError('product-sync', 'product sync returned invalid data', {
+                trigger, operation, rpc, listingId: product.id, stallNumber: scope.stallNumber,
+                durationMs: Date.now() - startedAt,
+            });
+            return failedResult(scope, product, message);
+        }
+        emitProductSyncChange();
+        debugLog('product-sync', 'product sync succeeded', {
+            trigger, operation, rpc, listingId: synced.id, stallNumber: scope.stallNumber,
+            durationMs: Date.now() - startedAt,
+        });
+        return { product: synced, localSaved: true, synced: true, syncState: 'synced' };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected product synchronization error.';
+        debugError('product-sync', 'product sync threw an exception', {
+            trigger, operation, rpc, listingId: product.id, stallNumber: scope.stallNumber,
+            message, durationMs: Date.now() - startedAt,
+        });
+        return failedResult(scope, product, message);
     }
-    if (product.pendingAction === 'archive') {
-        const all = await loadSavedProducts(scope);
-        await persist(scope, all.filter((item) => item.id !== product.id));
-        return product;
-    }
-    return applyRpcResult(scope, product.id, (Array.isArray(data) ? data[0] : data) as ProductsListRow);
 };
 
-export const saveProductRecord = async (scope: ProductScope, input: SaveProductInput): Promise<SavedProductRecord | null> => {
+export const saveProductRecord = async (scope: ProductScope, input: SaveProductInput): Promise<ProductMutationResult> => {
     if (!input.name.trim() || !input.mainCategory.trim() || !input.section.trim()
-        || !Number.isFinite(input.pricePerUnit) || input.pricePerUnit <= 0 || !isProductUnit(input.unit)) return null;
+        || !Number.isFinite(input.pricePerUnit) || input.pricePerUnit <= 0 || !isProductUnit(input.unit)) {
+        return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'Enter a valid product, positive selling price, and unit.' };
+    }
     const existing = await loadSavedProducts(scope);
     const candidate = { ...input, variant: input.variant?.trim() ?? '' };
     const duplicate = existing.find((item) => !item.archivedAt && identity(item) === identity(candidate as SavedProductRecord));
@@ -229,38 +338,97 @@ export const saveProductRecord = async (scope: ProductScope, input: SaveProductI
         syncState: 'pending', pendingAction: duplicate?.syncState === 'synced' ? 'update' : 'create',
     };
     await persist(scope, [record, ...existing.filter((item) => item.id !== record.id)]);
-    return (await syncProductRecord(scope, record)) ?? record;
+    emitProductSyncChange();
+    return syncProductRecord(scope, record);
 };
 
-export const updateProductRecord = async (scope: ProductScope, productId: string, pricePerUnit: number, unit: ProductUnit) => {
-    if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0 || !isProductUnit(unit)) return null;
-    const existing = await loadSavedProducts(scope);
-    const current = existing.find((item) => item.id === productId);
-    if (!current) return null;
-    const updated: SavedProductRecord = { ...current, pricePerUnit, unit, updatedAt: Date.now(), syncState: 'pending', pendingAction: current.catalogProductId ? 'update' : 'create' };
-    await persist(scope, [updated, ...existing.filter((item) => item.id !== productId)]);
-    return (await syncProductRecord(scope, updated)) ?? updated;
-};
-
-export const deleteProductRecord = async (scope: ProductScope, productId: string) => {
-    const existing = await loadSavedProducts(scope);
-    const current = existing.find((item) => item.id === productId);
-    if (!current) return;
-    if (!current.catalogProductId && current.syncState !== 'synced') {
-        await persist(scope, existing.filter((item) => item.id !== productId));
-        return;
+export const updateProductRecord = async (scope: ProductScope, productId: string, pricePerUnit: number, unit: ProductUnit): Promise<ProductMutationResult> => {
+    if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0 || !isProductUnit(unit)) {
+        return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'Enter a positive selling price and valid unit.' };
     }
-    const archived = { ...current, archivedAt: Date.now(), updatedAt: Date.now(), syncState: 'pending' as const, pendingAction: 'archive' as const };
-    await persist(scope, [archived, ...existing.filter((item) => item.id !== productId)]);
-    await syncProductRecord(scope, archived);
+    const existing = await loadSavedProducts(scope);
+    const current = existing.find((item) => item.id === productId);
+    if (!current) return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'This product is no longer available.' };
+    const pendingAction: ProductPendingAction = current.syncState === 'synced' ? 'update' : (current.pendingAction === 'archive' ? 'update' : current.pendingAction ?? 'create');
+    const updated: SavedProductRecord = { ...current, pricePerUnit, unit, updatedAt: Date.now(), syncState: 'pending', pendingAction, syncError: undefined };
+    await persist(scope, [updated, ...existing.filter((item) => item.id !== productId)]);
+    emitProductSyncChange();
+    return syncProductRecord(scope, updated);
 };
 
-export const syncProducts = async (scope: ProductScope) => {
+export const deleteProductRecord = async (scope: ProductScope, productId: string): Promise<ProductMutationResult> => {
+    const existing = await loadSavedProducts(scope);
+    const current = existing.find((item) => item.id === productId);
+    if (!current) return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'This product is no longer available.' };
+    if (current.pendingAction === 'create' && current.syncState !== 'synced') {
+        await persist(scope, existing.filter((item) => item.id !== productId));
+        emitProductSyncChange();
+        debugLog('product-sync', 'unsynced local product removed', { listingId: productId, stallNumber: scope.stallNumber });
+        return { product: current, localSaved: true, synced: true, syncState: 'synced' };
+    }
+    const archived = { ...current, archivedAt: current.archivedAt ?? Date.now(), updatedAt: Date.now(), syncState: 'pending' as const, pendingAction: 'archive' as const, syncError: undefined };
+    await persist(scope, [archived, ...existing.filter((item) => item.id !== productId)]);
+    emitProductSyncChange();
+    return syncProductRecord(scope, archived);
+};
+
+export const retryProductSync = async (scope: ProductScope, productId: string): Promise<ProductMutationResult> => {
+    const products = await loadSavedProducts(scope);
+    let product = products.find((item) => item.id === productId);
+    if (!product) {
+        const aliases = await getListingIdAliases(scope);
+        const resolvedId = aliases[productId];
+        product = resolvedId ? products.find((item) => item.id === resolvedId) : undefined;
+    }
+    if (!product || product.syncState === 'synced') {
+        return { product: product ?? null, localSaved: Boolean(product), synced: Boolean(product),
+            syncState: product?.syncState ?? 'error', error: product ? undefined : 'The queued product change could not be found.' };
+    }
+    return syncProductRecord(scope, product, 'manual');
+};
+
+export const getProductSyncSummary = async (scope: ProductScope): Promise<ProductSyncSummary> => {
+    const products = await loadSavedProducts(scope);
+    return {
+        attempted: 0,
+        synced: 0,
+        failed: products.filter((item) => item.syncState === 'error').length,
+        pending: products.filter((item) => item.syncState === 'pending').length,
+    };
+};
+
+export const syncProducts = async (scope: ProductScope): Promise<ProductSyncSummary> => {
     const products = await loadSavedProducts(scope);
     const pending = products.filter((item) => item.syncState !== 'synced');
     let synced = 0;
-    for (const product of pending) if (await syncProductRecord(scope, product)) synced += 1;
-    return { attempted: pending.length, synced };
+    let failed = 0;
+    let lastError: string | undefined;
+    debugLog('product-sync', 'product batch retry started', { stallNumber: scope.stallNumber, attempted: pending.length });
+    for (const product of pending) {
+        const result = await syncProductRecord(scope, product, 'automatic');
+        if (result.synced) synced += 1;
+        else { failed += 1; lastError = result.error; }
+    }
+    const summary = { attempted: pending.length, synced, failed, pending: 0, error: lastError };
+    debugLog('product-sync', 'product batch retry finished', { stallNumber: scope.stallNumber, ...summary });
+    return summary;
+};
+
+export const retryAllProductSync = async (scope: ProductScope): Promise<ProductSyncSummary> => {
+    const products = await loadSavedProducts(scope);
+    const queued = products.filter((item) => item.syncState !== 'synced');
+    let synced = 0;
+    let failed = 0;
+    let lastError: string | undefined;
+    debugLog('product-sync', 'manual product batch retry started', { stallNumber: scope.stallNumber, attempted: queued.length });
+    for (const product of queued) {
+        const result = await syncProductRecord(scope, product, 'manual');
+        if (result.synced) synced += 1;
+        else { failed += 1; lastError = result.error; }
+    }
+    const summary = { attempted: queued.length, synced, failed, pending: 0, error: lastError };
+    debugLog('product-sync', 'manual product batch retry finished', { stallNumber: scope.stallNumber, ...summary });
+    return summary;
 };
 
 export const loadMergedProductsByCategory = async (scope: ProductScope, categoryId: string) =>

@@ -5,6 +5,7 @@ import { saveReceiptTransaction } from '../components/pos/transactionsStore';
 import { parseCart } from '../lib/utils';
 import { useAuthSession } from '../lib/authSession';
 import { useBusinessOperatingStatus } from '../lib/businessOperatingStatus';
+import { debugError, debugLog } from '../lib/debugLogging';
 
 const PaymentRoute = () => {
     const router = useRouter();
@@ -59,14 +60,13 @@ const PaymentRoute = () => {
                 stallNumber: currentUser.stallNumber,
             });
 
-            if (__DEV__) {
-                console.log('[PAYMENT_DEBUG] Saved transaction:', {
-                    savedTransaction: result.transaction,
+            debugLog('transactions-payments', 'payment transaction saved', {
+                    transactionId: result.transaction?.id,
+                    orderId: result.transaction?.orderId,
                     paidAmount,
                     totalDue,
                     cartItemsCount: cartItems.length,
-                });
-            }
+            });
 
             if (!result.transaction) {
                 setPaymentError(result.error ?? 'Unable to record the sale. Check your connection and try again.');
@@ -90,9 +90,7 @@ const PaymentRoute = () => {
             isSavingPaymentRef.current = false;
             setIsSavingPayment(false);
 
-            if (__DEV__) {
-                console.error('[PAYMENT_DEBUG] Failed to save transaction:', error);
-            }
+            debugError('transactions-payments', 'failed to save payment transaction', { error });
             setPaymentError('Unable to record the sale. Check your connection and try again.');
         }
     };

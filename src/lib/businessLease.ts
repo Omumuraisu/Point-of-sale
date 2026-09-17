@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { debugError } from './debugLogging';
 
 interface BusinessLeaseRow {
     business_id: number;
@@ -67,8 +68,8 @@ export const fetchBusinessLeaseAgreement = async (
     const { data, error } = await query.maybeSingle<BusinessLeaseRow>();
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[LEASE_DEBUG] Failed to fetch business lease agreement:', error.message);
+        if (error) {
+            debugError('billing-lease', 'failed to fetch business lease agreement', { message: error.message });
         }
 
         return null;

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   FlatList,
@@ -10,7 +10,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { CartItem, CategoryType } from '../../lib/types';
-import { loadListingCategories } from './productsStore';
+import { getProductSyncSummary, loadListingCategories, ProductSyncSummary, retryAllProductSync, subscribeToProductSyncChanges } from './productsStore';
 import { useAuthSession } from '../../lib/authSession';
 import POSHeader from './components/POSHeader';
 import ProductsTitle from './components/ProductsTitle';
@@ -35,28 +35,50 @@ const POS = ({
   const { isOpen, isLoading, error: statusError } = useBusinessOperatingStatus();
   const salesDisabled = isOpen !== true;
   const [categories, setCategories] = useState<CategoryType[]>([]);
+  const [syncSummary, setSyncSummary] = useState<ProductSyncSummary>({ attempted: 0, synced: 0, failed: 0, pending: 0 });
+  const [isRetryingProducts, setIsRetryingProducts] = useState(false);
+
+  const refreshProducts = useCallback(async () => {
+    if (!currentUser?.stallNumber) {
+      setCategories([]);
+      setSyncSummary({ attempted: 0, synced: 0, failed: 0, pending: 0 });
+      return;
+    }
+    const scope = { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber };
+    const [mergedCategories, summary] = await Promise.all([
+      loadListingCategories(scope),
+      getProductSyncSummary(scope),
+    ]);
+    setCategories(mergedCategories);
+    setSyncSummary(summary);
+  }, [currentUser?.accountId, currentUser?.stallNumber]);
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
 
-      const hydrateCategories = async () => {
-        const mergedCategories = currentUser?.stallNumber
-          ? await loadListingCategories({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber })
-          : [];
-
-        if (isMounted) {
-          setCategories(mergedCategories);
-        }
-      };
+      const hydrateCategories = async () => { if (isMounted) await refreshProducts(); };
 
       void hydrateCategories();
 
       return () => {
         isMounted = false;
       };
-    }, [currentUser?.accountId, currentUser?.stallNumber]),
+    }, [refreshProducts]),
   );
+
+  useEffect(() => subscribeToProductSyncChanges(() => { void refreshProducts(); }), [refreshProducts]);
+
+  const retryProductChanges = async () => {
+    if (!currentUser?.stallNumber || isRetryingProducts) return;
+    setIsRetryingProducts(true);
+    try {
+      await retryAllProductSync({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber });
+      await refreshProducts();
+    } finally {
+      setIsRetryingProducts(false);
+    }
+  };
 
   const handleCategoryPress = (item: CategoryType) => {
     if (salesDisabled) return;
@@ -104,6 +126,19 @@ const POS = ({
                   <Text style={styles.closedBannerText}>
                     {statusError ?? 'Open the stall before starting a sale.'}
                   </Text>
+                </View>
+              ) : null}
+              {syncSummary.failed + syncSummary.pending > 0 ? (
+                <View style={styles.syncBanner}>
+                  <View style={styles.syncBannerTextWrap}>
+                    <Text style={styles.syncBannerTitle}>Product changes not synced</Text>
+                    <Text style={styles.syncBannerText}>
+                      {syncSummary.failed + syncSummary.pending} change{syncSummary.failed + syncSummary.pending === 1 ? '' : 's'} waiting for the server.
+                    </Text>
+                  </View>
+                  <Pressable style={styles.syncRetryButton} onPress={retryProductChanges} disabled={isRetryingProducts}>
+                    <Text style={styles.syncRetryText}>{isRetryingProducts ? 'Retrying...' : 'Retry All'}</Text>
+                  </Pressable>
                 </View>
               ) : null}
               <ProductsTitle />
@@ -198,4 +233,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  syncBanner: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#d2a64c',
+    backgroundColor: '#fff5d9',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  syncBannerTextWrap: { flex: 1 },
+  syncBannerTitle: { color: '#75530d', fontSize: 15, fontWeight: '800' },
+  syncBannerText: { marginTop: 3, color: '#806523', fontSize: 13, fontWeight: '600' },
+  syncRetryButton: { borderRadius: 8, backgroundColor: '#9a6b0d', paddingHorizontal: 12, paddingVertical: 9 },
+  syncRetryText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
 });

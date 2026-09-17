@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { debugError } from './debugLogging';
 
 export interface WeeklySalesPattern {
     runId: string;
@@ -106,9 +107,7 @@ export const loadWeeklySalesPatterns = async (): Promise<WeeklySalesPatternResul
         .order('dow_index', { ascending: true });
 
     if (error || !data) {
-        if (__DEV__) {
-            console.error('[WEEKLY_PATTERNS] Unable to load weekly sales patterns:', error);
-        }
+        debugError('analytics-export', 'unable to load weekly sales patterns', { error });
 
         return { data: [], error: true };
     }
@@ -135,12 +134,10 @@ export const verifyHoltWintersReadAccess = async (): Promise<boolean> => {
     ]);
 
     if (patternsError || runsError) {
-        if (__DEV__) {
-            console.error('[WEEKLY_PATTERNS] Read permission verification failed:', {
-                weeklyPatterns: patternsError,
-                forecastRuns: runsError,
-            });
-        }
+        debugError('analytics-export', 'weekly pattern read permission verification failed', {
+            weeklyPatterns: patternsError,
+            forecastRuns: runsError,
+        });
 
         return false;
     }

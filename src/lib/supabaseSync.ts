@@ -4,6 +4,7 @@ import { loadMergedCategories } from '../components/pos/categoriesStore';
 import { ProductScope, getListingIdAliases, syncProducts as syncScopedProducts } from '../components/pos/productsStore';
 import { reconcileCartListingIds } from '../components/pos/cartStore';
 import { reconcileUnsyncedTransactionListingIds } from '../components/pos/transactionsStore';
+import { debugLog } from './debugLogging';
 
 interface BatchSyncResult {
     attempted: number;
@@ -12,16 +13,7 @@ interface BatchSyncResult {
 }
 
 const logSyncDebug = (event: string, details?: Record<string, unknown>) => {
-    if (!__DEV__) {
-        return;
-    }
-
-    if (details) {
-        console.log(`[SUPABASE_SYNC] ${event}`, details);
-        return;
-    }
-
-    console.log(`[SUPABASE_SYNC] ${event}`);
+    debugLog('supabase-sync', event, details);
 };
 
 const getErrorMessage = (error: unknown): string => {

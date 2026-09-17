@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { getUnsyncedTransactions, updateTransactionSyncState } from '../components/pos/transactionsStore';
 import { formatCurrency, formatTransactionDate, getCategoryType } from './utils';
 import { notifyTransactionSyncChanged } from './transactionSyncEvents';
+import { debugError, debugLog } from './debugLogging';
 
 interface SalesTransactionRow {
     transaction_id: number;
@@ -77,16 +78,7 @@ let lastContextResolutionError: string | null = null;
 let lastContextResolutionDetails: Record<string, unknown> | null = null;
 
 const logSyncDebug = (event: string, details?: Record<string, unknown>) => {
-    if (!__DEV__) {
-        return;
-    }
-
-    if (details) {
-        console.log(`[SUPABASE_SYNC] ${event}`, details);
-        return;
-    }
-
-    console.log(`[SUPABASE_SYNC] ${event}`);
+    debugLog('transactions-payments', event, details);
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -117,11 +109,7 @@ const getUnitPrice = (item: CartItem): number => {
 };
 
 const logSyncError = (event: string, details: Record<string, unknown>) => {
-    if (!__DEV__) {
-        return;
-    }
-
-    console.error(`[SUPABASE_SYNC_ERROR] ${event}`, details);
+    debugError('transactions-payments', event, details);
 };
 
 const toTimestamp = (value: string): number => {
@@ -481,7 +469,6 @@ export const syncTransactionRecordWithResult = async (
                 missingFields,
                 contextResolutionError: lastContextResolutionError,
                 contextResolutionDetails: lastContextResolutionDetails,
-                transaction: transactionForSync,
             });
 
             return {
@@ -493,7 +480,6 @@ export const syncTransactionRecordWithResult = async (
         logSyncDebug('attempting sales_transaction insert', {
             transactionId: transaction.id,
             rowCount: rows.length,
-            rows,
         });
 
         if (!transactionForSync.businessId) {
@@ -517,7 +503,7 @@ export const syncTransactionRecordWithResult = async (
                 errorDetails: error.details,
                 errorHint: error.hint,
                 errorCode: error.code,
-                rows,
+                rowCount: rows.length,
             });
 
             return {
@@ -612,8 +598,8 @@ export const loadRemoteSalesTransactions = async ({
     const { data, error } = await query;
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[TRANSACTIONS_DEBUG] Failed to load remote sales transactions:', error.message);
+        if (error) {
+            debugError('transactions-payments', 'failed to load remote sales transactions', { message: error.message });
         }
 
         return [];

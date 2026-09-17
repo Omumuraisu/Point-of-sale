@@ -45,20 +45,22 @@ export default function AddItemRoute() {
     const remove = async () => {
         if (isOpen !== true) {
             Alert.alert('Stall closed', 'Open the stall before changing products.');
-            return;
+            return { product: null, localSaved: false, synced: false, syncState: 'error' as const, error: 'Open the stall before changing products.' };
         }
-        if (!scope) return;
-        await deleteProductRecord(scope, product.id);
-        router.replace({ pathname: '/category', params: { categoryId: product.categoryId, cart: typeof params.cart === 'string' ? params.cart : '[]' } });
+        if (!scope) return { product: null, localSaved: false, synced: false, syncState: 'error' as const, error: 'Select an authorized stall before changing products.' };
+        const result = await deleteProductRecord(scope, product.id);
+        if (result.synced) router.replace({ pathname: '/category', params: { categoryId: product.categoryId, cart: typeof params.cart === 'string' ? params.cart : '[]' } });
+        return result;
     };
     const update = async ({ pricePerUnit, unit }: { pricePerUnit: number; unit: ProductUnit }) => {
         if (isOpen !== true) {
             Alert.alert('Stall closed', 'Open the stall before changing products.');
-            return;
+            return { product: null, localSaved: false, synced: false, syncState: 'error' as const, error: 'Open the stall before changing products.' };
         }
-        if (!scope) return;
-        const saved = await updateProductRecord(scope, product.id, pricePerUnit, unit);
-        if (saved) setProduct((current) => ({ ...current, pricePerUnit: saved.pricePerUnit, unit: saved.unit }));
+        if (!scope) return { product: null, localSaved: false, synced: false, syncState: 'error' as const, error: 'Select an authorized stall before changing products.' };
+        const result = await updateProductRecord(scope, product.id, pricePerUnit, unit);
+        if (result.product) setProduct((current) => ({ ...current, pricePerUnit: result.product!.pricePerUnit, unit: result.product!.unit }));
+        return result;
     };
     return <AddItemScreen productName={product.name} categoryId={product.categoryId} categoryLabel={product.categoryLabel}
         productId={product.id} catalogProductId={product.catalogProductId} pricePerUnit={product.pricePerUnit} unit={product.unit}

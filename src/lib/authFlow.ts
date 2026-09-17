@@ -1,3 +1,5 @@
+import { debugLog, debugWarn } from './debugLogging';
+
 export type VerificationPurpose = 'activation' | 'recovery';
 
 type VerificationDebugLevel = 'info' | 'warn';
@@ -7,12 +9,10 @@ export const logVerificationDebug = (
     details: Record<string, unknown> = {},
     level: VerificationDebugLevel = 'info',
 ): void => {
-    if (!__DEV__) return;
-    const message = `[ACCOUNT_VERIFICATION] ${stage}`;
     if (level === 'warn') {
-        console.warn(message, details);
+        debugWarn('authentication-sms', stage, details);
     } else {
-        console.info(message, details);
+        debugLog('authentication-sms', stage, details);
     }
 };
 

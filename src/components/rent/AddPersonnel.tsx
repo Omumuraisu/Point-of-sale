@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { createVendorApplication, PersonnelDocument } from './personnelStore';
 import { useAuthSession } from '../../lib/authSession';
+import { debugLog } from '../../lib/debugLogging';
 
 const formatFileSize = (size?: number) => {
     if (!size || size < 1) {
@@ -101,14 +102,11 @@ const AddPersonnel = () => {
         setIsSaving(false);
 
         if (result.record) {
-            if (__DEV__) {
-                console.log('[VENDOR_DEBUG] Vendor application created', {
-                    vendorId: result.record.vendorId,
-                    accountId: result.record.accountId,
-                    fullName: `${result.record.firstName} ${result.record.lastName}`.trim(),
-                    status: result.record.status,
-                });
-            }
+            debugLog('personnel-vendors', 'vendor application created', {
+                vendorId: result.record.vendorId,
+                accountId: result.record.accountId,
+                status: result.record.status,
+            });
 
             router.back();
             return;

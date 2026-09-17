@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CategoryType } from '../../lib/types';
 import { isCategoryType } from '../../lib/utils';
 import { mergeCategoriesWithDefaults } from './data';
+import { debugError, debugWarn } from '../../lib/debugLogging';
 
 const POS_CATEGORIES_KEY = '@pos/categories';
 const POS_CATEGORIES_FALLBACK_KEY = 'pos-categories';
@@ -24,9 +25,7 @@ export const loadCustomCategories = async (): Promise<CategoryType[]> => {
 
         return parsed.filter(isCategoryType);
     } catch (error) {
-        if (__DEV__) {
-            console.error('[CATEGORIES_DEBUG] Failed to load custom categories:', error);
-        }
+        debugError('catalog-categories', 'failed to load custom categories', { error });
 
         return [];
     }
@@ -46,9 +45,7 @@ export const saveCustomCategories = async (categories: CategoryType[]): Promise<
     try {
         await AsyncStorage.setItem(POS_CATEGORIES_KEY, JSON.stringify(normalized));
     } catch (primaryError) {
-        if (__DEV__) {
-            console.error('[CATEGORIES_DEBUG] Primary save failed, trying fallback key:', primaryError);
-        }
+        debugWarn('catalog-categories', 'primary category save failed; trying fallback', { error: primaryError });
 
         await AsyncStorage.setItem(POS_CATEGORIES_FALLBACK_KEY, JSON.stringify(normalized));
     }

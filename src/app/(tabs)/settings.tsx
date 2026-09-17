@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -40,10 +40,17 @@ const SETTINGS_ITEMS = [
         iconSet: 'material',
         iconName: 'message-lock-outline',
     },
+    {
+        id: 'debug-logging',
+        title: 'Debug Logging',
+        subtitle: 'Choose diagnostic console channels',
+        iconSet: 'material',
+        iconName: 'bug-outline',
+    },
 ] as const;
 
 type IconSet = 'ionicons' | 'material';
-type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'test-sms';
+type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'test-sms' | 'debug-logging';
 
 interface SettingItem {
     id: SettingId;
@@ -73,7 +80,7 @@ const Settings = () => {
     const { currentUser, logout } = useAuthSession();
     const isDeveloper = currentUser?.profileTable === 'developer';
     const visibleSettingsItems = typedSettingsItems.filter((item) => {
-        if (item.id === 'test-sms') return isDeveloper;
+        if (item.id === 'test-sms' || item.id === 'debug-logging') return isDeveloper;
         return isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business';
     });
 
@@ -95,6 +102,11 @@ const Settings = () => {
 
         if (id === 'test-sms') {
             router.push('/test-sms');
+            return;
+        }
+
+        if (id === 'debug-logging') {
+            router.push('/debug-logging');
         }
     };
 
@@ -103,7 +115,7 @@ const Settings = () => {
             <View style={styles.container}>
                 <Text style={styles.pageTitle}>Settings</Text>
 
-                <View style={styles.cardsWrap}>
+                <ScrollView contentContainerStyle={styles.cardsWrap} showsVerticalScrollIndicator={false}>
                     {visibleSettingsItems.map((item) => (
                         <Pressable key={item.id} style={styles.itemCard} onPress={() => handleSettingPress(item.id)}>
                             <View style={styles.itemRow}>
@@ -130,7 +142,7 @@ const Settings = () => {
                     >
                         <Text style={styles.logoutText}>Logout</Text>
                     </Pressable>
-                </View>
+                </ScrollView>
             </View>
         </SafeAreaView>
     );
@@ -155,10 +167,11 @@ const styles = StyleSheet.create({
         color: '#20252c',
     },
     cardsWrap: {
-        flex: 1,
+        flexGrow: 1,
         backgroundColor: '#d7dbe7',
         paddingHorizontal: 16,
         paddingTop: 16,
+        paddingBottom: 28,
     },
     itemCard: {
         minHeight: 110,

@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { debugError } from './debugLogging';
 
 interface PaymentRow {
     payment_id: number;
@@ -181,8 +182,8 @@ export const fetchBillingSummary = async (
     const { data, error } = await query;
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[BILLING_DEBUG] Failed to fetch payments:', error.message);
+        if (error) {
+            debugError('billing-lease', 'failed to fetch payments', { message: error.message });
         }
 
         return null;

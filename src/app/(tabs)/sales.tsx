@@ -26,6 +26,7 @@ import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvent
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
 import { formatCurrency } from '../../lib/utils';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
+import { debugError, debugLog } from '../../lib/debugLogging';
 import {
     loadWeeklySalesPatterns,
     verifyHoltWintersReadAccess,
@@ -392,8 +393,8 @@ const Sales = () => {
     );
 
     useEffect(() => {
-        if (__DEV__ && viewMode === 'transactions') {
-            console.log('[TRANSACTIONS_DEBUG] Saved transactions:', savedTransactions);
+        if (viewMode === 'transactions') {
+            debugLog('transactions-payments', 'saved transactions loaded', { count: savedTransactions.length });
         }
     }, [viewMode, savedTransactions]);
 
@@ -829,7 +830,7 @@ const TransactionsView = ({
                 await Print.printAsync({ html });
             }
         } catch (error) {
-            if (__DEV__) console.error('[SALES_EXPORT] PDF export failed:', error);
+            debugError('analytics-export', 'PDF export failed', { error });
             Alert.alert('Export failed', 'Unable to generate the sales PDF. Please try again.');
         } finally {
             setExporting(false);

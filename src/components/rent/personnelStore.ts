@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
+import { debugError } from '../../lib/debugLogging';
 
 const VENDOR_DOCUMENTS_BUCKET = 'vendor-documents';
 
@@ -242,8 +243,8 @@ const loadVendorDocuments = async (vendorIds: number[]): Promise<Map<number, Per
         .in('vendor_id', vendorIds);
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[VENDOR_DEBUG] Failed to load vendor documents:', error.message);
+        if (error) {
+            debugError('personnel-vendors', 'failed to load vendor documents', { message: error.message });
         }
 
         return documentMap;
@@ -278,8 +279,8 @@ export const loadVendorApplications = async (
         .order('created_at', { ascending: false });
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[VENDOR_DEBUG] Failed to load vendor applications:', error.message);
+        if (error) {
+            debugError('personnel-vendors', 'failed to load vendor applications', { message: error.message });
         }
 
         return [];
@@ -308,8 +309,8 @@ export const loadVendorComplianceRequests = async (
         .order('created_at', { ascending: false });
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[VENDOR_DEBUG] Failed to load compliance requests:', error.message);
+        if (error) {
+            debugError('personnel-vendors', 'failed to load compliance requests', { message: error.message });
         }
 
         return [];

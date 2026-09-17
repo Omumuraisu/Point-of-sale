@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { debugError } from './debugLogging';
 
 export type NotificationStatus = 'unread' | 'read';
 
@@ -92,8 +93,8 @@ export const fetchNotifications = async (
     const { data, error } = await query;
 
     if (error || !data) {
-        if (__DEV__ && error) {
-            console.error('[NOTIFICATIONS_DEBUG] Failed to fetch notifications:', error.message);
+        if (error) {
+            debugError('notifications', 'failed to fetch notifications', { message: error.message });
         }
 
         return [];
@@ -115,9 +116,7 @@ export const fetchUnreadNotificationCount = async (accountId?: number): Promise<
         .eq('status', 'unread');
 
     if (error) {
-        if (__DEV__) {
-            console.error('[NOTIFICATIONS_DEBUG] Failed to fetch unread count:', error.message);
-        }
+        debugError('notifications', 'failed to fetch unread count', { message: error.message });
 
         return 0;
     }
@@ -146,9 +145,7 @@ export const markNotificationAsRead = async (notificationId: number, accountId?:
     const { error } = await query;
 
     if (error) {
-        if (__DEV__) {
-            console.error('[NOTIFICATIONS_DEBUG] Failed to mark notification as read:', error.message);
-        }
+        debugError('notifications', 'failed to mark notification as read', { message: error.message });
 
         return false;
     }

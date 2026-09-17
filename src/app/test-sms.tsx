@@ -8,6 +8,7 @@ import { maskPhone, normalizePhilippinePhone, readFunctionError } from '../lib/a
 import { useAuthSession } from '../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
+import { debugLog as writeDebugLog, debugWarn as writeDebugWarn } from '../lib/debugLogging';
 
 type ActivationTestResponse = {
     accepted?: boolean;
@@ -17,11 +18,11 @@ type ActivationTestResponse = {
 };
 
 const debugLog = (message: string, details?: Record<string, unknown>) => {
-    if (__DEV__) console.info(`[SMS_ACTIVATION_TEST] ${message}`, details ?? {});
+    writeDebugLog('authentication-sms', message, details);
 };
 
 const debugWarn = (message: string, details?: Record<string, unknown>) => {
-    if (__DEV__) console.warn(`[SMS_ACTIVATION_TEST] ${message}`, details ?? {});
+    writeDebugWarn('authentication-sms', message, details);
 };
 
 const formatRetryDuration = (totalSeconds: number): string => {

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SaveReceiptTransactionInput, TransactionRecord } from '../../lib/types';
 import { formatCurrency, formatTransactionDate, isTransactionRecord, toTransaction } from '../../lib/utils';
+import { debugError, debugWarn } from '../../lib/debugLogging';
 
 const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
 const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
@@ -33,17 +34,13 @@ const saveTransactions = async (accountId: number, transactions: TransactionReco
         await AsyncStorage.setItem(getAccountTransactionsKey(accountId), JSON.stringify(normalized));
         return true;
     } catch (primaryError) {
-        if (__DEV__) {
-            console.error('[TRANSACTIONS_DEBUG] Primary transaction save failed, trying fallback key:', primaryError);
-        }
+        debugWarn('transactions-payments', 'primary transaction save failed; trying fallback', { error: primaryError });
 
         try {
             await AsyncStorage.setItem(getAccountFallbackTransactionsKey(accountId), JSON.stringify(normalized));
             return true;
         } catch (fallbackError) {
-            if (__DEV__) {
-                console.error('[TRANSACTIONS_DEBUG] Fallback transaction save failed:', fallbackError);
-            }
+            debugError('transactions-payments', 'fallback transaction save failed', { error: fallbackError });
 
             return false;
         }
@@ -89,9 +86,7 @@ export const loadSavedTransactions = async (
                     .some((value) => value != null && stallScope.includes(value));
             });
     } catch (error) {
-        if (__DEV__) {
-            console.error('[TRANSACTIONS_DEBUG] Failed to load saved transactions:', error);
-        }
+        debugError('transactions-payments', 'failed to load saved transactions', { error });
 
         return [];
     }

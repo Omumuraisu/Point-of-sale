@@ -12,7 +12,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddCartItemPayload } from '../../lib/types';
 import { formatCurrency } from '../../lib/utils';
-import { ProductUnit } from './productsStore';
+import { ProductMutationResult, ProductUnit } from './productsStore';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 const PRODUCT_UNITS: ProductUnit[] = ['pieces', 'kg', 'g', 'mg', 'L', 'mL'];
@@ -41,8 +41,8 @@ interface AddItemScreenProps {
     unit?: ProductUnit;
     onBack: () => void;
     onAdd: (payload: AddCartItemPayload) => void;
-    onDeleteProduct: () => Promise<void> | void;
-    onUpdateProduct: (payload: UpdateProductPayload) => Promise<void> | void;
+    onDeleteProduct: () => Promise<ProductMutationResult>;
+    onUpdateProduct: (payload: UpdateProductPayload) => Promise<ProductMutationResult>;
     disabled?: boolean;
 }
 
@@ -67,6 +67,8 @@ const AddItemScreen = ({
     const [isSavingProduct, setIsSavingProduct] = useState(false);
     const [editPrice, setEditPrice] = useState(String(pricePerUnit || ''));
     const [editUnit, setEditUnit] = useState<ProductUnit>(unit);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [editError, setEditError] = useState<string | null>(null);
 
     useEffect(() => {
         setEditPrice(String(pricePerUnit || ''));
@@ -141,10 +143,12 @@ const AddItemScreen = ({
 
     const handleConfirmDelete = async () => {
         setIsSavingProduct(true);
+        setDeleteError(null);
 
         try {
-            await onDeleteProduct();
-            setIsDeleteModalVisible(false);
+            const result = await onDeleteProduct();
+            if (result.synced) setIsDeleteModalVisible(false);
+            else setDeleteError(result.error ?? 'The product was removed locally but could not be archived on the server.');
         } finally {
             setIsSavingProduct(false);
         }
@@ -156,13 +160,15 @@ const AddItemScreen = ({
         }
 
         setIsSavingProduct(true);
+        setEditError(null);
 
         try {
-            await onUpdateProduct({
+            const result = await onUpdateProduct({
                 pricePerUnit: parsedEditPrice,
                 unit: editUnit,
             });
-            setIsEditModalVisible(false);
+            if (result.synced) setIsEditModalVisible(false);
+            else setEditError(result.error ?? 'The change was saved locally but could not be synced to the server.');
         } finally {
             setIsSavingProduct(false);
         }
@@ -194,14 +200,14 @@ const AddItemScreen = ({
                         <View style={styles.productActionRow}>
                             <Pressable
                                 style={[styles.productActionButton, styles.editProductButton]}
-                                onPress={() => setIsEditModalVisible(true)}
+                                onPress={() => { setEditError(null); setIsEditModalVisible(true); }}
                                 disabled={disabled}
                             >
                                 <Ionicons name="create-outline" size={20} color="#ffffff" />
                             </Pressable>
                             <Pressable
                                 style={[styles.productActionButton, styles.deleteProductButton]}
-                                onPress={() => setIsDeleteModalVisible(true)}
+                                onPress={() => { setDeleteError(null); setIsDeleteModalVisible(true); }}
                                 disabled={disabled}
                             >
                                 <Ionicons name="trash-outline" size={20} color="#ffffff" />
@@ -270,6 +276,7 @@ const AddItemScreen = ({
                         <Text style={styles.modalText}>
                             This product will be removed from the product list.
                         </Text>
+                        {deleteError ? <Text style={styles.syncErrorText}>{deleteError}</Text> : null}
                         <View style={styles.modalButtonRow}>
                             <Pressable
                                 style={[styles.modalButton, styles.modalCancelButton]}
@@ -284,7 +291,7 @@ const AddItemScreen = ({
                                 disabled={isSavingProduct}
                             >
                                 <Text style={styles.modalDeleteText}>
-                                    {isSavingProduct ? 'Deleting...' : 'Yes, Delete'}
+                                    {isSavingProduct ? 'Syncing...' : deleteError ? 'Retry' : 'Yes, Delete'}
                                 </Text>
                             </Pressable>
                         </View>
@@ -318,6 +325,7 @@ const AddItemScreen = ({
                             keyboardShouldPersistTaps="handled"
                         >
                             <Text style={styles.identityNote}>Product identity and catalog category are shared and cannot be changed here.</Text>
+                            {editError ? <Text style={styles.syncErrorText}>{editError}</Text> : null}
 
                             <Text style={styles.editLabel}>Price per Unit</Text>
                             <View style={styles.editInputWrap}>
@@ -371,7 +379,7 @@ const AddItemScreen = ({
                             >
                                 <Ionicons name="save-outline" size={18} color="#ffffff" />
                                 <Text style={styles.saveEditText}>
-                                    {isSavingProduct ? 'Saving...' : 'Save'}
+                                    {isSavingProduct ? 'Syncing...' : editError ? 'Retry' : 'Save'}
                                 </Text>
                             </Pressable>
                         </View>
@@ -387,6 +395,7 @@ export default AddItemScreen;
 const styles = StyleSheet.create({
     unpricedWarning: { color: '#a23b32', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
     identityNote: { color: '#5f6878', fontSize: 13, fontWeight: '600', marginBottom: 12 },
+    syncErrorText: { color: '#9a352f', backgroundColor: '#fde8e6', borderRadius: 9, padding: 10, fontSize: 13, fontWeight: '700', lineHeight: 18, marginTop: 12 },
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',
