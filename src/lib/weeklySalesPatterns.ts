@@ -1,58 +1,26 @@
-import { isSupabaseConfigured, supabase } from './supabase';
-import { debugError } from './debugLogging';
+import { getTransactionTotal } from './salesMetrics';
+import { TransactionRecord } from './types';
 
-export interface WeeklySalesPattern {
-    runId: string;
+export interface WeeklySalesDay {
+    dateKey: string;
     dayOfWeek: string;
     dowIndex: number;
-    totalQuantityKg: number;
-    totalRevenuePhp: number;
-    avgDailyQtyKg: number;
-    avgDailyRevPhp: number;
-    recordCount: number;
+    revenuePhp: number;
+    transactionCount: number;
     isWeekend: boolean;
-    generatedAt: string;
+    isToday: boolean;
+    isFuture: boolean;
 }
 
-interface WeeklySalesPatternRow {
-    run_id: string | number;
-    day_of_week: string;
-    dow_index: number;
-    total_quantity_kg: number | string;
-    total_revenue_php: number | string;
-    avg_daily_qty_kg: number | string;
-    avg_daily_rev_php: number | string;
-    record_count: number;
-    is_weekend: boolean;
-    generated_at: string;
+export interface CurrentWeekSales {
+    days: WeeklySalesDay[];
+    weekStartDateKey: string;
+    weekEndDateKey: string;
+    totalRevenuePhp: number;
+    transactionCount: number;
 }
 
-export interface WeeklySalesPatternResult {
-    data: WeeklySalesPattern[];
-    error: boolean;
-}
-
-const DAY_ORDER: Record<string, number> = {
-    monday: 0,
-    mon: 0,
-    tuesday: 1,
-    tue: 1,
-    tues: 1,
-    wednesday: 2,
-    wed: 2,
-    thursday: 3,
-    thu: 3,
-    thur: 3,
-    thurs: 3,
-    friday: 4,
-    fri: 4,
-    saturday: 5,
-    sat: 5,
-    sunday: 6,
-    sun: 6,
-};
-
-const CALENDAR_DAY_LABELS = [
+const DAY_LABELS = [
     'Monday',
     'Tuesday',
     'Wednesday',
@@ -62,85 +30,123 @@ const CALENDAR_DAY_LABELS = [
     'Sunday',
 ];
 
-const toNumber = (value: number | string): number => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
+const MANILA_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+const getManilaDateKey = (date: Date): string => {
+    const parts = MANILA_DATE_FORMATTER.formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+
+    return year && month && day ? `${year}-${month}-${day}` : '';
 };
 
-const toWeeklySalesPattern = (row: WeeklySalesPatternRow): WeeklySalesPattern => {
-    const normalizedDay = row.day_of_week.trim().toLowerCase();
-    const calendarIndex = DAY_ORDER[normalizedDay];
+const dateKeyToUtcTimestamp = (dateKey: string): number => {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    return Date.UTC(year, month - 1, day);
+};
+
+const shiftDateKey = (dateKey: string, dayOffset: number): string => {
+    const shiftedDate = new Date(dateKeyToUtcTimestamp(dateKey) + dayOffset * 24 * 60 * 60 * 1000);
+    return shiftedDate.toISOString().slice(0, 10);
+};
+
+const getTransactionIdentity = (transaction: TransactionRecord): string => {
+    if (transaction.clientOrderKey) {
+        return `client:${transaction.clientOrderKey}`;
+    }
+
+    if (transaction.orderId !== undefined) {
+        return `order:${transaction.orderId}`;
+    }
+
+    return `transaction:${transaction.id}`;
+};
+
+export const getCurrentWeekSales = (
+    transactions: TransactionRecord[],
+    now = new Date(),
+): CurrentWeekSales => {
+    const todayDateKey = getManilaDateKey(now);
+
+    if (!todayDateKey) {
+        return {
+            days: [],
+            weekStartDateKey: '',
+            weekEndDateKey: '',
+            totalRevenuePhp: 0,
+            transactionCount: 0,
+        };
+    }
+
+    const todayUtcDay = new Date(dateKeyToUtcTimestamp(todayDateKey)).getUTCDay();
+    const todayDowIndex = (todayUtcDay + 6) % 7;
+    const weekStartDateKey = shiftDateKey(todayDateKey, -todayDowIndex);
+    const weekEndDateKey = shiftDateKey(weekStartDateKey, 6);
+    const seenTransactions = new Set<string>();
+    const totalsByDate = new Map<string, { revenuePhp: number; transactionCount: number }>();
+
+    transactions.forEach((transaction) => {
+        const transactionDate = new Date(transaction.createdAt);
+
+        if (Number.isNaN(transactionDate.getTime())) {
+            return;
+        }
+
+        const transactionDateKey = getManilaDateKey(transactionDate);
+
+        if (
+            transactionDateKey < weekStartDateKey
+            || transactionDateKey > weekEndDateKey
+            || transactionDateKey > todayDateKey
+        ) {
+            return;
+        }
+
+        const identity = getTransactionIdentity(transaction);
+
+        if (seenTransactions.has(identity)) {
+            return;
+        }
+
+        seenTransactions.add(identity);
+
+        const existing = totalsByDate.get(transactionDateKey) ?? {
+            revenuePhp: 0,
+            transactionCount: 0,
+        };
+
+        existing.revenuePhp += getTransactionTotal(transaction);
+        existing.transactionCount += 1;
+        totalsByDate.set(transactionDateKey, existing);
+    });
+
+    const days = DAY_LABELS.map((dayOfWeek, dowIndex): WeeklySalesDay => {
+        const dateKey = shiftDateKey(weekStartDateKey, dowIndex);
+        const totals = totalsByDate.get(dateKey);
+
+        return {
+            dateKey,
+            dayOfWeek,
+            dowIndex,
+            revenuePhp: totals?.revenuePhp ?? 0,
+            transactionCount: totals?.transactionCount ?? 0,
+            isWeekend: dowIndex >= 5,
+            isToday: dateKey === todayDateKey,
+            isFuture: dateKey > todayDateKey,
+        };
+    });
 
     return {
-        runId: String(row.run_id),
-        dayOfWeek: CALENDAR_DAY_LABELS[calendarIndex] ?? row.day_of_week,
-        dowIndex: Number(row.dow_index),
-        totalQuantityKg: toNumber(row.total_quantity_kg),
-        totalRevenuePhp: toNumber(row.total_revenue_php),
-        avgDailyQtyKg: toNumber(row.avg_daily_qty_kg),
-        avgDailyRevPhp: toNumber(row.avg_daily_rev_php),
-        recordCount: Number(row.record_count) || 0,
-        isWeekend: Boolean(row.is_weekend),
-        generatedAt: row.generated_at,
+        days,
+        weekStartDateKey,
+        weekEndDateKey,
+        totalRevenuePhp: days.reduce((sum, day) => sum + day.revenuePhp, 0),
+        transactionCount: days.reduce((sum, day) => sum + day.transactionCount, 0),
     };
-};
-
-export const loadWeeklySalesPatterns = async (): Promise<WeeklySalesPatternResult> => {
-    if (!isSupabaseConfigured || !supabase) {
-        return { data: [], error: true };
-    }
-
-    const { data, error } = await supabase
-        .from('hw_latest_weekly_patterns')
-        .select(`
-            run_id,
-            day_of_week,
-            dow_index,
-            total_quantity_kg,
-            total_revenue_php,
-            avg_daily_qty_kg,
-            avg_daily_rev_php,
-            record_count,
-            is_weekend,
-            generated_at
-        `)
-        .order('dow_index', { ascending: true });
-
-    if (error || !data) {
-        debugError('analytics-export', 'unable to load weekly sales patterns', { error });
-
-        return { data: [], error: true };
-    }
-
-    const patterns = (data as WeeklySalesPatternRow[])
-        .map(toWeeklySalesPattern)
-        .sort((first, second) => {
-            const firstOrder = DAY_ORDER[first.dayOfWeek.trim().toLowerCase()] ?? first.dowIndex;
-            const secondOrder = DAY_ORDER[second.dayOfWeek.trim().toLowerCase()] ?? second.dowIndex;
-            return firstOrder - secondOrder;
-        });
-
-    return { data: patterns, error: false };
-};
-
-export const verifyHoltWintersReadAccess = async (): Promise<boolean> => {
-    if (!isSupabaseConfigured || !supabase) {
-        return false;
-    }
-
-    const [{ error: patternsError }, { error: runsError }] = await Promise.all([
-        supabase.from('hw_latest_weekly_patterns').select('run_id').limit(1),
-        supabase.from('hw_forecast_runs').select('status').limit(1),
-    ]);
-
-    if (patternsError || runsError) {
-        debugError('analytics-export', 'weekly pattern read permission verification failed', {
-            weeklyPatterns: patternsError,
-            forecastRuns: runsError,
-        });
-
-        return false;
-    }
-
-    return true;
 };

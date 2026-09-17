@@ -25,13 +25,8 @@ import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
 import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
 import { formatCurrency } from '../../lib/utils';
-import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { debugError, debugLog } from '../../lib/debugLogging';
-import {
-    loadWeeklySalesPatterns,
-    verifyHoltWintersReadAccess,
-    WeeklySalesPattern,
-} from '../../lib/weeklySalesPatterns';
+import { getCurrentWeekSales } from '../../lib/weeklySalesPatterns';
 
 type TopSoldProductBar = {
     label: string;
@@ -148,6 +143,8 @@ interface ChartViewProps {
     topSoldProducts: TopSoldProductBar[];
     todayTotal: number;
     growthPercent: number | null;
+    transactions: TransactionRecord[];
+    isTransactionsLoading: boolean;
 }
 
 interface TransactionsViewProps {
@@ -273,6 +270,7 @@ const Sales = () => {
     const initialViewMode: 'chart' | 'transactions' = requestedView === 'transactions' ? 'transactions' : 'chart';
     const [viewMode, setViewMode] = useState<'chart' | 'transactions'>(initialViewMode);
     const [savedTransactions, setSavedTransactions] = useState<TransactionRecord[]>([]);
+    const [isTransactionsLoading, setTransactionsLoading] = useState(true);
     const todaySales = useMemo(() => getTodaySalesSummary(savedTransactions), [savedTransactions]);
 
     const topSoldProducts = useMemo<TopSoldProductBar[]>(() => {
@@ -359,24 +357,34 @@ const Sales = () => {
     useFocusEffect(
         useCallback(() => {
             let isMounted = true;
+            setTransactionsLoading(true);
+            setSavedTransactions([]);
 
             const hydrateTransactions = async () => {
-                const remoteTransactions = await loadRemoteSalesTransactions({
-                    accountId: currentUser?.accountId,
-                    stallId: currentUser?.stallId,
-                    stallNumber: currentUser?.stallNumber,
-                });
-                const localTransactions = await loadSavedTransactions(
-                    currentUser?.accountId,
-                    currentUser?.stallId,
-                    currentUser?.stallNumber,
-                );
-                const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
-                const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
-                    .sort((first, second) => second.createdAt - first.createdAt);
+                try {
+                    const remoteTransactions = await loadRemoteSalesTransactions({
+                        accountId: currentUser?.accountId,
+                        stallId: currentUser?.stallId,
+                        stallNumber: currentUser?.stallNumber,
+                    });
+                    const localTransactions = await loadSavedTransactions(
+                        currentUser?.accountId,
+                        currentUser?.stallId,
+                        currentUser?.stallNumber,
+                    );
+                    const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
+                    const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
+                        .sort((first, second) => second.createdAt - first.createdAt);
 
-                if (isMounted) {
-                    setSavedTransactions(stored);
+                    if (isMounted) {
+                        setSavedTransactions(stored);
+                    }
+                } catch (error) {
+                    debugError('transactions-payments', 'unable to load transactions for sales analytics', { error });
+                } finally {
+                    if (isMounted) {
+                        setTransactionsLoading(false);
+                    }
                 }
             };
 
@@ -436,6 +444,8 @@ const Sales = () => {
                             topSoldProducts={topSoldProducts}
                             todayTotal={todaySales.total}
                             growthPercent={todaySales.growthPercent}
+                            transactions={savedTransactions}
+                            isTransactionsLoading={isTransactionsLoading}
                         />
                     )
                     : (
@@ -465,129 +475,56 @@ const MANILA_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-PH', {
     minute: '2-digit',
 });
 
-const MANILA_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Manila',
-    weekday: 'long',
+const WEEK_DATE_FORMATTER = new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
 });
 
-const CALENDAR_DAY_INDEX: Record<string, number> = {
-    Monday: 0,
-    Tuesday: 1,
-    Wednesday: 2,
-    Thursday: 3,
-    Friday: 4,
-    Saturday: 5,
-    Sunday: 6,
+const formatWeekDateRange = (startDateKey: string, endDateKey: string): string => {
+    if (!startDateKey || !endDateKey) {
+        return '';
+    }
+
+    const startDate = new Date(`${startDateKey}T12:00:00Z`);
+    const endDate = new Date(`${endDateKey}T12:00:00Z`);
+    return `${WEEK_DATE_FORMATTER.format(startDate)} – ${WEEK_DATE_FORMATTER.format(endDate)}`;
+};
+
+const formatCompactPeso = (value: number): string => {
+    const absoluteValue = Math.abs(value);
+
+    if (absoluteValue >= 1_000_000) {
+        return `₱${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    }
+
+    if (absoluteValue >= 1_000) {
+        return `₱${(value / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+    }
+
+    return `₱${Math.round(value)}`;
 };
 
 const ChartView = ({
     topSoldProducts,
     todayTotal,
     growthPercent,
+    transactions,
+    isTransactionsLoading,
 }: ChartViewProps) => {
-    const [patterns, setPatterns] = useState<WeeklySalesPattern[]>([]);
-    const [isPatternsLoading, setPatternsLoading] = useState(true);
-    const [patternsUnavailable, setPatternsUnavailable] = useState(false);
-
-    const reloadWeeklyPatterns = useCallback(async () => {
-        setPatternsLoading(true);
-        const result = await loadWeeklySalesPatterns();
-        setPatterns(result.data);
-        setPatternsUnavailable(result.error);
-        setPatternsLoading(false);
-    }, []);
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const loadInitialPatterns = async () => {
-            const [hasReadAccess, result] = await Promise.all([
-                verifyHoltWintersReadAccess(),
-                loadWeeklySalesPatterns(),
-            ]);
-
-            if (!isMounted) {
-                return;
-            }
-
-            setPatterns(result.data);
-            setPatternsUnavailable(!hasReadAccess || result.error);
-            setPatternsLoading(false);
-        };
-
-        void loadInitialPatterns();
-
-        if (!isSupabaseConfigured || !supabase) {
-            return () => {
-                isMounted = false;
-            };
-        }
-
-        const supabaseClient = supabase;
-        const channelTopic = 'realtime:pos-weekly-pattern-updates';
-        let activeChannel: ReturnType<typeof supabaseClient.channel> | null = null;
-
-        const setupRealtimeChannel = async () => {
-            const existingChannels = supabaseClient
-                .getChannels()
-                .filter((channel) => channel.topic === channelTopic);
-
-            await Promise.all(
-                existingChannels.map((channel) => supabaseClient.removeChannel(channel)),
-            );
-
-            if (!isMounted) {
-                return;
-            }
-
-            activeChannel = supabaseClient
-                .channel('pos-weekly-pattern-updates')
-                .on(
-                    'postgres_changes',
-                    {
-                        event: '*',
-                        schema: 'public',
-                        table: 'hw_forecast_runs',
-                    },
-                    (payload) => {
-                        const nextRun = payload.new as { status?: string } | null;
-
-                        if (nextRun?.status === 'success') {
-                            void reloadWeeklyPatterns();
-                        }
-                    },
-                )
-                .subscribe();
-        };
-
-        void setupRealtimeChannel();
-
-        return () => {
-            isMounted = false;
-
-            if (activeChannel) {
-                void supabaseClient.removeChannel(activeChannel);
-            }
-        };
-    }, [reloadWeeklyPatterns]);
-
-    const highestPatternValue = useMemo(() => Math.max(
-        ...patterns.map((pattern) => pattern.avgDailyRevPhp),
+    const currentWeekSales = useMemo(
+        () => getCurrentWeekSales(transactions),
+        [transactions],
+    );
+    const highestDailyRevenue = useMemo(() => Math.max(
+        ...currentWeekSales.days.map((day) => day.revenuePhp),
         0,
-    ), [patterns]);
-
-    const generatedAtLabel = useMemo(() => {
-        const generatedAt = patterns[0]?.generatedAt;
-
-        if (!generatedAt) {
-            return '';
-        }
-
-        const date = new Date(generatedAt);
-        return Number.isNaN(date.getTime()) ? '' : MANILA_DATE_TIME_FORMATTER.format(date);
-    }, [patterns]);
-    const currentManilaDay = MANILA_WEEKDAY_FORMATTER.format(new Date());
-    const currentManilaDayIndex = CALENDAR_DAY_INDEX[currentManilaDay] ?? 0;
+    ), [currentWeekSales.days]);
+    const weekDateRange = formatWeekDateRange(
+        currentWeekSales.weekStartDateKey,
+        currentWeekSales.weekEndDateKey,
+    );
 
     return (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -606,100 +543,90 @@ const ChartView = ({
             <View style={styles.chartCard}>
                 <View style={styles.patternHeader}>
                     <View style={styles.patternTitleWrap}>
-                        <Text style={styles.cardTitle}>Weekly Sales Patterns</Text>
-                        {generatedAtLabel ? (
-                            <Text style={styles.patternGeneratedAt}>Updated {generatedAtLabel}</Text>
+                        <Text style={styles.cardTitle}>This Week&apos;s Sales</Text>
+                        {weekDateRange ? (
+                            <Text style={styles.patternGeneratedAt}>{weekDateRange} · Manila time</Text>
                         ) : null}
                     </View>
                     <MaterialCommunityIcons name="chart-timeline-variant" size={24} color="#2f5ada" />
                 </View>
 
-                {isPatternsLoading ? (
+                {isTransactionsLoading ? (
                     <View style={styles.patternState}>
                         <ActivityIndicator size="small" color="#2f5ada" />
-                        <Text style={styles.patternStateText}>Loading weekly sales patterns...</Text>
+                        <Text style={styles.patternStateText}>Loading this week&apos;s sales...</Text>
                     </View>
                 ) : null}
 
-                {!isPatternsLoading && patternsUnavailable ? (
-                    <View style={styles.patternState}>
-                        <Ionicons name="cloud-offline-outline" size={28} color="#747b8a" />
-                        <Text style={styles.patternStateTitle}>Weekly sales patterns are currently unavailable.</Text>
-                    </View>
-                ) : null}
-
-                {!isPatternsLoading && !patternsUnavailable && patterns.length === 0 ? (
-                    <View style={styles.patternState}>
-                        <Ionicons name="analytics-outline" size={28} color="#747b8a" />
-                        <Text style={styles.patternStateTitle}>No weekly sales patterns are available yet.</Text>
-                    </View>
-                ) : null}
-
-                {!isPatternsLoading && !patternsUnavailable && patterns.length > 0 ? (
+                {!isTransactionsLoading ? (
                     <>
+                        <View style={styles.weeklySalesSummary}>
+                            <View>
+                                <Text style={styles.weeklySalesSummaryLabel}>Week total</Text>
+                                <Text style={styles.weeklySalesSummaryAmount}>
+                                    {formatCurrency(currentWeekSales.totalRevenuePhp)}
+                                </Text>
+                            </View>
+                            <Text style={styles.weeklySalesTransactionCount}>
+                                {currentWeekSales.transactionCount} transaction{currentWeekSales.transactionCount === 1 ? '' : 's'}
+                            </Text>
+                        </View>
+
+                        {currentWeekSales.totalRevenuePhp === 0 ? (
+                            <Text style={styles.weeklySalesEmptyText}>No sales recorded this week yet.</Text>
+                        ) : null}
+
                         <View style={styles.patternBarsWrap}>
-                            {patterns.map((pattern) => {
-                                const patternValue = pattern.avgDailyRevPhp;
-                                const patternDayIndex = CALENDAR_DAY_INDEX[pattern.dayOfWeek] ?? pattern.dowIndex;
-                                const isFutureDay = patternDayIndex > currentManilaDayIndex;
-                                const barHeight = !isFutureDay && highestPatternValue > 0
-                                    ? Math.max(4, Math.round((patternValue / highestPatternValue) * 100))
+                            {currentWeekSales.days.map((day) => {
+                                const barHeight = day.revenuePhp > 0 && highestDailyRevenue > 0
+                                    ? Math.max(4, Math.round((day.revenuePhp / highestDailyRevenue) * 100))
                                     : 0;
-                                const isCurrentDay = pattern.dayOfWeek === currentManilaDay;
 
                                 return (
-                                    <View key={`${pattern.runId}-${pattern.dayOfWeek}`} style={styles.patternBarColumn}>
+                                    <View
+                                        key={day.dateKey}
+                                        style={styles.patternBarColumn}
+                                        accessible
+                                        accessibilityLabel={`${day.dayOfWeek}, ${formatCurrency(day.revenuePhp)}, ${day.transactionCount} transactions${day.isFuture ? ', future day' : ''}`}
+                                    >
+                                        <Text
+                                            numberOfLines={1}
+                                            adjustsFontSizeToFit
+                                            style={[
+                                                styles.patternValueLabel,
+                                                day.isFuture && styles.patternValueLabelFuture,
+                                            ]}
+                                        >
+                                            {formatCompactPeso(day.revenuePhp)}
+                                        </Text>
                                         <View style={[
                                             styles.patternBarTrack,
-                                            pattern.isWeekend && styles.patternBarTrackWeekend,
+                                            day.isWeekend && styles.patternBarTrackWeekend,
+                                            day.isFuture && styles.patternBarTrackFuture,
+                                            day.isToday && styles.patternBarTrackToday,
                                         ]}>
                                             <View
                                                 style={[
                                                     styles.patternBarFill,
                                                     { height: `${barHeight}%` },
-                                                    pattern.isWeekend && styles.patternBarFillWeekend,
+                                                    day.isWeekend && styles.patternBarFillWeekend,
                                                 ]}
-                                            >
-                                                {isCurrentDay ? (
-                                                    <View style={styles.activeMarker}>
-                                                        <Ionicons name="chevron-up" size={14} color="#ffffff" />
-                                                    </View>
-                                                ) : null}
-                                            </View>
+                                            />
+                                            {day.isToday ? (
+                                                <View style={styles.activeMarker}>
+                                                    <Ionicons name="chevron-down" size={14} color="#ffffff" />
+                                                </View>
+                                            ) : null}
                                         </View>
                                         <Text style={[
                                             styles.patternDayLabel,
-                                            pattern.isWeekend && styles.patternDayLabelWeekend,
+                                            day.isWeekend && styles.patternDayLabelWeekend,
+                                            day.isFuture && styles.patternDayLabelFuture,
+                                            day.isToday && styles.patternDayLabelToday,
                                         ]}>
-                                            {pattern.dayOfWeek.slice(0, 3)}
+                                            {day.dayOfWeek.slice(0, 3)}
                                         </Text>
                                     </View>
-                                );
-                            })}
-                        </View>
-
-                        <View style={styles.periodSwitchWrap}>
-                            {(['Daily', 'Weekly', 'Monthly'] as const).map((label) => {
-                                const isAvailable = label === 'Daily';
-
-                                return (
-                                    <Pressable
-                                        key={label}
-                                        disabled={!isAvailable}
-                                        style={[
-                                            styles.periodSwitchBtn,
-                                            isAvailable && styles.periodSwitchBtnActive,
-                                            !isAvailable && styles.periodSwitchBtnDisabled,
-                                        ]}
-                                    >
-                                        <Text style={[
-                                            styles.periodText,
-                                            isAvailable && styles.periodTextActive,
-                                            !isAvailable && styles.periodTextDisabled,
-                                        ]}>
-                                            {label}
-                                        </Text>
-                                    </Pressable>
                                 );
                             })}
                         </View>
@@ -1173,17 +1100,42 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         gap: 10,
     },
-    patternStateTitle: {
-        fontSize: 15,
-        lineHeight: 21,
-        fontWeight: '800',
-        color: '#525968',
-        textAlign: 'center',
-    },
     patternStateText: {
         fontSize: 14,
         fontWeight: '600',
         color: '#747b8a',
+    },
+    weeklySalesSummary: {
+        marginTop: 16,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    weeklySalesSummaryLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#747b8a',
+        textTransform: 'uppercase',
+    },
+    weeklySalesSummaryAmount: {
+        marginTop: 2,
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#242830',
+    },
+    weeklySalesTransactionCount: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#626a7b',
+        textAlign: 'right',
+    },
+    weeklySalesEmptyText: {
+        marginTop: 10,
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#747b8a',
+        textAlign: 'center',
     },
     patternBarsWrap: {
         height: 190,
@@ -1198,9 +1150,21 @@ const styles = StyleSheet.create({
         maxWidth: 46,
         alignItems: 'center',
     },
+    patternValueLabel: {
+        width: '100%',
+        height: 18,
+        marginBottom: 4,
+        fontSize: 11,
+        fontWeight: '800',
+        color: '#4d5668',
+        textAlign: 'center',
+    },
+    patternValueLabelFuture: {
+        color: '#a1a6b1',
+    },
     patternBarTrack: {
         width: '100%',
-        height: 154,
+        height: 140,
         borderRadius: 6,
         backgroundColor: '#dce4f7',
         justifyContent: 'flex-end',
@@ -1208,6 +1172,13 @@ const styles = StyleSheet.create({
     },
     patternBarTrackWeekend: {
         backgroundColor: '#cbd8f4',
+    },
+    patternBarTrackFuture: {
+        opacity: 0.45,
+    },
+    patternBarTrackToday: {
+        borderWidth: 2,
+        borderColor: '#1d3a8b',
     },
     patternBarFill: {
         width: '100%',
@@ -1229,36 +1200,17 @@ const styles = StyleSheet.create({
     patternDayLabelWeekend: {
         color: '#3158b8',
     },
-    barsWrap: {
-        marginTop: 14,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-end',
+    patternDayLabelFuture: {
+        color: '#a1a6b1',
     },
-    barCol: {
-        width: 42,
-        alignItems: 'center',
-    },
-    barTrack: {
-        width: '100%',
-        height: 170,
-        borderRadius: 5,
-        backgroundColor: '#c2d0f2',
-        justifyContent: 'flex-end',
-        overflow: 'hidden',
-    },
-    barFill: {
-        backgroundColor: '#6f8be0',
-        borderTopLeftRadius: 5,
-        borderTopRightRadius: 5,
-        alignItems: 'center',
-        justifyContent: 'flex-start',
-    },
-    barFillActive: {
-        backgroundColor: '#23439c',
+    patternDayLabelToday: {
+        color: '#1d3a8b',
+        textDecorationLine: 'underline',
     },
     activeMarker: {
-        marginTop: 6,
+        position: 'absolute',
+        top: 5,
+        alignSelf: 'center',
         width: 22,
         height: 22,
         borderRadius: 4,
@@ -1267,18 +1219,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#1d3a8b',
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    monthText: {
-        marginTop: 8,
-        fontSize: 14,
-        lineHeight: 14,
-        height: 30,
-        textAlign: 'center',
-        fontWeight: '700',
-        color: '#8b8f98',
-    },
-    monthTextActive: {
-        color: '#11151f',
+        zIndex: 2,
     },
     topProductsList: {
         marginTop: 16,
@@ -1355,37 +1296,6 @@ const styles = StyleSheet.create({
     topProductValueActive: {
         color: '#11151f',
         fontSize: 14,
-    },
-    periodSwitchWrap: {
-        marginTop: 18,
-        backgroundColor: '#d2daee',
-        borderRadius: 24,
-        padding: 6,
-        flexDirection: 'row',
-    },
-    periodSwitchBtn: {
-        flex: 1,
-        height: 38,
-        borderRadius: 19,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    periodSwitchBtnActive: {
-        backgroundColor: '#2f5ada',
-    },
-    periodSwitchBtnDisabled: {
-        opacity: 0.58,
-    },
-    periodText: {
-        fontSize: 18 / 1.2,
-        fontWeight: '700',
-        color: '#2a2d34',
-    },
-    periodTextActive: {
-        color: '#ffffff',
-    },
-    periodTextDisabled: {
-        color: '#747b8a',
     },
     topProductsEmptyWrap: {
         marginTop: 14,
