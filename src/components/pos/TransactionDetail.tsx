@@ -3,6 +3,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { CartItem, TransactionRecord } from '../../lib/types';
 import { formatCurrency } from '../../lib/utils';
+import { useThemedStyles } from '../../lib/theme';
 
 interface TransactionDetailProps {
     transaction: TransactionRecord | null;
@@ -10,6 +11,7 @@ interface TransactionDetailProps {
 }
 
 const TransactionDetail = ({ transaction, onBack }: TransactionDetailProps) => {
+    const styles = useThemedStyles(baseStyles);
     const insets = useSafeAreaInsets();
 
     const cartItems = Array.isArray(transaction?.cartItems) ? transaction.cartItems : [];
@@ -117,7 +119,7 @@ const TransactionDetail = ({ transaction, onBack }: TransactionDetailProps) => {
 
 export default TransactionDetail;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

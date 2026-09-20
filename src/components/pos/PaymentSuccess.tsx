@@ -3,6 +3,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { CartItem } from '../../lib/types';
 import { formatCurrency, formatTransactionDate } from '../../lib/utils';
+import { useThemedStyles } from '../../lib/theme';
 
 interface PaymentSuccessProps {
     cartItems?: CartItem[];
@@ -25,6 +26,7 @@ const PaymentSuccess = ({
     onNewSale,
     onBackHome,
 }: PaymentSuccessProps) => {
+    const styles = useThemedStyles(baseStyles);
     const insets = useSafeAreaInsets();
     const cartTotal = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -92,7 +94,7 @@ const PaymentSuccess = ({
 
 export default PaymentSuccess;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

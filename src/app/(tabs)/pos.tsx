@@ -7,8 +7,11 @@ import { CartItem } from '../../lib/types';
 import { formatCurrency, parseCart } from '../../lib/utils';
 import { loadPersistedCartItems, savePersistedCartItems } from '../../components/pos/cartStore';
 import { useAuthSession } from '../../lib/authSession';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 export default function PosTabScreen() {
+    const styles = useThemedStyles(baseStyles);
+    const { isDark } = useTheme();
     const { cart } = useLocalSearchParams();
     const { currentUser } = useAuthSession();
     const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
@@ -53,7 +56,7 @@ export default function PosTabScreen() {
 
     return (
         <View style={styles.container}>
-            <StatusBar style="dark" />
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             <POS
                 cartItems={cartItems}
                 cartCount={cartItems.length}
@@ -63,7 +66,7 @@ export default function PosTabScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#dfe2ec',

@@ -1,10 +1,11 @@
 import { StyleSheet } from 'react-native';
+import { useThemedStyles } from '../../../lib/theme';
 
 const BLUE = '#1f61e8';
 const NAVY = '#0b43a0';
 const BACKGROUND = '#f0f2ff';
 
-export const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     welcomeScreen: { flex: 1, backgroundColor: BACKGROUND, paddingHorizontal: 36 },
     brandArea: { height: '62%', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 45 },
     mainLogo: { width: '86%', height: 215 },
@@ -43,3 +44,5 @@ export const styles = StyleSheet.create({
     successText: { marginTop: 12, color: '#dfffe5', fontSize: 13, fontWeight: '700', textAlign: 'center' },
     formFooter: { color: '#fff', fontSize: 12, textAlign: 'center', marginTop: 'auto' },
 });
+
+export const useLoginStyles = () => useThemedStyles(baseStyles);

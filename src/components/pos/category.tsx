@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import CategoryRow from './components/CategoryRow';
 import CartSummaryBar from './components/CartSummaryBar';
+import { useThemedStyles } from '../../lib/theme';
 
 interface CategoryScreenProps {
     categoryLabel: string;
@@ -25,6 +26,7 @@ const CategoryScreen = ({
     cartTotal = 'P 00.00',
     isStallOpen = false,
 }: CategoryScreenProps) => {
+    const styles = useThemedStyles(baseStyles);
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.header}>
@@ -62,7 +64,7 @@ const CategoryScreen = ({
 
 export default CategoryScreen;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

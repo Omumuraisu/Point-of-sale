@@ -1,14 +1,18 @@
 import { View, Text, StyleSheet } from 'react-native';
+import { useThemedStyles } from '../../../lib/theme';
 
-const ProductsTitle = () => (
+const ProductsTitle = () => {
+    const styles = useThemedStyles(baseStyles);
+    return (
     <View style={styles.sectionWrap}>
         <Text style={styles.sectionTitle}>My Products</Text>
     </View>
-);
+    );
+};
 
 export default ProductsTitle;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     sectionWrap: {
         marginBottom: 2,
     },

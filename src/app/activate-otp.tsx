@@ -7,8 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { logVerificationDebug, maskPhone, readFunctionError } from '../lib/authFlow';
 import { supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
+import { useTheme, useThemedStyles } from '../lib/theme';
 
 export default function ActivateOtpScreen() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const params = useLocalSearchParams<{ resendAfterSeconds?: string }>();
     const { flow, markOtpVerified, clearFlow } = useVerificationFlow();
@@ -155,7 +158,7 @@ export default function ActivateOtpScreen() {
                 <Text style={styles.subtitle}>Enter the 6-digit OTP sent to</Text>
                 <Text style={styles.subtitle}>{maskPhone(flow.phone)}</Text>
                 <View style={styles.iconCircle}>
-                    <MaterialCommunityIcons name="shield-lock" size={86} color="#2f5ada" />
+                <MaterialCommunityIcons name="shield-lock" size={86} color={colors.primary} />
                 </View>
                 <TextInput
                     style={styles.otpInput}
@@ -165,7 +168,7 @@ export default function ActivateOtpScreen() {
                         setMessage('');
                     }}
                     placeholder="000000"
-                    placeholderTextColor="#a2a6af"
+                    placeholderTextColor={colors.textMuted}
                     keyboardType="number-pad"
                     autoComplete="sms-otp"
                     textContentType="oneTimeCode"
@@ -186,7 +189,7 @@ export default function ActivateOtpScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#dfe2ec', paddingHorizontal: 20 },
     backButton: { marginTop: 8, width: 34, height: 34, borderRadius: 8, backgroundColor: '#2849a9', alignItems: 'center', justifyContent: 'center' },
     contentWrap: { flex: 1, alignItems: 'center', paddingTop: 24 },

@@ -7,10 +7,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { styles } from './styles';
+import { useLoginStyles } from './styles';
 import { useAuthSession } from '../../../lib/authSession';
+import { useTheme } from '../../../lib/theme';
 
 const LoginForm = () => {
+    const styles = useLoginStyles();
+    const { colors } = useTheme();
     const router = useRouter();
     const params = useLocalSearchParams<{ message?: string }>();
     const { loginWithPassword } = useAuthSession();
@@ -48,11 +51,11 @@ const LoginForm = () => {
         <View style={styles.formCard}>
             <Text style={styles.label}>Phone Number</Text>
             <View style={styles.inputWrapper}>
-                <Ionicons name="call-outline" size={20} color="#272c33" />
+                <Ionicons name="call-outline" size={20} color={colors.icon} />
                 <TextInput
                     style={styles.input}
                     placeholder="0923 123 2134"
-                    placeholderTextColor="#8e939e"
+                    placeholderTextColor={colors.textMuted}
                     value={username}
                     onChangeText={(value) => {
                         setUsername(value);
@@ -68,11 +71,11 @@ const LoginForm = () => {
 
             <Text style={styles.label}>Password</Text>
             <View style={styles.inputWrapper}>
-                <Ionicons name="lock-closed-outline" size={20} color="#272c33" />
+                <Ionicons name="lock-closed-outline" size={20} color={colors.icon} />
                 <TextInput
                     style={styles.input}
                     placeholder="Enter your password"
-                    placeholderTextColor="#8e939e"
+                    placeholderTextColor={colors.textMuted}
                     value={password}
                     onChangeText={(value) => {
                         setPassword(value);
@@ -88,7 +91,7 @@ const LoginForm = () => {
                     onPress={() => setShowPassword((v) => !v)}
                     accessibilityLabel="Toggle password visibility"
                 >
-                    <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#272c33" />
+                    <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.icon} />
                 </TouchableOpacity>
             </View>
 

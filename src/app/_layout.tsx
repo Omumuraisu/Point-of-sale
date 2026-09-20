@@ -6,6 +6,8 @@ import { VerificationFlowProvider } from '../lib/verificationFlow';
 import NetInfo from '@react-native-community/netinfo';
 import { BusinessOperatingStatusProvider } from '../lib/businessOperatingStatus';
 import { DebugLoggingProvider } from '../lib/debugLogging';
+import { ThemeProvider, useTheme } from '../lib/theme';
+import { StatusBar } from 'expo-status-bar';
 
 const PUBLIC_ROUTES = new Set([
   '',
@@ -45,12 +47,25 @@ function AuthGate({ children }: React.PropsWithChildren) {
 
 export default function Layout() {
   return (
+    <ThemeProvider>
+    <ThemedApp />
+    </ThemeProvider>
+  );
+}
+
+function ThemedApp() {
+  const { isDark, isHydrating, colors } = useTheme();
+
+  if (isHydrating) return null;
+
+  return (
     <DebugLoggingProvider>
     <AuthSessionProvider>
       <BusinessOperatingStatusProvider>
       <VerificationFlowProvider>
       <AuthGate>
-      <Stack initialRouteName="index">
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack initialRouteName="index" screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen
         name="index"
         options={{
@@ -113,6 +128,14 @@ export default function Layout() {
       />
       <Stack.Screen
         name="transaction-detail"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="payment-history"
         options={{
           headerShown: false,
           presentation: "card",

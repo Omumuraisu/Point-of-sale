@@ -1,21 +1,25 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useThemedStyles } from '../../../lib/theme';
 
 interface BottomActionsBarProps {
     onPress: () => void;
     bottomInset: number;
 }
 
-const BottomActionsBar = ({ onPress, bottomInset }: BottomActionsBarProps) => (
+const BottomActionsBar = ({ onPress, bottomInset }: BottomActionsBarProps) => {
+    const styles = useThemedStyles(baseStyles);
+    return (
     <View style={[styles.ctaWrap, { paddingBottom: Math.max(bottomInset, 10) }]}>
         <TouchableOpacity style={styles.ctaButton} onPress={onPress}>
             <Text style={styles.ctaText}>Add New Products</Text>
         </TouchableOpacity>
     </View>
-);
+    );
+};
 
 export default BottomActionsBar;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     ctaWrap: {
         position: 'absolute',
         left: 20,

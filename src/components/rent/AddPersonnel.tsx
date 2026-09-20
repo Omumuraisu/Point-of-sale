@@ -16,6 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { createVendorApplication, PersonnelDocument } from './personnelStore';
 import { useAuthSession } from '../../lib/authSession';
 import { debugLog } from '../../lib/debugLogging';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const formatFileSize = (size?: number) => {
     if (!size || size < 1) {
@@ -30,6 +31,8 @@ const formatFileSize = (size?: number) => {
 };
 
 const AddPersonnel = () => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const [firstName, setFirstName] = useState('');
@@ -123,7 +126,7 @@ const AddPersonnel = () => {
             >
                 <View style={styles.header}>
                     <Pressable onPress={handleBack} style={styles.backButton}>
-                        <Ionicons name="chevron-back" size={24} color="#2b2f36" />
+                        <Ionicons name="chevron-back" size={24} color={colors.icon} />
                     </Pressable>
                     <Text style={styles.headerTitle}>Add Personnel</Text>
                 </View>
@@ -199,7 +202,7 @@ const AddPersonnel = () => {
                                 onPress={handleUploadDocuments}
                                 disabled={isSaving}
                             >
-                                <Ionicons name="cloud-upload-outline" size={20} color="#1f63e6" />
+                                <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
                                 <Text style={styles.uploadButtonText}>Upload Documents</Text>
                             </Pressable>
 
@@ -215,7 +218,7 @@ const AddPersonnel = () => {
                                                 <Ionicons
                                                     name={isPdf ? 'document-text-outline' : 'image-outline'}
                                                     size={20}
-                                                    color="#4d5666"
+                                                    color={colors.textSecondary}
                                                 />
                                                 <View style={styles.documentTextWrap}>
                                                     <Text style={styles.documentName} numberOfLines={1}>
@@ -259,7 +262,7 @@ const AddPersonnel = () => {
 
 export default AddPersonnel;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

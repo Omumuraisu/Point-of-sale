@@ -15,6 +15,7 @@ import { Redirect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useAuthSession } from '../../lib/authSession';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const PROFILE_PHOTO_BUCKET = 'profile-pictures';
 
@@ -46,6 +47,8 @@ const getAssetExtension = (asset: ImagePicker.ImagePickerAsset) => {
 };
 
 const Profile = () => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser, updateCurrentUser } = useAuthSession();
     const [name, setName] = useState('');
@@ -177,7 +180,7 @@ const Profile = () => {
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.header}>
                 <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="chevron-back" size={34} color="#272c33" />
+                    <Ionicons name="chevron-back" size={34} color={colors.icon} />
                 </Pressable>
                 <Text style={styles.headerTitle}>Profile</Text>
             </View>
@@ -188,7 +191,7 @@ const Profile = () => {
                         {photoUri ? (
                             <Image source={{ uri: photoUri }} style={styles.avatarImage} />
                         ) : (
-                            <Ionicons name="person" size={86} color="#1f2730" />
+                            <Ionicons name="person" size={86} color={colors.icon} />
                         )}
                     </View>
                 </View>
@@ -205,12 +208,12 @@ const Profile = () => {
                         value={name}
                         onChangeText={setName}
                         placeholder="Account name"
-                        placeholderTextColor="#8f939c"
+                        placeholderTextColor={colors.textMuted}
                     />
 
                     <Text style={styles.sectionTitle}>Verified Phone Number</Text>
                     <View style={styles.phoneInfoRow}>
-                        <Ionicons name="call-outline" size={20} color="#626976" />
+                        <Ionicons name="call-outline" size={20} color={colors.textSecondary} />
                         <Text style={styles.phoneInfoText}>
                             {currentUser?.phoneNumber ?? 'No verified phone number'}
                         </Text>
@@ -233,7 +236,7 @@ const Profile = () => {
 
 export default Profile;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

@@ -15,6 +15,12 @@ interface PaymentRow {
     violation_type: string | null;
 }
 
+export interface PaymentHistoryEntry {
+    paymentId: number;
+    amount: number;
+    paidAt: string | null;
+}
+
 export interface BillingMonthSummary {
     billingMonth: string | null;
     status: 'PAID' | 'UNPAID';
@@ -238,4 +244,46 @@ export const fetchBillingSummary = async (
         currentBill,
         arrearsMonths,
     };
+};
+
+export const fetchPaymentHistory = async (
+    businessId?: number | null,
+    stallNumber?: string | null,
+): Promise<PaymentHistoryEntry[]> => {
+    if (!businessId || !isSupabaseConfigured || !supabase) {
+        return [];
+    }
+
+    let query = supabase
+        .from('payments')
+        .select('payment_id, amount, paid_at, status')
+        .eq('business_id', businessId)
+        .order('paid_at', { ascending: false, nullsFirst: false });
+
+    if (stallNumber) {
+        query = query.eq('stall_number', stallNumber);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+        debugError('billing-lease', 'failed to fetch payment history', { message: error.message });
+        throw error;
+    }
+
+    return (data ?? [])
+        .filter((payment) => (
+            payment.status?.toLowerCase().trim() === 'paid' || Boolean(payment.paid_at)
+        ))
+        .map((payment) => ({
+            paymentId: payment.payment_id,
+            amount: toAmount(payment.amount),
+            paidAt: payment.paid_at,
+        }))
+        .sort((first, second) => {
+            if (!first.paidAt && !second.paidAt) return 0;
+            if (!first.paidAt) return 1;
+            if (!second.paidAt) return -1;
+            return second.paidAt.localeCompare(first.paidAt);
+        });
 };

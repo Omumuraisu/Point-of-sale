@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CartItem } from '../../lib/types';
 import { formatCurrency } from '../../lib/utils';
 import { formatTransactionDate } from '../../lib/utils';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 interface ReceiptProps {
     cartItems?: CartItem[];
@@ -17,6 +18,8 @@ interface ReceiptProps {
 }
 
 const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isConfirming = false, isStallOpen = false, preparedAt }: ReceiptProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const totalAmount = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
@@ -33,7 +36,7 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                 <Text style={styles.headerTitle}>Receipt</Text>
 
                 <Pressable style={[styles.clearBtn, !isStallOpen && styles.muted]} onPress={onClearAll} disabled={!isStallOpen}>
-                    <Ionicons name="trash-outline" size={15} color="#d85647" />
+                    <Ionicons name="trash-outline" size={15} color={colors.danger} />
                     <Text style={styles.clearText}>Clear All</Text>
                 </Pressable>
             </View>
@@ -70,7 +73,7 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                     ))}
 
                     <Pressable style={[styles.addMoreRow, !isStallOpen && styles.muted]} onPress={onAddMore} disabled={!isStallOpen}>
-                        <Ionicons name="add-circle" size={20} color="#1e2a33" />
+                    <Ionicons name="add-circle" size={20} color={colors.icon} />
                         <Text style={styles.addMoreText}>Add More</Text>
                     </Pressable>
                 </ScrollView>
@@ -99,7 +102,7 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
 
 export default Receipt;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

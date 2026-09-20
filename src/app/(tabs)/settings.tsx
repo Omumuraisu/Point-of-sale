@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, View, Text, Pressable, ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthSession } from '../../lib/authSession';
 import { syncAllSupabaseData } from '../../lib/supabaseSync';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const SETTINGS_ITEMS = [
     {
@@ -77,16 +78,19 @@ interface SettingsIconProps {
 const typedSettingsItems: readonly SettingItem[] = SETTINGS_ITEMS;
 
 const SettingsIcon = ({ iconSet, iconName }: SettingsIconProps) => {
+    const { colors } = useTheme();
     if (iconSet === 'material') {
-        return <MaterialCommunityIcons name={iconName as any} size={28} color="#1f2b3a" />;
+        return <MaterialCommunityIcons name={iconName as any} size={28} color={colors.icon} />;
     }
 
-    return <Ionicons name={iconName as any} size={28} color="#1f2b3a" />;
+    return <Ionicons name={iconName as any} size={28} color={colors.icon} />;
 };
 
 const Settings = () => {
     const router = useRouter();
     const { currentUser, logout } = useAuthSession();
+    const { isDark, colors, setMode } = useTheme();
+    const styles = useThemedStyles(baseStyles);
     const [isSyncing, setIsSyncing] = useState(false);
     const isDeveloper = currentUser?.profileTable === 'developer';
     const visibleSettingsItems = typedSettingsItems.filter((item) => {
@@ -192,6 +196,27 @@ const Settings = () => {
                 <Text style={styles.pageTitle}>Settings</Text>
 
                 <ScrollView contentContainerStyle={styles.cardsWrap} showsVerticalScrollIndicator={false}>
+                    <View style={styles.itemCard} accessibilityRole="none">
+                        <View style={styles.itemRow}>
+                            <View style={styles.iconCircle}>
+                                <Ionicons name="moon" size={28} color={colors.icon} />
+                            </View>
+                            <View style={styles.itemTextWrap}>
+                                <Text style={styles.itemTitle}>Dark Mode</Text>
+                                <Text style={styles.itemSubtitle}>Use a darker app appearance</Text>
+                            </View>
+                            <Switch
+                                value={isDark}
+                                onValueChange={(enabled) => { void setMode(enabled ? 'dark' : 'light'); }}
+                                trackColor={{ false: colors.borderStrong, true: colors.primarySoft }}
+                                thumbColor={isDark ? colors.primary : '#f4f4f5'}
+                                ios_backgroundColor={colors.borderStrong}
+                                accessibilityLabel="Dark Mode"
+                                accessibilityRole="switch"
+                                accessibilityState={{ checked: isDark }}
+                            />
+                        </View>
+                    </View>
                     {visibleSettingsItems.map((item) => {
                         const isSyncAction = item.id === 'sync-database';
 
@@ -221,8 +246,8 @@ const Settings = () => {
                                     </View>
 
                                     {isSyncAction
-                                        ? (isSyncing ? <ActivityIndicator size="small" color="#2f5ada" /> : null)
-                                        : <Ionicons name="chevron-forward" size={28} color="#2a2d34" />}
+                                        ? (isSyncing ? <ActivityIndicator size="small" color={colors.primary} /> : null)
+                                        : <Ionicons name="chevron-forward" size={28} color={colors.icon} />}
                                 </View>
                             </Pressable>
                         );
@@ -245,7 +270,7 @@ const Settings = () => {
 
 export default Settings;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

@@ -3,12 +3,13 @@ import { BackHandler, Image, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import LoginForm from './components/LoginForm';
-import { styles } from './components/styles';
+import { useLoginStyles } from './components/styles';
 
 const loginLogo = require('../../../assets/marketsync-login-logo.png');
 const mainLogo = require('../../../assets/marketsync-logo.png');
 
 const Login = () => {
+    const styles = useLoginStyles();
     const router = useRouter();
     const [showForm, setShowForm] = useState(false);
 

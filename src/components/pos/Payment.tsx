@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency, formatTransactionDate } from '../../lib/utils';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 
@@ -17,6 +18,8 @@ interface PaymentProps {
 }
 
 const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false, isStallOpen = false, errorMessage, preparedAt }: PaymentProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const [amountInput, setAmountInput] = useState('');
 
@@ -84,7 +87,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
                     </View>
                     <View style={styles.summaryRight}>
                         <View style={styles.cartBadge}>
-                            <Ionicons name="cart" size={28} color="#315bd7" />
+                    <Ionicons name="cart" size={28} color={colors.primary} />
                         </View>
                         <Text style={styles.orderText}>Order No. Pending</Text>
                         <Text style={styles.orderDateText}>{formatTransactionDate(preparedAt)}</Text>
@@ -123,7 +126,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
                                     onPress={() => handleKeyPress(key)}
                                 >
                                     {isDelete ? (
-                                        <MaterialIcons name="backspace" size={24} color="#c05f5f" />
+                            <MaterialIcons name="backspace" size={24} color={colors.danger} />
                                     ) : (
                                         <Text style={styles.keyText}>{key}</Text>
                                     )}
@@ -149,7 +152,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
 
 export default Payment;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

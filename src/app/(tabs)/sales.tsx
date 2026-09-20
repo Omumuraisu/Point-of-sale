@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 import POSHeader from '../../components/pos/components/POSHeader';
 import { CATEGORY_ITEMS } from '../../components/pos/data';
 import { loadSavedTransactions } from '../../components/pos/transactionsStore';
@@ -115,7 +116,7 @@ const CATEGORY_COLOR_MAP = CATEGORY_ITEMS.reduce((accumulator, category) => {
     return accumulator;
 }, {} as Record<string, { backgroundColor: string; borderColor: string; textColor: string }>);
 
-const getSyncStatus = (transaction: TransactionRecord) => {
+const getSyncStatus = (transaction: TransactionRecord, styles: typeof baseStyles) => {
     if (transaction.synced) {
         return {
             label: 'Synced',
@@ -263,6 +264,7 @@ const createSalesPdfHtml = ({
 };
 
 const Sales = () => {
+    const styles = useThemedStyles(baseStyles);
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { view } = useLocalSearchParams<{ view?: string | string[] }>();
@@ -513,6 +515,8 @@ const ChartView = ({
     transactions,
     isTransactionsLoading,
 }: ChartViewProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const currentWeekSales = useMemo(
         () => getCurrentWeekSales(transactions),
         [transactions],
@@ -548,12 +552,12 @@ const ChartView = ({
                             <Text style={styles.patternGeneratedAt}>{weekDateRange} · Manila time</Text>
                         ) : null}
                     </View>
-                    <MaterialCommunityIcons name="chart-timeline-variant" size={24} color="#2f5ada" />
+                        <MaterialCommunityIcons name="chart-timeline-variant" size={24} color={colors.primary} />
                 </View>
 
                 {isTransactionsLoading ? (
                     <View style={styles.patternState}>
-                        <ActivityIndicator size="small" color="#2f5ada" />
+                            <ActivityIndicator size="small" color={colors.primary} />
                         <Text style={styles.patternStateText}>Loading this week&apos;s sales...</Text>
                     </View>
                 ) : null}
@@ -695,6 +699,8 @@ const TransactionsView = ({
     businessName,
     stallNumber,
 }: TransactionsViewProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { isDark, colors, resolveColor } = useTheme();
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [isCategoryMenuOpen, setCategoryMenuOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -782,7 +788,7 @@ const TransactionsView = ({
                     accessibilityRole="button"
                     accessibilityLabel="Filter sales by date"
                 >
-                    <Ionicons name="calendar" size={16} color="#2a2d34" />
+                    <Ionicons name="calendar" size={16} color={colors.icon} />
                     <Text style={styles.filterText}>
                         {selectedDate ? SALES_DATE_LABEL_FORMATTER.format(selectedDate) : 'All dates'}
                     </Text>
@@ -795,7 +801,7 @@ const TransactionsView = ({
                     <Ionicons
                         name={isCategoryMenuOpen ? 'chevron-up' : 'chevron-down'}
                         size={16}
-                        color="#6a6e77"
+                        color={colors.textSecondary}
                     />
                 </Pressable>
                 <Pressable
@@ -810,8 +816,8 @@ const TransactionsView = ({
                     accessibilityLabel="Save displayed sales as PDF"
                 >
                     {isExporting
-                        ? <ActivityIndicator size="small" color="#d85647" />
-                        : <MaterialCommunityIcons name="file-pdf-box" size={17} color="#d85647" />}
+                        ? <ActivityIndicator size="small" color={colors.danger} />
+                        : <MaterialCommunityIcons name="file-pdf-box" size={17} color={colors.danger} />}
                     <Text style={styles.exportText}>{isExporting ? 'Creating' : 'PDF'}</Text>
                 </Pressable>
             </View>
@@ -822,6 +828,8 @@ const TransactionsView = ({
                         value={selectedDate ?? new Date()}
                         mode="date"
                         display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                        themeVariant={isDark ? 'dark' : 'light'}
+                        accentColor={colors.primary}
                         maximumDate={new Date()}
                         onChange={handleDateChange}
                     />
@@ -841,7 +849,7 @@ const TransactionsView = ({
                         setDatePickerOpen(false);
                     }}
                 >
-                    <Ionicons name="close-circle-outline" size={16} color="#9a3f38" />
+                    <Ionicons name="close-circle-outline" size={16} color={colors.danger} />
                     <Text style={styles.clearDateText}>Clear date filter</Text>
                 </Pressable>
             ) : null}
@@ -868,7 +876,7 @@ const TransactionsView = ({
                                 >
                                     {option}
                                 </Text>
-                                {isSelected ? <Ionicons name="checkmark" size={16} color="#2f5ada" /> : null}
+                                {isSelected ? <Ionicons name="checkmark" size={16} color={colors.primary} /> : null}
                             </Pressable>
                         );
                     })}
@@ -896,7 +904,7 @@ const TransactionsView = ({
             {filteredTransactions.map((transaction) => (
                 (() => {
                     const colorTheme = CATEGORY_COLOR_MAP[transaction.category.trim().toLowerCase()];
-                    const syncStatus = getSyncStatus(transaction);
+                    const syncStatus = getSyncStatus(transaction, styles);
 
                     return (
                         <Pressable
@@ -915,9 +923,9 @@ const TransactionsView = ({
                                         styles.categoryPill,
                                         colorTheme
                                             ? {
-                                                backgroundColor: colorTheme.backgroundColor,
+                                                backgroundColor: resolveColor(colorTheme.backgroundColor),
                                                 borderWidth: 1,
-                                                borderColor: colorTheme.borderColor,
+                                                borderColor: resolveColor(colorTheme.borderColor),
                                             }
                                             : styles.categoryPillNeutral,
                                     ]}
@@ -926,7 +934,7 @@ const TransactionsView = ({
                                         style={[
                                             styles.categoryPillText,
                                             colorTheme
-                                                ? { color: colorTheme.textColor }
+                                                ? { color: resolveColor(colorTheme.textColor) }
                                                 : styles.categoryPillTextNeutral,
                                         ]}
                                     >
@@ -963,7 +971,7 @@ const TransactionsView = ({
 
 export default Sales;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

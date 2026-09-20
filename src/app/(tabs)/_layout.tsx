@@ -4,10 +4,12 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../lib/authSession";
 import { useTransactionSyncMonitor } from "../../lib/useTransactionSyncMonitor";
+import { useTheme } from "../../lib/theme";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { currentUser, isHydrating } = useAuthSession();
+  const { colors } = useTheme();
   const tabBarBottomPadding = Math.max(insets.bottom, 8);
   useTransactionSyncMonitor(currentUser?.accountId);
 
@@ -28,12 +30,12 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#ffffff",
-        tabBarInactiveTintColor: "#8d919a",
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           height: 62 + tabBarBottomPadding,
           borderTopWidth: 1,
-          borderTopColor: "#d1d4de",
-          backgroundColor: "#f8f8f8",
+          borderTopColor: colors.border,
+          backgroundColor: colors.surfaceElevated,
           paddingHorizontal: 12,
           paddingBottom: tabBarBottomPadding,
           paddingTop: 8,
@@ -42,7 +44,7 @@ export default function TabsLayout() {
           borderRadius: 18,
           marginHorizontal: 2,
         },
-        tabBarActiveBackgroundColor: "#2f5ada",
+        tabBarActiveBackgroundColor: colors.primary,
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: "700",

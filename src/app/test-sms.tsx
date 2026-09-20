@@ -9,6 +9,7 @@ import { useAuthSession } from '../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
 import { debugLog as writeDebugLog, debugWarn as writeDebugWarn } from '../lib/debugLogging';
+import { useTheme, useThemedStyles } from '../lib/theme';
 
 type ActivationTestResponse = {
     accepted?: boolean;
@@ -50,6 +51,8 @@ const formatRetryMessage = (message: string, retryAfterSeconds: number, debugId:
 };
 
 export default function TestSmsScreen() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser, isHydrating, logout } = useAuthSession();
     const { startFlow } = useVerificationFlow();
@@ -144,7 +147,7 @@ export default function TestSmsScreen() {
 
             <View style={styles.content}>
                 <View style={styles.iconCircle}>
-                    <MaterialCommunityIcons name="message-lock-outline" size={64} color="#2f5ada" />
+                <MaterialCommunityIcons name="message-lock-outline" size={64} color={colors.primary} />
                 </View>
                 <Text style={styles.title}>Test SMS Activation</Text>
                 <Text style={styles.subtitle}>
@@ -157,7 +160,7 @@ export default function TestSmsScreen() {
                 </View>
 
                 <View style={styles.warningCard}>
-                    <Ionicons name="warning-outline" size={24} color="#8a4b08" />
+                    <Ionicons name="warning-outline" size={24} color={colors.warning} />
                     <Text style={styles.warningText}>
                         Starting this test changes your account to pending and signs you out. After verifying the OTP, you must create a new password before signing in again.
                     </Text>
@@ -179,7 +182,7 @@ export default function TestSmsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#dfe2ec', paddingHorizontal: 20 },
     backButton: { marginTop: 8, width: 34, height: 34, borderRadius: 8, backgroundColor: '#2849a9', alignItems: 'center', justifyContent: 'center' },
     content: { flex: 1, alignItems: 'center', paddingTop: 30 },

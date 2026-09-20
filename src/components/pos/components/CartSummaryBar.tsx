@@ -1,4 +1,5 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { useThemedStyles } from '../../../lib/theme';
 
 interface CartSummaryBarProps {
     count: number;
@@ -8,18 +9,21 @@ interface CartSummaryBarProps {
     disabled?: boolean;
 }
 
-const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress, disabled = false }: CartSummaryBarProps) => (
+const CartSummaryBar = ({ count, total, bottomOffset = 0, onPress, disabled = false }: CartSummaryBarProps) => {
+    const styles = useThemedStyles(baseStyles);
+    return (
     <Pressable style={[styles.cartBar, disabled && styles.disabled, { bottom: bottomOffset }]} onPress={onPress} disabled={disabled}>
         <View style={styles.cartPill}>
             <Text style={styles.cartPillText}>{count} items added</Text>
         </View>
         <Text style={styles.cartTotal}>{total}</Text>
     </Pressable>
-);
+    );
+};
 
 export default CartSummaryBar;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     cartBar: {
         position: 'absolute',
         left: 0,

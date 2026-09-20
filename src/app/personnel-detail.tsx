@@ -14,6 +14,7 @@ import {
     VendorComplianceRequest,
 } from '../components/rent/personnelStore';
 import { useAuthSession } from '../lib/authSession';
+import { useTheme, useThemedStyles } from '../lib/theme';
 
 const formatFullName = (personnel: PersonnelRecord): string => {
     const middleInitial = personnel.middleInitial && personnel.middleInitial !== 'NA'
@@ -57,26 +58,32 @@ interface DetailRowProps {
     value?: string;
 }
 
-const DetailRow = ({ icon, label, value }: DetailRowProps) => (
+const DetailRow = ({ icon, label, value }: DetailRowProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
+    return (
     <View style={styles.detailRow}>
         <View style={styles.detailIcon}>
-            <Ionicons name={icon} size={18} color="#2448a4" />
+            <Ionicons name={icon} size={18} color={colors.primary} />
         </View>
         <View style={styles.detailTextWrap}>
             <Text style={styles.detailLabel}>{label}</Text>
             <Text style={styles.detailValue}>{value?.trim() || 'Not provided'}</Text>
         </View>
     </View>
-);
+    );
+};
 
 const DocumentRow = ({ document }: { document: PersonnelDocument }) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const isPdf = document.mimeType === 'application/pdf' || document.name.toLowerCase().endsWith('.pdf');
     const sizeLabel = formatFileSize(document.size);
 
     return (
         <View style={styles.documentRow}>
             <View style={styles.documentIcon}>
-                <Ionicons name={isPdf ? 'document-text-outline' : 'image-outline'} size={20} color="#4d5666" />
+                <Ionicons name={isPdf ? 'document-text-outline' : 'image-outline'} size={20} color={colors.textSecondary} />
             </View>
             <View style={styles.documentTextWrap}>
                 <Text style={styles.documentName} numberOfLines={1}>{document.name}</Text>
@@ -95,13 +102,15 @@ const PendingDocumentRow = ({
     disabled?: boolean;
     onRemove: () => void;
 }) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const isPdf = document.mimeType === 'application/pdf' || document.name.toLowerCase().endsWith('.pdf');
     const sizeLabel = formatFileSize(document.size);
 
     return (
         <View style={styles.documentRow}>
             <View style={styles.documentIcon}>
-                <Ionicons name={isPdf ? 'document-text-outline' : 'image-outline'} size={20} color="#4d5666" />
+                <Ionicons name={isPdf ? 'document-text-outline' : 'image-outline'} size={20} color={colors.textSecondary} />
             </View>
             <View style={styles.documentTextWrap}>
                 <Text style={styles.documentName} numberOfLines={1}>{document.name}</Text>
@@ -113,7 +122,7 @@ const PendingDocumentRow = ({
                 disabled={disabled}
                 hitSlop={8}
             >
-                <Ionicons name="close" size={18} color="#d85647" />
+                <Ionicons name="close" size={18} color={colors.danger} />
             </Pressable>
         </View>
     );
@@ -133,11 +142,14 @@ const formatRequestDate = (createdAt: string): string => {
     });
 };
 
-const ComplianceRequestCard = ({ request }: { request: VendorComplianceRequest }) => (
+const ComplianceRequestCard = ({ request }: { request: VendorComplianceRequest }) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
+    return (
     <View style={styles.complianceCard}>
         <View style={styles.complianceHeader}>
             <View style={styles.complianceIcon}>
-                <Ionicons name="alert-circle-outline" size={20} color="#c0661b" />
+                <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
             </View>
             <View style={styles.complianceHeaderText}>
                 <Text style={styles.complianceTitle}>Files Needed</Text>
@@ -152,7 +164,7 @@ const ComplianceRequestCard = ({ request }: { request: VendorComplianceRequest }
             <View style={styles.requirementList}>
                 {request.requestedRequirements.map((requirement) => (
                     <View style={styles.requirementRow} key={requirement}>
-                        <Ionicons name="document-attach-outline" size={17} color="#2448a4" />
+                        <Ionicons name="document-attach-outline" size={17} color={colors.primary} />
                         <Text style={styles.requirementText}>{requirement}</Text>
                     </View>
                 ))}
@@ -168,9 +180,12 @@ const ComplianceRequestCard = ({ request }: { request: VendorComplianceRequest }
             </View>
         ) : null}
     </View>
-);
+    );
+};
 
 const PersonnelDetailRoute = () => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { id } = useLocalSearchParams<{ id?: string | string[] }>();
@@ -336,7 +351,7 @@ const PersonnelDetailRoute = () => {
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.header}>
                 <Pressable style={styles.backButton} onPress={() => router.back()}>
-                    <Ionicons name="chevron-back" size={24} color="#2b2f36" />
+                        <Ionicons name="chevron-back" size={24} color={colors.icon} />
                 </Pressable>
                 <Text style={styles.headerTitle}>Personnel Profile</Text>
             </View>
@@ -467,7 +482,7 @@ const PersonnelDetailRoute = () => {
                     </>
                 ) : (
                     <View style={styles.emptyCard}>
-                        <Ionicons name="person-circle-outline" size={52} color="#8a93a5" />
+                        <Ionicons name="person-circle-outline" size={52} color={colors.textMuted} />
                         <Text style={styles.emptyTitle}>Personnel not found</Text>
                         <Text style={styles.emptyText}>
                             This personnel record may have been removed from local storage.
@@ -481,7 +496,7 @@ const PersonnelDetailRoute = () => {
 
 export default PersonnelDetailRoute;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

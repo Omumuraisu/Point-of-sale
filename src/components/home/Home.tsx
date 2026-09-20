@@ -13,6 +13,7 @@ import { useUnreadNotificationCount } from '../../lib/useUnreadNotificationCount
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
 import { formatCurrency } from '../../lib/utils';
 import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -22,6 +23,8 @@ const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 });
 
 export default function Home() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { isOpen, isLoading, isUpdating, error: statusError, canToggle, setIsOpen } = useBusinessOperatingStatus();
@@ -82,7 +85,7 @@ export default function Home() {
                             {currentUser?.profilePictureUrl ? (
                                 <Image source={{ uri: currentUser.profilePictureUrl }} style={styles.avatarImage} />
                             ) : (
-                                <Ionicons name="person" size={26} color="#40444f" />
+                                <Ionicons name="person" size={26} color={colors.icon} />
                             )}
                         </View>
                         <View>
@@ -108,7 +111,7 @@ export default function Home() {
                 <View style={styles.stallCard}>
                     <View style={styles.stallLeft}>
                         <View style={styles.stallIconWrap}>
-                            <MaterialCommunityIcons name="storefront" size={28} color="#2f5ada" />
+                            <MaterialCommunityIcons name="storefront" size={28} color={colors.primary} />
                         </View>
                         <View>
                             <Text style={styles.stallTitle}>{stallLabel}</Text>
@@ -124,8 +127,8 @@ export default function Home() {
                         value={isOpen === true}
                         onValueChange={(value) => { void setIsOpen(value); }}
                         disabled={isLoading || isUpdating || !canToggle || isOpen === null}
-                        trackColor={{ false: '#c5cada', true: '#b8c8fa' }}
-                        thumbColor={isOpen ? '#2f5ada' : '#f4f4f5'}
+                        trackColor={{ false: colors.borderStrong, true: colors.primarySoft }}
+                        thumbColor={isOpen ? colors.primary : '#f4f4f5'}
                     />
                 </View>
                 {statusError ? <Text style={styles.statusError}>{statusError}</Text> : null}
@@ -179,7 +182,7 @@ export default function Home() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

@@ -9,6 +9,7 @@ import {
     markNotificationAsRead,
     MobileNotification,
 } from '../../lib/mobileNotifications';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 type NotificationType = 'warning' | 'alert' | 'success';
 
@@ -33,7 +34,14 @@ function NotificationCard({
     isBusy,
     onActionPress,
 }: NotificationCardProps) {
-    const palette = NOTIFICATION_THEME[type];
+    const styles = useThemedStyles(baseStyles);
+    const { resolveColor } = useTheme();
+    const sourcePalette = NOTIFICATION_THEME[type];
+    const palette = {
+        borderLeft: resolveColor(sourcePalette.borderLeft),
+        iconBg: resolveColor(sourcePalette.iconBg),
+        iconColor: resolveColor(sourcePalette.iconColor),
+    };
 
     return (
         <View style={[styles.card, { borderLeftColor: palette.borderLeft }]}>
@@ -237,6 +245,8 @@ const formatNotificationTime = (createdAt: string) => {
 };
 
 export default function Notifications() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const [recentNotifications, setRecentNotifications] = useState<MobileNotification[]>([]);
@@ -303,14 +313,14 @@ export default function Notifications() {
 
                 {isLoading ? (
                     <View style={styles.stateCard}>
-                        <ActivityIndicator color="#2f5ada" />
+                        <ActivityIndicator color={colors.primary} />
                         <Text style={styles.stateText}>Loading notifications...</Text>
                     </View>
                 ) : null}
 
                 {!isLoading && !hasNotifications ? (
                     <View style={styles.stateCard}>
-                        <Ionicons name="notifications-outline" size={30} color="#687083" />
+                        <Ionicons name="notifications-outline" size={30} color={colors.textSecondary} />
                         <Text style={styles.stateTitle}>No notifications yet</Text>
                         <Text style={styles.stateText}>Billing and compliance notices will appear here once available.</Text>
                     </View>
@@ -363,7 +373,7 @@ export default function Notifications() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

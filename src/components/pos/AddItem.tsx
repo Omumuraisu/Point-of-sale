@@ -13,6 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AddCartItemPayload } from '../../lib/types';
 import { formatCurrency } from '../../lib/utils';
 import { ProductMutationResult, ProductUnit } from './productsStore';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 const PRODUCT_UNITS: ProductUnit[] = ['pieces', 'kg', 'g', 'mg', 'L', 'mL'];
@@ -60,6 +61,8 @@ const AddItemScreen = ({
     onUpdateProduct,
     disabled = false,
 }: AddItemScreenProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const [quantityInput, setQuantityInput] = useState('');
     const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
@@ -242,7 +245,7 @@ const AddItemScreen = ({
                                     disabled={disabled}
                                 >
                                     {isDelete ? (
-                                        <MaterialIcons name="backspace" size={24} color="#c05f5f" />
+                                <MaterialIcons name="backspace" size={24} color={colors.danger} />
                                     ) : (
                                         <Text style={styles.keyText}>{key}</Text>
                                     )}
@@ -270,7 +273,7 @@ const AddItemScreen = ({
                 <View style={styles.modalOverlay}>
                     <View style={styles.confirmModal}>
                         <View style={styles.modalIconWrap}>
-                            <Ionicons name="trash-outline" size={28} color="#d4463e" />
+                            <Ionicons name="trash-outline" size={28} color={colors.danger} />
                         </View>
                         <Text style={styles.modalTitle}>Delete item?</Text>
                         <Text style={styles.modalText}>
@@ -314,7 +317,7 @@ const AddItemScreen = ({
                                 onPress={() => setIsEditModalVisible(false)}
                                 disabled={isSavingProduct}
                             >
-                                <Ionicons name="close" size={22} color="#333844" />
+                                <Ionicons name="close" size={22} color={colors.icon} />
                             </Pressable>
                         </View>
 
@@ -333,7 +336,7 @@ const AddItemScreen = ({
                                     value={editPrice}
                                     onChangeText={setEditPrice}
                                     placeholder="0.00"
-                                    placeholderTextColor="#858b98"
+                                    placeholderTextColor={colors.textMuted}
                                     style={styles.editInput}
                                     keyboardType="decimal-pad"
                                 />
@@ -392,7 +395,7 @@ const AddItemScreen = ({
 
 export default AddItemScreen;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     unpricedWarning: { color: '#a23b32', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
     identityNote: { color: '#5f6878', fontSize: 13, fontWeight: '600', marginBottom: 12 },
     syncErrorText: { color: '#9a352f', backgroundColor: '#fde8e6', borderRadius: 9, padding: 10, fontSize: 13, fontWeight: '700', lineHeight: 18, marginTop: 12 },

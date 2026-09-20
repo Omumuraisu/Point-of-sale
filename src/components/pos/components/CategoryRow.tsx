@@ -1,5 +1,6 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme, useThemedStyles } from '../../../lib/theme';
 
 interface CategoryRowProps {
     item: string;
@@ -8,21 +9,26 @@ interface CategoryRowProps {
     disabled?: boolean;
 }
 
-const CategoryRow = ({ item, tintColor, onPress, disabled = false }: CategoryRowProps) => (
+const CategoryRow = ({ item, tintColor, onPress, disabled = false }: CategoryRowProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { resolveColor, colors } = useTheme();
+    const resolvedTint = resolveColor(tintColor);
+    return (
     <Pressable style={[styles.row, disabled && styles.disabled]} onPress={() => onPress(item)} disabled={disabled}>
         <View style={styles.rowLeft}>
             <View style={styles.thumb}>
-                <Ionicons name="cube-outline" size={18} color={tintColor} />
+                <Ionicons name="cube-outline" size={18} color={resolvedTint} />
             </View>
-            <Text style={[styles.rowLabel, { color: tintColor }]}>{item}</Text>
+            <Text style={[styles.rowLabel, { color: resolvedTint }]}>{item}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={26} color="#8f929c" />
+        <Ionicons name="chevron-forward" size={26} color={colors.textMuted} />
     </Pressable>
-);
+    );
+};
 
 export default CategoryRow;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     row: {
         flexDirection: 'row',
         alignItems: 'center',

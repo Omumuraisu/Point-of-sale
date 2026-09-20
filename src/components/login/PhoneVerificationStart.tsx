@@ -7,8 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { logVerificationDebug, maskPhone, normalizePhilippinePhone, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 export default function PhoneVerificationStart({ purpose }: { purpose: VerificationPurpose }) {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { startFlow } = useVerificationFlow();
     const [phone, setPhone] = useState('');
@@ -76,13 +79,13 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
                     {isActivation ? 'Enter your registered phone number to activate your account.' : 'Enter your registered phone number to reset your password.'}
                 </Text>
                 <View style={styles.iconCircle}>
-                    <MaterialCommunityIcons name={isActivation ? 'cellphone-check' : 'lock-reset'} size={70} color="#34383d" />
+                <MaterialCommunityIcons name={isActivation ? 'cellphone-check' : 'lock-reset'} size={70} color={colors.icon} />
                 </View>
                 <Text style={styles.label}>Phone Number</Text>
                 <TextInput
                     style={styles.input}
                     placeholder="09XX XXX XXXX"
-                    placeholderTextColor="#8f8f93"
+                    placeholderTextColor={colors.textMuted}
                     keyboardType="phone-pad"
                     autoComplete="tel"
                     value={phone}
@@ -103,7 +106,7 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#dfe2ec', paddingHorizontal: 20 },
     backButton: { marginTop: 8, width: 34, height: 34, borderRadius: 8, backgroundColor: '#2849a9', alignItems: 'center', justifyContent: 'center' },
     contentWrap: { flex: 1, alignItems: 'center', paddingTop: 24 },

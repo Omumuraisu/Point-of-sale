@@ -8,8 +8,11 @@ import { isStrongPassword, readFunctionError } from '../lib/authFlow';
 import { useAuthSession } from '../lib/authSession';
 import { supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
+import { useTheme, useThemedStyles } from '../lib/theme';
 
 export default function CreatePasswordScreen() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { flow, clearFlow } = useVerificationFlow();
     const { logout } = useAuthSession();
@@ -91,12 +94,12 @@ export default function CreatePasswordScreen() {
                     }}
                     secureTextEntry={!visible}
                     placeholder={`Enter ${label.toLowerCase()}`}
-                    placeholderTextColor="#8f8f93"
+                    placeholderTextColor={colors.textMuted}
                     autoCapitalize="none"
                     editable={!isSaving}
                 />
                 <TouchableOpacity onPress={toggle} disabled={isSaving}>
-                    <Ionicons name={visible ? 'eye-outline' : 'eye-off-outline'} size={20} color="#272c33" />
+                        <Ionicons name={visible ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.icon} />
                 </TouchableOpacity>
             </View>
         </>
@@ -116,7 +119,7 @@ export default function CreatePasswordScreen() {
                             : 'New Password'}
                 </Text>
                 <Text style={styles.subtitle}>Use at least 8 characters with uppercase, lowercase, and a number.</Text>
-                <View style={styles.iconCircle}><Ionicons name="key" size={52} color="#212831" /></View>
+                <View style={styles.iconCircle}><Ionicons name="key" size={52} color={colors.icon} /></View>
                 {field('New Password', password, setPassword, showPassword, () => setShowPassword((value) => !value))}
                 {field('Confirm Password', confirmPassword, setConfirmPassword, showConfirmPassword, () => setShowConfirmPassword((value) => !value))}
                 {message ? <Text style={styles.error}>{message}</Text> : null}
@@ -128,7 +131,7 @@ export default function CreatePasswordScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#dfe2ec', paddingHorizontal: 20 },
     backButton: { marginTop: 8, width: 34, height: 34, borderRadius: 8, backgroundColor: '#2849a9', alignItems: 'center', justifyContent: 'center' },
     contentWrap: { flex: 1, alignItems: 'center', paddingTop: 24 },

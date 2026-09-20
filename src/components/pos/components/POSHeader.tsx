@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthSession } from '../../../lib/authSession';
 import { useUnreadNotificationCount } from '../../../lib/useUnreadNotificationCount';
+import { useTheme, useThemedStyles } from '../../../lib/theme';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -12,6 +13,8 @@ const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 });
 
 const POSHeader = () => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { unreadNotificationCount } = useUnreadNotificationCount(currentUser?.accountId);
@@ -24,7 +27,7 @@ const POSHeader = () => {
                     {currentUser?.profilePictureUrl ? (
                         <Image source={{ uri: currentUser.profilePictureUrl }} style={styles.avatarImage} />
                     ) : (
-                        <Ionicons name="person" size={26} color="#40444f" />
+                    <Ionicons name="person" size={26} color={colors.icon} />
                     )}
                 </View>
                 <View>
@@ -50,7 +53,7 @@ const POSHeader = () => {
 
 export default POSHeader;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     headerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',

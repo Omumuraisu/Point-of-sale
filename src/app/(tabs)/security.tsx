@@ -7,8 +7,11 @@ import { logVerificationDebug, maskPhone, normalizePhilippinePhone, readFunction
 import { useAuthSession } from '../../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 const Security = () => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { startFlow, clearFlow } = useVerificationFlow();
@@ -75,7 +78,7 @@ const Security = () => {
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.header}>
                 <Pressable style={styles.backBtn} onPress={handleBack} disabled={isSubmitting}>
-                    <Ionicons name="chevron-back" size={34} color="#272c33" />
+                <Ionicons name="chevron-back" size={34} color={colors.icon} />
                 </Pressable>
                 <Text style={styles.headerTitle}>Security</Text>
             </View>
@@ -89,7 +92,7 @@ const Security = () => {
 
                     <View style={styles.phoneCard}>
                         <View style={styles.phoneIcon}>
-                            <Ionicons name="phone-portrait-outline" size={24} color="#2f5ada" />
+                    <Ionicons name="phone-portrait-outline" size={24} color={colors.primary} />
                         </View>
                         <View style={styles.phoneTextWrap}>
                             <Text style={styles.phoneLabel}>Verified phone number</Text>
@@ -121,7 +124,7 @@ const Security = () => {
 
 export default Security;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',

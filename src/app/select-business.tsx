@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { useTheme, useThemedStyles } from '../lib/theme';
 
 interface BusinessOption {
     business_id: number;
@@ -29,6 +30,8 @@ const getStallNumber = (business: BusinessOption) => (
 );
 
 export default function SelectBusinessScreen() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser, isHydrating, selectDeveloperBusiness, logout } = useAuthSession();
     const [businesses, setBusinesses] = useState<BusinessOption[]>([]);
@@ -123,18 +126,18 @@ export default function SelectBusinessScreen() {
                     <Text style={styles.subtitle}>Choose the business and stall you want to manage.</Text>
                 </View>
                 <Pressable style={styles.logoutButton} onPress={handleLogout}>
-                    <Ionicons name="log-out-outline" size={22} color="#b4433d" />
+                    <Ionicons name="log-out-outline" size={22} color={colors.danger} />
                 </Pressable>
             </View>
 
             <View style={styles.searchWrap}>
-                <Ionicons name="search" size={21} color="#737987" />
+                <Ionicons name="search" size={21} color={colors.textMuted} />
                 <TextInput
                     style={styles.searchInput}
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search business or stall"
-                    placeholderTextColor="#8d929d"
+                    placeholderTextColor={colors.textMuted}
                     autoCorrect={false}
                 />
             </View>
@@ -150,7 +153,7 @@ export default function SelectBusinessScreen() {
 
             {isLoading ? (
                 <View style={styles.centerState}>
-                    <ActivityIndicator size="large" color="#2f5ada" />
+                    <ActivityIndicator size="large" color={colors.primary} />
                     <Text style={styles.stateText}>Loading businesses...</Text>
                 </View>
             ) : (
@@ -169,16 +172,16 @@ export default function SelectBusinessScreen() {
                                 onPress={() => void handleSelect(item.business_id)}
                             >
                                 <View style={styles.businessIcon}>
-                                    <MaterialCommunityIcons name="storefront-outline" size={28} color="#2448a4" />
+                                    <MaterialCommunityIcons name="storefront-outline" size={28} color={colors.primary} />
                                 </View>
                                 <View style={styles.businessText}>
                                     <Text style={styles.businessName}>{item.business_name}</Text>
                                     <Text style={styles.stallText}>Stall {getStallNumber(item)}</Text>
                                 </View>
                                 {isSelecting ? (
-                                    <ActivityIndicator color="#2f5ada" />
+                                    <ActivityIndicator color={colors.primary} />
                                 ) : (
-                                    <Ionicons name="chevron-forward" size={23} color="#747b89" />
+                                    <Ionicons name="chevron-forward" size={23} color={colors.textMuted} />
                                 )}
                             </Pressable>
                         );
@@ -195,7 +198,7 @@ export default function SelectBusinessScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#eef0f6' },
     header: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between' },
     eyebrow: { color: '#2f5ada', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },

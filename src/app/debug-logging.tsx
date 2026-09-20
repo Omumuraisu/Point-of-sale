@@ -5,8 +5,11 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthSession } from '../lib/authSession';
 import { DEBUG_CHANNELS, useDebugLogging } from '../lib/debugLogging';
+import { useTheme, useThemedStyles } from '../lib/theme';
 
 export default function DebugLoggingScreen() {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser, isHydrating: isAuthHydrating } = useAuthSession();
     const { settings, isHydrating, setChannelEnabled, disableAll } = useDebugLogging();
@@ -31,7 +34,7 @@ export default function DebugLoggingScreen() {
                 <Text style={styles.intro}>
                     Enabled channels print sanitized diagnostics to the Metro or device console. Settings apply to this device only.
                 </Text>
-                {isHydrating ? <ActivityIndicator color="#315bd7" /> : DEBUG_CHANNELS.map((channel) => (
+                {isHydrating ? <ActivityIndicator color={colors.primary} /> : DEBUG_CHANNELS.map((channel) => (
                     <View key={channel.id} style={styles.card}>
                         <View style={styles.textWrap}>
                             <Text style={styles.title}>{channel.label}</Text>
@@ -40,8 +43,8 @@ export default function DebugLoggingScreen() {
                         <Switch
                             value={settings[channel.id]}
                             onValueChange={(enabled) => { void setChannelEnabled(channel.id, enabled); }}
-                            trackColor={{ false: '#b7bdca', true: '#8aa4ee' }}
-                            thumbColor={settings[channel.id] ? '#315bd7' : '#f3f4f7'}
+                            trackColor={{ false: colors.borderStrong, true: colors.primarySoft }}
+                            thumbColor={settings[channel.id] ? colors.primary : '#f3f4f7'}
                         />
                     </View>
                 ))}
@@ -57,7 +60,7 @@ export default function DebugLoggingScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#dfe2ec' },
     header: { height: 70, paddingHorizontal: 16, backgroundColor: '#2846a5', flexDirection: 'row', alignItems: 'center' },
     backButton: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },

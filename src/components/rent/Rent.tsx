@@ -16,6 +16,7 @@ import POSHeader from '../pos/components/POSHeader';
 import { loadVendorApplications, PersonnelRecord } from './personnelStore';
 import { useAuthSession } from '../../lib/authSession';
 import { fetchBillingSummary, BillingSummary } from '../../lib/billing';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 import { fetchBusinessLeaseAgreement, BusinessLeaseAgreement } from '../../lib/businessLease';
 import { formatCurrency } from '../../lib/utils';
 
@@ -90,6 +91,8 @@ const formatBillingMonthLabel = (value: string | null) => {
 };
 
 const Rent = () => {
+    const styles = useThemedStyles(baseStyles);
+    const { colors } = useTheme();
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
@@ -153,6 +156,10 @@ const Rent = () => {
         });
     };
 
+    const handlePaymentHistoryPress = () => {
+        router.push('/payment-history');
+    };
+
     const personnelList = isVendor
         ? personnelRecords.filter((personnel) => personnel.accountId !== currentUser?.accountId)
         : personnelRecords;
@@ -198,7 +205,7 @@ const Rent = () => {
                     <View style={styles.card}>
                         <View style={styles.stallWrap}>
                             <View style={styles.stallIconBox}>
-                                <MaterialCommunityIcons name="storefront-outline" size={34} color="#2448a4" />
+                    <MaterialCommunityIcons name="storefront-outline" size={34} color={colors.primary} />
                             </View>
                             <View>
                                 <Text style={styles.stallName}>Stall</Text>
@@ -240,14 +247,14 @@ const Rent = () => {
                             onPress={isVendor ? undefined : handleToggleDueDetails}
                         >
                             <View style={styles.dueRow}>
-                                <Ionicons name={billingDateIcon} size={20} color="#2f5ada" />
+                                    <Ionicons name={billingDateIcon} size={20} color={colors.primary} />
                                 <Text style={styles.dueText}>{billingDateLabel}</Text>
                             </View>
                             {!isVendor ? (
                                 <Ionicons
                                     name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
                                     size={22}
-                                    color="#8d919a"
+                                            color={colors.textMuted}
                                 />
                             ) : null}
                         </Pressable>
@@ -315,7 +322,7 @@ const Rent = () => {
                                     </View>
                                 )}
                                 <View style={styles.extraDetailsNoteRow}>
-                                    <Ionicons name="document-text-outline" size={18} color="#7a808e" />
+                                    <Ionicons name="document-text-outline" size={18} color={colors.textMuted} />
                                     <Text style={styles.extraDetailsNote}>
                                         {billingSummary
                                             ? billingStatusIsPaid
@@ -326,6 +333,17 @@ const Rent = () => {
                                 </View>
                             </View>
                         ) : null}
+
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Open payment history"
+                            style={styles.paymentHistoryButton}
+                            onPress={handlePaymentHistoryPress}
+                        >
+                                <Ionicons name="time-outline" size={18} color={colors.primary} />
+                            <Text style={styles.paymentHistoryButtonText}>Payment History</Text>
+                                <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                        </Pressable>
                     </View>
 
                     <Text style={styles.personnelTitle}>Other Personnel</Text>
@@ -368,7 +386,7 @@ const Rent = () => {
                                     ) : null}
                                 </View>
                                 {!isVendor ? (
-                                    <Ionicons name="chevron-forward" size={20} color="#7a808e" />
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                                 ) : null}
                             </Pressable>
                         );
@@ -394,7 +412,7 @@ const Rent = () => {
                                     <Ionicons
                                         name={leaseAgreement ? 'checkmark-circle' : 'alert-circle-outline'}
                                         size={22}
-                                        color={leaseAgreement ? '#4cab53' : '#d85647'}
+                            color={leaseAgreement ? colors.success : colors.danger}
                                     />
                                     <Text style={[styles.renewedText, !leaseAgreement ? styles.noLeaseText : null]}>
                                         {isBillingLoading ? 'LOADING' : leaseAgreement ? 'ACTIVE' : 'NO RECORD'}
@@ -436,7 +454,7 @@ const Rent = () => {
 
 export default Rent;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#dfe2ec',
@@ -668,6 +686,25 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '600',
         color: '#7a808e',
+    },
+    paymentHistoryButton: {
+        alignSelf: 'flex-start',
+        minHeight: 38,
+        marginTop: 14,
+        borderRadius: 19,
+        borderWidth: 1,
+        borderColor: '#8fa5d7',
+        backgroundColor: '#eef3ff',
+        paddingHorizontal: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+    },
+    paymentHistoryButtonText: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#2448a4',
     },
     personnelTitle: {
         marginTop: 10,

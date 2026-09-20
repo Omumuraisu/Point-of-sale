@@ -1,6 +1,7 @@
 import { Pressable, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CategoryType } from '../../../lib/types';
+import { useTheme, useThemedStyles } from '../../../lib/theme';
 
 interface CategoryCardProps {
     item: CategoryType;
@@ -8,24 +9,28 @@ interface CategoryCardProps {
     disabled?: boolean;
 }
 
-const CategoryCard = ({ item, onPress, disabled = false }: CategoryCardProps) => (
+const CategoryCard = ({ item, onPress, disabled = false }: CategoryCardProps) => {
+    const styles = useThemedStyles(baseStyles);
+    const { resolveColor } = useTheme();
+    return (
     <Pressable
         style={[
             styles.card,
-            { backgroundColor: item.bgColor, borderColor: item.borderColor },
+            { backgroundColor: resolveColor(item.bgColor), borderColor: resolveColor(item.borderColor) },
             disabled && styles.disabled,
         ]}
         onPress={() => onPress(item)}
         disabled={disabled}
     >
-        <MaterialCommunityIcons name={item.icon as any} size={58} color={item.textColor} />
-        <Text style={[styles.cardText, { color: item.textColor }]}>{item.label}</Text>
+        <MaterialCommunityIcons name={item.icon as any} size={58} color={resolveColor(item.textColor)} />
+        <Text style={[styles.cardText, { color: resolveColor(item.textColor) }]}>{item.label}</Text>
     </Pressable>
-);
+    );
+};
 
 export default CategoryCard;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     card: {
         width: '48%',
         aspectRatio: 1,

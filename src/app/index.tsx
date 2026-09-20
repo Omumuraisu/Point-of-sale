@@ -5,6 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { Redirect } from 'expo-router';
 import Login from '../components/login/login';
 import { useAuthSession } from '../lib/authSession';
+import { useThemedStyles } from '../lib/theme';
 
 export default function Index() {
     const { currentUser, isHydrating } = useAuthSession();
@@ -20,6 +21,7 @@ export default function Index() {
 }
 
 function StartupVideo({ onFinished }: { onFinished: () => void }) {
+    const startupStyles = useThemedStyles(baseStartupStyles);
     const player = useVideoPlayer(require('../../assets/pos-startup.mp4'), (videoPlayer) => {
         videoPlayer.loop = false;
         videoPlayer.muted = true;
@@ -38,7 +40,7 @@ function StartupVideo({ onFinished }: { onFinished: () => void }) {
     );
 }
 
-const startupStyles = StyleSheet.create({
+const baseStartupStyles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#f0f2ff' },
     video: { flex: 1 },
 });

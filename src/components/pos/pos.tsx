@@ -17,6 +17,7 @@ import ProductsTitle from './components/ProductsTitle';
 import CategoryCard from './components/CategoryCard';
 import CartSummaryBar from './components/CartSummaryBar';
 import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
+import { useThemedStyles } from '../../lib/theme';
 
 interface POSProps {
   cartItems?: CartItem[];
@@ -29,6 +30,7 @@ const POS = ({
   cartCount = 0,
   cartTotal = 'P 00.00',
 }: POSProps) => {
+  const styles = useThemedStyles(baseStyles);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currentUser } = useAuthSession();
@@ -173,7 +175,7 @@ export default POS;
 
 // ── Styles ────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#dfe2ec',
