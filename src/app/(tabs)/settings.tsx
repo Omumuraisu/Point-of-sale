@@ -1,8 +1,10 @@
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthSession } from '../../lib/authSession';
+import { syncAllSupabaseData } from '../../lib/supabaseSync';
 
 const SETTINGS_ITEMS = [
     {
@@ -34,6 +36,13 @@ const SETTINGS_ITEMS = [
         iconName: 'information-circle',
     },
     {
+        id: 'sync-database',
+        title: 'Sync Database',
+        subtitle: 'Sync pending products, sales, and categories',
+        iconSet: 'material',
+        iconName: 'cloud-sync-outline',
+    },
+    {
         id: 'test-sms',
         title: 'Test SMS',
         subtitle: 'Test developer OTP activation',
@@ -50,7 +59,7 @@ const SETTINGS_ITEMS = [
 ] as const;
 
 type IconSet = 'ionicons' | 'material';
-type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'test-sms' | 'debug-logging';
+type SettingId = 'profile' | 'switch-business' | 'security' | 'app-details' | 'sync-database' | 'test-sms' | 'debug-logging';
 
 interface SettingItem {
     id: SettingId;
@@ -78,13 +87,80 @@ const SettingsIcon = ({ iconSet, iconName }: SettingsIconProps) => {
 const Settings = () => {
     const router = useRouter();
     const { currentUser, logout } = useAuthSession();
+    const [isSyncing, setIsSyncing] = useState(false);
     const isDeveloper = currentUser?.profileTable === 'developer';
     const visibleSettingsItems = typedSettingsItems.filter((item) => {
         if (item.id === 'test-sms' || item.id === 'debug-logging') return isDeveloper;
         return isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business';
     });
 
+    const handleManualSync = async () => {
+        if (isSyncing) return;
+
+        if (!currentUser?.accountId || !currentUser.stallNumber) {
+            Alert.alert(
+                'No active stall',
+                'Select or configure a business with an active stall before syncing.',
+            );
+            return;
+        }
+
+        setIsSyncing(true);
+
+        try {
+            const result = await syncAllSupabaseData({
+                accountId: currentUser.accountId,
+                stallNumber: currentUser.stallNumber,
+            });
+            const rows = [
+                `Sales: ${result.transactions.synced}/${result.transactions.attempted}`,
+                `Products: ${result.products.synced}/${result.products.attempted}`,
+                `Categories: ${result.categories.synced}/${result.categories.attempted}`,
+            ];
+            const hasFailures = result.transactions.synced < result.transactions.attempted
+                || result.products.synced < result.products.attempted
+                || result.categories.synced < result.categories.attempted
+                || Boolean(result.products.error)
+                || Boolean(result.categories.error)
+                || Boolean(result.personnel.error);
+
+            if (hasFailures) {
+                const errors = [result.products.error, result.categories.error, result.personnel.error]
+                    .filter((error): error is string => Boolean(error));
+                Alert.alert(
+                    'Sync partially completed',
+                    [...rows, '', 'Some records remain queued for another attempt.', ...errors].join('\n'),
+                );
+                return;
+            }
+
+            const attempted = result.transactions.attempted
+                + result.products.attempted
+                + result.categories.attempted;
+            Alert.alert(
+                'Database synced',
+                attempted === 0
+                    ? 'Everything is already up to date.'
+                    : rows.join('\n'),
+            );
+        } catch (error) {
+            Alert.alert(
+                'Sync failed',
+                error instanceof Error
+                    ? `${error.message}\n\nYour pending records are still saved and can be retried.`
+                    : 'Unable to sync right now. Your pending records are still saved and can be retried.',
+            );
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const handleSettingPress = (id: SettingId) => {
+        if (id === 'sync-database') {
+            void handleManualSync();
+            return;
+        }
+
         if (id === 'profile') {
             router.push('/profile');
             return;
@@ -116,22 +192,41 @@ const Settings = () => {
                 <Text style={styles.pageTitle}>Settings</Text>
 
                 <ScrollView contentContainerStyle={styles.cardsWrap} showsVerticalScrollIndicator={false}>
-                    {visibleSettingsItems.map((item) => (
-                        <Pressable key={item.id} style={styles.itemCard} onPress={() => handleSettingPress(item.id)}>
-                            <View style={styles.itemRow}>
-                                <View style={styles.iconCircle}>
-                                    <SettingsIcon iconSet={item.iconSet} iconName={item.iconName} />
-                                </View>
+                    {visibleSettingsItems.map((item) => {
+                        const isSyncAction = item.id === 'sync-database';
 
-                                <View style={styles.itemTextWrap}>
-                                    <Text style={styles.itemTitle}>{item.title}</Text>
-                                    <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
-                                </View>
+                        return (
+                            <Pressable
+                                key={item.id}
+                                style={({ pressed }) => [
+                                    styles.itemCard,
+                                    isSyncAction && isSyncing && styles.itemCardDisabled,
+                                    pressed && !(isSyncAction && isSyncing) && styles.itemCardPressed,
+                                ]}
+                                onPress={() => handleSettingPress(item.id)}
+                                disabled={isSyncAction && isSyncing}
+                                accessibilityRole="button"
+                                accessibilityState={{ disabled: isSyncAction && isSyncing, busy: isSyncAction && isSyncing }}
+                            >
+                                <View style={styles.itemRow}>
+                                    <View style={styles.iconCircle}>
+                                        <SettingsIcon iconSet={item.iconSet} iconName={item.iconName} />
+                                    </View>
 
-                                <Ionicons name="chevron-forward" size={28} color="#2a2d34" />
-                            </View>
-                        </Pressable>
-                    ))}
+                                    <View style={styles.itemTextWrap}>
+                                        <Text style={styles.itemTitle}>{isSyncAction && isSyncing ? 'Syncing\u2026' : item.title}</Text>
+                                        <Text style={styles.itemSubtitle}>
+                                            {isSyncAction && isSyncing ? 'Please keep the app open' : item.subtitle}
+                                        </Text>
+                                    </View>
+
+                                    {isSyncAction
+                                        ? (isSyncing ? <ActivityIndicator size="small" color="#2f5ada" /> : null)
+                                        : <Ionicons name="chevron-forward" size={28} color="#2a2d34" />}
+                                </View>
+                            </Pressable>
+                        );
+                    })}
 
                     <Pressable
                         style={styles.logoutButton}
@@ -187,6 +282,12 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 3,
         justifyContent: 'center',
+    },
+    itemCardDisabled: {
+        opacity: 0.7,
+    },
+    itemCardPressed: {
+        opacity: 0.82,
     },
     itemRow: {
         flexDirection: 'row',
