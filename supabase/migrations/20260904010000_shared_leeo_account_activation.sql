@@ -1,2 +1,0 @@
--- Historical migration applied by the shared LEEO Delivery project.
--- Kept here to align this repository with the shared project's migration history.

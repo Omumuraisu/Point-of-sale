@@ -1,12 +1,10 @@
 alter table public.products_list
   add column if not exists archived_at timestamptz;
-
 alter table public.sales_transaction
   add column if not exists product_listing_id text,
   add column if not exists catalog_product_id uuid,
   add column if not exists sold_quantity numeric,
   add column if not exists sold_unit text;
-
 -- Preserve every historical row (and its sales FK) while allowing only one
 -- active stall listing for a shared catalog identity.
 with ranked as (
@@ -22,11 +20,9 @@ update public.products_list p
 set archived_at = now(), updated_at_ms = (extract(epoch from now()) * 1000)::bigint
 from ranked r
 where p.id = r.id and r.position > 1;
-
 create unique index if not exists products_list_one_active_catalog_per_stall
   on public.products_list(stall_number, catalog_product_id)
   where catalog_product_id is not null and archived_at is null;
-
 create or replace function public.get_pos_product_catalog()
 returns table(
   category_id uuid, category_name text, display_order integer,
@@ -42,7 +38,6 @@ as $function$
   where auth.uid() is not null and p.is_public
   order by c.display_order, c.name, s.name, p.name, p.variant
 $function$;
-
 create or replace function public.create_catalog_listing(
   p_listing_id text,
   p_stall_number text,
@@ -114,7 +109,6 @@ exception when unique_violation then
   return result;
 end
 $function$;
-
 create or replace function public.update_catalog_listing(
   p_listing_id text, p_stall_number text, p_price numeric, p_unit text
 ) returns public.products_list
@@ -141,7 +135,6 @@ begin
   return result;
 end
 $function$;
-
 create or replace function public.get_catalog_listings(p_stall_number text)
 returns table(
   id text, stall_number text, name text, category_id text, category_label text,
@@ -172,7 +165,6 @@ begin
     order by coalesce(l.updated_at_ms, l.created_at_ms) desc;
 end
 $function$;
-
 create or replace function public.archive_catalog_listing(p_listing_id text, p_stall_number text)
 returns public.products_list
 language plpgsql security definer set search_path to ''
@@ -194,7 +186,6 @@ begin
   return result;
 end
 $function$;
-
 revoke all on function public.create_catalog_listing(text,text,text,text,text,numeric,text,text,text,text) from public;
 revoke all on function public.get_pos_product_catalog() from public;
 revoke all on function public.update_catalog_listing(text,text,numeric,text) from public;

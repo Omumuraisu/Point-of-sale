@@ -39,36 +39,53 @@ begin
 
   perform pg_advisory_xact_lock(73378102);
 
-  select max(requested_at) into v_last_requested_at
+  select max(requested_at)
+  into v_last_requested_at
   from public.account_verification_requests
   where account_id = p_account_id;
 
   if v_last_requested_at is not null
      and v_last_requested_at > v_now - interval '60 seconds' then
-    return query select false, null::uuid,
-      greatest(1, ceil(extract(epoch from (v_last_requested_at + interval '60 seconds' - v_now)))::integer),
+    return query select
+      false,
+      null::uuid,
+      greatest(
+        1,
+        ceil(extract(epoch from (v_last_requested_at + interval '60 seconds' - v_now)))::integer
+      ),
       'cooldown'::text;
     return;
   end if;
 
-  select count(*)::integer into v_account_daily_count
+  select count(*)::integer
+  into v_account_daily_count
   from public.account_verification_requests
   where account_id = p_account_id
     and requested_at >= date_trunc('day', v_now);
 
   if v_account_daily_count >= 5 then
-    return query select false, null::uuid,
-      greatest(1, ceil(extract(epoch from (date_trunc('day', v_now) + interval '1 day' - v_now)))::integer),
+    return query select
+      false,
+      null::uuid,
+      greatest(
+        1,
+        ceil(extract(epoch from (date_trunc('day', v_now) + interval '1 day' - v_now)))::integer
+      ),
       'account_daily_limit'::text;
     return;
   end if;
 
-  select count(*)::integer into v_global_hourly_count
+  select count(*)::integer
+  into v_global_hourly_count
   from public.account_verification_requests
   where requested_at >= v_now - interval '1 hour';
 
   if v_global_hourly_count >= 30 then
-    return query select false, null::uuid, 3600, 'global_hourly_limit'::text;
+    return query select
+      false,
+      null::uuid,
+      3600,
+      'global_hourly_limit'::text;
     return;
   end if;
 
@@ -101,16 +118,12 @@ revoke all on function public.find_auth_user_by_phone(text)
   from public, anon, authenticated;
 grant execute on function public.find_auth_user_by_phone(text)
   to service_role;
-create or replace function public.get_my_pos_profile()
+create or replace function public.get_my_delivery_profile()
 returns table (
   account_id bigint,
   auth_user_id uuid,
   user_type text,
-  username text,
-  email text,
-  profile_table text,
-  profile_id bigint,
-  business_owner_id bigint,
+  operator_id bigint,
   first_name text,
   middle_initial text,
   last_name text,
@@ -126,70 +139,21 @@ as $$
     accounts.account_id,
     accounts.auth_user_id,
     accounts.user_type::text,
-    accounts.username,
-    accounts.email,
-    'business_owner'::text,
-    business_owner.business_owner_id,
-    business_owner.business_owner_id,
-    business_owner.first_name,
-    business_owner.middle_initial,
-    business_owner.last_name,
+    delivery_operator.operator_id,
+    delivery_operator.first_name,
+    delivery_operator.middle_initial,
+    delivery_operator.last_name,
     accounts.phone_number,
-    business_owner.profile_picture_url
+    delivery_operator.profile_picture_url
   from public.accounts
-  join public.business_owner on business_owner.account_id = accounts.account_id
+  join public.delivery_operator
+    on delivery_operator.account_id = accounts.account_id
   where accounts.auth_user_id = auth.uid()
     and accounts.status::text = 'active'
     and accounts.is_verified = true
-    and accounts.user_type::text = 'business_owner'
-    and business_owner.archived_at is null
-
-  union all
-
-  select
-    accounts.account_id,
-    accounts.auth_user_id,
-    accounts.user_type::text,
-    accounts.username,
-    accounts.email,
-    'vendor'::text,
-    vendor.vendor_id,
-    vendor.business_owner_id,
-    vendor.first_name,
-    vendor.middle_initial,
-    vendor.last_name,
-    accounts.phone_number,
-    vendor.profile_picture_url
-  from public.accounts
-  join public.vendor on vendor.account_id = accounts.account_id
-  where accounts.auth_user_id = auth.uid()
-    and accounts.status::text = 'active'
-    and accounts.is_verified = true
-    and accounts.user_type::text = 'vendor'
-    and vendor.is_approved = true
-
-  union all
-
-  select
-    accounts.account_id,
-    accounts.auth_user_id,
-    accounts.user_type::text,
-    accounts.username,
-    accounts.email,
-    'developer'::text,
-    null::bigint,
-    null::bigint,
-    null::text,
-    null::text,
-    null::text,
-    accounts.phone_number,
-    null::text
-  from public.accounts
-  where accounts.auth_user_id = auth.uid()
-    and accounts.status::text = 'active'
-    and accounts.is_verified = true
-    and accounts.user_type::text = 'developer'
+    and accounts.user_type::text in ('delivery_operator', 'developer')
+    and delivery_operator.archived_at is null
   limit 1;
 $$;
-revoke all on function public.get_my_pos_profile() from public, anon;
-grant execute on function public.get_my_pos_profile() to authenticated;
+revoke all on function public.get_my_delivery_profile() from public, anon;
+grant execute on function public.get_my_delivery_profile() to authenticated;

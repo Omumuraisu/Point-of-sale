@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.can_manage_stall_catalog(p_stall_number text)
 returns boolean
 language sql
@@ -25,7 +24,6 @@ as $$
           )
     )
 $$;
-
 create or replace function public.create_catalog_listing(
   p_listing_id text,
   p_stall_number text,
@@ -91,7 +89,6 @@ exception when unique_violation then
   return result;
 end
 $function$;
-
 create or replace function public.update_catalog_listing(
   p_listing_id text, p_stall_number text, p_price numeric, p_unit text
 ) returns public.products_list
@@ -114,7 +111,6 @@ begin
   return result;
 end
 $function$;
-
 create or replace function public.get_catalog_listings(p_stall_number text)
 returns table(
   id text, stall_number text, name text, category_id text, category_label text,
@@ -141,7 +137,6 @@ begin
     order by coalesce(l.updated_at_ms, l.created_at_ms) desc;
 end
 $function$;
-
 create or replace function public.archive_catalog_listing(p_listing_id text, p_stall_number text)
 returns public.products_list
 language plpgsql security definer set search_path to ''
@@ -159,7 +154,6 @@ begin
   return result;
 end
 $function$;
-
 revoke all on function public.can_manage_stall_catalog(text) from public;
 revoke all on function public.create_catalog_listing(text,text,text,text,text,numeric,text,text,text,text) from public;
 revoke all on function public.update_catalog_listing(text,text,numeric,text) from public;
@@ -169,5 +163,4 @@ grant execute on function public.create_catalog_listing(text,text,text,text,text
 grant execute on function public.update_catalog_listing(text,text,numeric,text) to authenticated;
 grant execute on function public.get_catalog_listings(text) to authenticated;
 grant execute on function public.archive_catalog_listing(text,text) to authenticated;
-
 commit;

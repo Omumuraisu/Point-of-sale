@@ -1,3 +1,0 @@
--- Historical migration applied by the shared LEEO Delivery project.
--- The POS-specific migration below defines every shared primitive it depends on
--- idempotently so this repository remains safe to deploy to the shared project.

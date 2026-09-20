@@ -1,5 +1,4 @@
 begin;
-
 create table if not exists public.sales_order (
     order_id bigint generated always as identity primary key,
     client_order_key text not null,
@@ -15,27 +14,20 @@ create table if not exists public.sales_order (
     constraint sales_order_account_client_key_unique unique (account_id, client_order_key),
     constraint sales_order_client_key_length check (char_length(client_order_key) between 8 and 200)
 );
-
 create index if not exists sales_order_business_completed_idx
     on public.sales_order (business_id, completed_at desc);
-
 alter table public.sales_transaction
     add column if not exists order_id bigint references public.sales_order(order_id) on delete restrict;
-
 create index if not exists sales_transaction_order_id_idx
     on public.sales_transaction (order_id);
-
 alter table public.sales_order enable row level security;
-
 drop policy if exists "Authorized accounts can read sales orders" on public.sales_order;
 create policy "Authorized accounts can read sales orders"
 on public.sales_order for select
 to authenticated
 using (public.can_read_business_operating_status(business_id));
-
 revoke all on public.sales_order from anon, authenticated;
 grant select on public.sales_order to authenticated;
-
 create or replace function public.record_open_stall_sale(
     p_business_id bigint,
     p_client_order_key text,
@@ -187,8 +179,6 @@ begin
            v_order.paid_amount_php, v_order.change_amount_php;
 end;
 $$;
-
 revoke all on function public.record_open_stall_sale(bigint, text, numeric, jsonb) from public;
 grant execute on function public.record_open_stall_sale(bigint, text, numeric, jsonb) to authenticated;
-
 commit;

@@ -128,9 +128,6 @@ export default function Home() {
                         thumbColor={isOpen ? '#2f5ada' : '#f4f4f5'}
                     />
                 </View>
-                {!canToggle && currentUser?.profileTable === 'developer' ? (
-                    <Text style={styles.statusHelp}>Developers can view status but cannot change it.</Text>
-                ) : null}
                 {statusError ? <Text style={styles.statusError}>{statusError}</Text> : null}
 
                 <View style={styles.totalCard}>
@@ -284,13 +281,6 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 2 },
         shadowRadius: 3,
         elevation: 2,
-    },
-    statusHelp: {
-        marginTop: -8,
-        marginBottom: 12,
-        color: '#5c6472',
-        fontSize: 12,
-        fontWeight: '600',
     },
     statusError: {
         marginTop: -8,

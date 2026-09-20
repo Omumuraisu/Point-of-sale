@@ -53,7 +53,9 @@ const friendlyError = (message?: string) => {
 export const BusinessOperatingStatusProvider = ({ children }: { children: ReactNode }) => {
     const { currentUser } = useAuthSession();
     const businessId = currentUser?.businessId ?? null;
-    const canToggle = currentUser?.profileTable === 'business_owner' || currentUser?.profileTable === 'vendor';
+    const canToggle = currentUser?.profileTable === 'business_owner'
+        || currentUser?.profileTable === 'vendor'
+        || currentUser?.profileTable === 'developer';
     const [row, setRow] = useState<OperatingStatusRow | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
