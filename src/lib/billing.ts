@@ -1,289 +1,257 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { debugError } from './debugLogging';
+import { applyBillingScope } from './queryScopes';
 
-interface PaymentRow {
-    payment_id: number;
-    business_id: number;
-    stall_number: string | null;
-    payment_type: string;
-    amount: number | string;
-    due_date: string | null;
-    paid_at: string | null;
-    status: string | null;
-    billing_month: string | null;
+export type BillingStatus = 'pending' | 'partially_paid' | 'overdue' | 'overdue_partially_paid' | 'fully_paid';
+
+export interface BillingScope {
+    businessOwnerId: number | null | undefined;
+    businessId: number | null | undefined;
+    stallNumber: string | null | undefined;
+}
+
+export interface BillingFocus {
+    billingCycleId?: number | null;
+    billingMonth?: string | null;
+}
+
+export interface BillingCharge {
+    id: number;
+    code: string;
+    label: string;
+    amount: number;
     description: string | null;
-    violation_type: string | null;
+}
+
+export interface BillPaymentAllocation {
+    transactionId: number;
+    allocationId: number;
+    amount: number;
+    paymentDate: string | null;
+    referenceNumber: string | null;
+    notes: string | null;
+    recordedByStaffId: number | null;
+    recordedBy: string | null;
+    recordedAt: string | null;
+}
+
+export interface MonthlyBillBalance {
+    monthlyBillId: number;
+    billingCycleId: number | null;
+    businessOwnerId: number;
+    businessId: number;
+    stallNumber: string;
+    billingMonth: string;
+    dueDate: string;
+    ownerName: string;
+    businessName: string;
+    issuedAt: string;
+    totalAmount: number;
+    rentAmount: number;
+    electricityAmount: number;
+    waterAmount: number;
+    otherAmount: number;
+    appliedAmount: number;
+    balance: number;
+    status: BillingStatus;
+    isArrears: boolean;
+    chargeBreakdown: BillingCharge[];
+    paymentHistory: BillPaymentAllocation[];
+}
+
+export interface BillingSummary {
+    currentBill: MonthlyBillBalance;
+    arrearsBills: MonthlyBillBalance[];
+    arrearsAmount: number;
+    totalOutstanding: number;
+    focusedBillId: number | null;
 }
 
 export interface PaymentHistoryEntry {
     paymentId: number;
     amount: number;
     paidAt: string | null;
+    referenceNumber: string | null;
+    notes: string | null;
 }
 
-export interface BillingMonthSummary {
-    billingMonth: string | null;
-    status: 'PAID' | 'UNPAID';
-    totalAmount: number;
-    unpaidAmount: number;
-    dueDate: string | null;
-    paidAt: string | null;
-    paymentCount: number;
-    rentAmount: number;
-    electricityAmount: number;
-    waterAmount: number;
-    violationsAmount: number;
+interface MonthlyBillBalanceRow {
+    monthly_bill_id: number | string | null;
+    billing_cycle_id: number | string | null;
+    business_owner_id: number | string | null;
+    business_id: number | string | null;
+    stall_number: string | null;
+    billing_month: string | null;
+    due_date: string | null;
+    owner_name: string | null;
+    business_name: string | null;
+    issued_at: string | null;
+    total_amount: number | string | null;
+    rent_amount: number | string | null;
+    electricity_amount: number | string | null;
+    water_amount: number | string | null;
+    other_amount: number | string | null;
+    applied_amount: number | string | null;
+    balance: number | string | null;
+    status: string | null;
+    is_arrears: boolean | null;
+    charge_breakdown: unknown;
+    payment_history: unknown;
 }
 
-export interface BillingSummary {
-    status: 'PAID' | 'UNPAID';
-    totalAmount: number;
-    dueDate: string | null;
-    paidAt: string | null;
-    billingMonth: string | null;
-    paymentCount: number;
-    currentMonthAmount: number;
-    previousMonthAmount: number;
-    rentAmount: number;
-    electricityAmount: number;
-    waterAmount: number;
-    violationsAmount: number;
-    arrearsAmount: number;
-    currentBill: BillingMonthSummary | null;
-    arrearsMonths: BillingMonthSummary[];
-}
-
-const PAYMENT_COLUMNS = [
-    'payment_id',
-    'business_id',
-    'stall_number',
-    'payment_type',
-    'amount',
-    'due_date',
-    'paid_at',
-    'status',
-    'billing_month',
-    'description',
-    'violation_type',
+const BILLING_COLUMNS = [
+    'monthly_bill_id', 'billing_cycle_id', 'business_owner_id', 'business_id', 'stall_number',
+    'billing_month', 'due_date', 'owner_name', 'business_name', 'issued_at', 'total_amount',
+    'rent_amount', 'electricity_amount', 'water_amount', 'other_amount', 'applied_amount',
+    'balance', 'status', 'is_arrears', 'charge_breakdown', 'payment_history',
 ].join(', ');
 
-const toAmount = (value: number | string): number => {
+const BILLING_STATUSES = new Set<BillingStatus>([
+    'pending', 'partially_paid', 'overdue', 'overdue_partially_paid', 'fully_paid',
+]);
+
+const toAmount = (value: unknown): number => {
     const amount = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(amount) ? amount : 0;
 };
 
-const isPaidPayment = (payment: PaymentRow) => (
-    payment.status?.toLowerCase().trim() === 'paid' || Boolean(payment.paid_at)
-);
-
-const getPaymentMonth = (payment: PaymentRow) => (
-    payment.billing_month ?? payment.due_date ?? ''
-);
-
-const getPaymentTypeBucket = (payment: PaymentRow) => {
-    const normalized = [
-        payment.payment_type,
-        payment.violation_type,
-        payment.description,
-    ].filter(Boolean).join(' ').toLowerCase().trim();
-
-    if (normalized.includes('electric')) {
-        return 'electricity';
-    }
-
-    if (normalized.includes('water')) {
-        return 'water';
-    }
-
-    if (normalized.includes('rent')) {
-        return 'rent';
-    }
-
-    if (normalized.includes('violation') || normalized.includes('penalty') || normalized.includes('fine')) {
-        return 'violations';
-    }
-
-    return null;
+const toInteger = (value: unknown): number => {
+    const integer = typeof value === 'number' ? value : Number(value);
+    return Number.isSafeInteger(integer) ? integer : 0;
 };
 
-const getLatestMonth = (months: string[]) => (
-    months
-        .filter(Boolean)
-        .sort((first, second) => second.localeCompare(first))[0] ?? null
-);
+const toNullableInteger = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const integer = toInteger(value);
+    return integer > 0 ? integer : null;
+};
 
-const getEarliestDueDate = (payments: PaymentRow[]): string | null => (
-    payments
-        .map((payment) => payment.due_date)
-        .filter((dueDate): dueDate is string => Boolean(dueDate))
-        .sort((first, second) => first.localeCompare(second))[0] ?? null
-);
+const asRecordArray = (value: unknown): Record<string, unknown>[] => {
+    let parsed = value;
+    if (typeof value === 'string') {
+        try { parsed = JSON.parse(value); } catch { return []; }
+    }
+    return Array.isArray(parsed)
+        ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+        : [];
+};
 
-const getLatestPaidAt = (payments: PaymentRow[]): string | null => (
-    payments
-        .map((payment) => payment.paid_at)
-        .filter((paidAt): paidAt is string => Boolean(paidAt))
-        .sort((first, second) => second.localeCompare(first))[0] ?? null
-);
+const mapCharges = (value: unknown): BillingCharge[] => asRecordArray(value).map((charge) => ({
+    id: toInteger(charge.id),
+    code: typeof charge.code === 'string' ? charge.code : 'other',
+    label: typeof charge.label === 'string' && charge.label.trim() ? charge.label : 'Other charge',
+    amount: toAmount(charge.amount),
+    description: typeof charge.description === 'string' ? charge.description : null,
+}));
 
-const summarizeMonth = (billingMonth: string | null, payments: PaymentRow[]): BillingMonthSummary => {
-    const amountByBucket = payments.reduce(
-        (totals, payment) => {
-            const bucket = getPaymentTypeBucket(payment);
-            const amount = toAmount(payment.amount);
+const mapPaymentHistory = (value: unknown): BillPaymentAllocation[] => asRecordArray(value)
+    .map((payment) => ({
+        transactionId: toInteger(payment.transactionId),
+        allocationId: toInteger(payment.allocationId),
+        amount: toAmount(payment.amount),
+        paymentDate: typeof payment.paymentDate === 'string' ? payment.paymentDate : null,
+        referenceNumber: typeof payment.referenceNumber === 'string' ? payment.referenceNumber : null,
+        notes: typeof payment.notes === 'string' ? payment.notes : null,
+        recordedByStaffId: toNullableInteger(payment.recordedByStaffId),
+        recordedBy: typeof payment.recordedBy === 'string' && payment.recordedBy.trim() ? payment.recordedBy : null,
+        recordedAt: typeof payment.recordedAt === 'string' ? payment.recordedAt : null,
+    }))
+    .filter((payment) => payment.transactionId > 0 && payment.allocationId > 0);
 
-            if (bucket) {
-                totals[bucket] += amount;
-            }
-
-            return totals;
-        },
-        {
-            rent: 0,
-            electricity: 0,
-            water: 0,
-            violations: 0,
-        },
-    );
-    const unpaidPayments = payments.filter((payment) => !isPaidPayment(payment));
-    const totalAmount = amountByBucket.rent
-        + amountByBucket.electricity
-        + amountByBucket.water
-        + amountByBucket.violations;
-
+export const mapMonthlyBillRow = (row: MonthlyBillBalanceRow): MonthlyBillBalance => {
+    const normalizedStatus = row.status?.toLowerCase().trim() as BillingStatus;
     return {
-        billingMonth,
-        status: unpaidPayments.length > 0 ? 'UNPAID' : 'PAID',
-        totalAmount,
-        unpaidAmount: unpaidPayments.reduce((sum, payment) => sum + toAmount(payment.amount), 0),
-        dueDate: getEarliestDueDate(payments),
-        paidAt: getLatestPaidAt(payments),
-        paymentCount: payments.length,
-        rentAmount: amountByBucket.rent,
-        electricityAmount: amountByBucket.electricity,
-        waterAmount: amountByBucket.water,
-        violationsAmount: amountByBucket.violations,
+        monthlyBillId: toInteger(row.monthly_bill_id),
+        billingCycleId: toNullableInteger(row.billing_cycle_id),
+        businessOwnerId: toInteger(row.business_owner_id),
+        businessId: toInteger(row.business_id),
+        stallNumber: row.stall_number ?? '',
+        billingMonth: row.billing_month ?? '',
+        dueDate: row.due_date ?? '',
+        ownerName: row.owner_name ?? '',
+        businessName: row.business_name ?? '',
+        issuedAt: row.issued_at ?? '',
+        totalAmount: toAmount(row.total_amount),
+        rentAmount: toAmount(row.rent_amount),
+        electricityAmount: toAmount(row.electricity_amount),
+        waterAmount: toAmount(row.water_amount),
+        otherAmount: toAmount(row.other_amount),
+        appliedAmount: toAmount(row.applied_amount),
+        balance: toAmount(row.balance),
+        status: BILLING_STATUSES.has(normalizedStatus) ? normalizedStatus : 'pending',
+        isArrears: row.is_arrears === true,
+        chargeBreakdown: mapCharges(row.charge_breakdown),
+        paymentHistory: mapPaymentHistory(row.payment_history),
     };
 };
 
-export const fetchBillingSummary = async (
-    businessId?: number | null,
-    stallNumber?: string | null,
-): Promise<BillingSummary | null> => {
-    if (!businessId || !isSupabaseConfigured || !supabase) {
-        return null;
-    }
-
-    let query = supabase
-        .from('payments')
-        .select(PAYMENT_COLUMNS)
-        .eq('business_id', businessId)
-        .order('billing_month', { ascending: false, nullsFirst: false })
-        .order('due_date', { ascending: true, nullsFirst: false });
-
-    if (stallNumber) {
-        query = query.eq('stall_number', stallNumber);
-    }
-
-    const { data, error } = await query;
-
-    if (error || !data) {
-        if (error) {
-            debugError('billing-lease', 'failed to fetch payments', { message: error.message });
-        }
-
-        return null;
-    }
-
-    const payments = data as unknown as PaymentRow[];
-
-    if (payments.length === 0) {
-        return null;
-    }
-
-    const paymentsByMonth = payments.reduce((groups, payment) => {
-        const month = getPaymentMonth(payment);
-        const key = month || 'unassigned';
-        const monthPayments = groups.get(key) ?? [];
-
-        monthPayments.push(payment);
-        groups.set(key, monthPayments);
-
-        return groups;
-    }, new Map<string, PaymentRow[]>());
-    const monthSummaries = Array.from(paymentsByMonth.entries())
-        .map(([month, monthPayments]) => summarizeMonth(month === 'unassigned' ? null : month, monthPayments))
-        .sort((first, second) => (second.billingMonth ?? '').localeCompare(first.billingMonth ?? ''));
-    const selectedMonth = getLatestMonth(monthSummaries.map((summary) => summary.billingMonth ?? ''));
-    const currentBill = monthSummaries.find((summary) => summary.billingMonth === selectedMonth)
-        ?? monthSummaries[0]
-        ?? null;
-    const arrearsMonths = monthSummaries.filter((summary) => (
-        summary.billingMonth !== currentBill?.billingMonth
-        && summary.unpaidAmount > 0
+export const buildBillingSummary = (bills: MonthlyBillBalance[], focus: BillingFocus = {}): BillingSummary | null => {
+    if (bills.length === 0) return null;
+    const sorted = [...bills].sort((first, second) => (
+        second.billingMonth.localeCompare(first.billingMonth) || second.monthlyBillId - first.monthlyBillId
     ));
-    const arrearsAmount = arrearsMonths.reduce((sum, month) => sum + month.unpaidAmount, 0);
-    const currentMonthAmount = currentBill?.unpaidAmount ?? 0;
-    const totalDue = currentMonthAmount + arrearsAmount;
-    const currentMonthPaidAmount = currentBill?.totalAmount ?? 0;
-
+    const currentBill = sorted[0];
+    const arrearsBills = sorted.filter((bill) => bill.isArrears && bill.balance > 0);
+    const arrearsAmount = arrearsBills.reduce((sum, bill) => sum + bill.balance, 0);
+    const focusedBill = (focus.billingCycleId
+        ? sorted.find((bill) => bill.billingCycleId === focus.billingCycleId)
+        : undefined) ?? (focus.billingMonth
+        ? sorted.find((bill) => bill.billingMonth === focus.billingMonth)
+        : undefined);
     return {
-        status: totalDue > 0 ? 'UNPAID' : 'PAID',
-        totalAmount: totalDue > 0 ? totalDue : currentMonthPaidAmount,
-        dueDate: currentBill?.dueDate ?? null,
-        paidAt: getLatestPaidAt(payments),
-        billingMonth: currentBill?.billingMonth ?? null,
-        paymentCount: monthSummaries.reduce((sum, month) => sum + month.paymentCount, 0),
-        currentMonthAmount,
-        previousMonthAmount: arrearsAmount,
-        rentAmount: currentBill?.rentAmount ?? 0,
-        electricityAmount: currentBill?.electricityAmount ?? 0,
-        waterAmount: currentBill?.waterAmount ?? 0,
-        violationsAmount: currentBill?.violationsAmount ?? 0,
-        arrearsAmount,
         currentBill,
-        arrearsMonths,
+        arrearsBills,
+        arrearsAmount,
+        totalOutstanding: currentBill.balance + arrearsAmount,
+        focusedBillId: focusedBill?.monthlyBillId ?? null,
     };
 };
 
-export const fetchPaymentHistory = async (
-    businessId?: number | null,
-    stallNumber?: string | null,
-): Promise<PaymentHistoryEntry[]> => {
-    if (!businessId || !isSupabaseConfigured || !supabase) {
-        return [];
-    }
+const hasCompleteScope = (scope: BillingScope): scope is BillingScope & {
+    businessOwnerId: number;
+    businessId: number;
+    stallNumber: string;
+} => (
+    Boolean(scope.businessOwnerId && scope.businessId && scope.stallNumber)
+);
 
-    let query = supabase
-        .from('payments')
-        .select('payment_id, amount, paid_at, status')
-        .eq('business_id', businessId)
-        .order('paid_at', { ascending: false, nullsFirst: false });
-
-    if (stallNumber) {
-        query = query.eq('stall_number', stallNumber);
-    }
-
-    const { data, error } = await query;
-
+const fetchScopedBills = async (scope: BillingScope): Promise<MonthlyBillBalance[]> => {
+    if (!hasCompleteScope(scope)) return [];
+    if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+    const scopedQuery = applyBillingScope(supabase
+        .from('v_monthly_bill_balances')
+        .select(BILLING_COLUMNS), scope);
+    const { data, error } = await scopedQuery
+        .order('billing_month', { ascending: false })
+        .order('monthly_bill_id', { ascending: false });
     if (error) {
-        debugError('billing-lease', 'failed to fetch payment history', { message: error.message });
+        debugError('billing-lease', 'failed to fetch monthly bill balances', { message: error.message });
         throw error;
     }
-
-    return (data ?? [])
-        .filter((payment) => (
-            payment.status?.toLowerCase().trim() === 'paid' || Boolean(payment.paid_at)
-        ))
-        .map((payment) => ({
-            paymentId: payment.payment_id,
-            amount: toAmount(payment.amount),
-            paidAt: payment.paid_at,
-        }))
-        .sort((first, second) => {
-            if (!first.paidAt && !second.paidAt) return 0;
-            if (!first.paidAt) return 1;
-            if (!second.paidAt) return -1;
-            return second.paidAt.localeCompare(first.paidAt);
-        });
+    return ((data ?? []) as unknown as MonthlyBillBalanceRow[]).map(mapMonthlyBillRow);
 };
+
+export const fetchBillingSummary = async (scope: BillingScope, focus: BillingFocus = {}): Promise<BillingSummary | null> => (
+    buildBillingSummary(await fetchScopedBills(scope), focus)
+);
+
+export const buildPaymentHistory = (bills: MonthlyBillBalance[]): PaymentHistoryEntry[] => {
+    const transactions = new Map<number, PaymentHistoryEntry>();
+    bills.forEach((bill) => bill.paymentHistory.forEach((allocation) => {
+        const existing = transactions.get(allocation.transactionId);
+        transactions.set(allocation.transactionId, {
+            paymentId: allocation.transactionId,
+            amount: (existing?.amount ?? 0) + allocation.amount,
+            paidAt: existing?.paidAt ?? allocation.paymentDate,
+            referenceNumber: existing?.referenceNumber ?? allocation.referenceNumber,
+            notes: existing?.notes ?? allocation.notes,
+        });
+    }));
+    return Array.from(transactions.values()).sort((first, second) => (
+        (second.paidAt ?? '').localeCompare(first.paidAt ?? '') || second.paymentId - first.paymentId
+    ));
+};
+
+export const fetchPaymentHistory = async (scope: BillingScope): Promise<PaymentHistoryEntry[]> => (
+    buildPaymentHistory(await fetchScopedBills(scope))
+);

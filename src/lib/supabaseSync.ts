@@ -1,16 +1,66 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { syncUnsyncedTransactions } from './transactionsSync';
 import { loadMergedCategories } from '../components/pos/categoriesStore';
-import { ProductScope, getListingIdAliases, syncProducts as syncScopedProducts } from '../components/pos/productsStore';
+import { ProductScope, getListingIdAliases, getProductSyncSummary, syncProducts as syncScopedProducts } from '../components/pos/productsStore';
 import { reconcileCartListingIds } from '../components/pos/cartStore';
-import { reconcileUnsyncedTransactionListingIds } from '../components/pos/transactionsStore';
+import { getUnsyncedTransactions, reconcileUnsyncedTransactionListingIds } from '../components/pos/transactionsStore';
 import { debugLog } from './debugLogging';
+import { TransactionScope } from './types';
 
 interface BatchSyncResult {
     attempted: number;
     synced: number;
     error?: string;
 }
+
+export interface DatabaseSyncStatus {
+    pending: number;
+    lastSyncedAt: number | null;
+}
+
+const databaseSyncStatusListeners = new Set<() => void>();
+
+export const subscribeToDatabaseSyncStatus = (listener: () => void) => {
+    databaseSyncStatusListeners.add(listener);
+    return () => { databaseSyncStatusListeners.delete(listener); };
+};
+
+const notifyDatabaseSyncStatusChanged = () => {
+    databaseSyncStatusListeners.forEach((listener) => listener());
+};
+
+const syncStatusKey = (scope: ProductScope & TransactionScope) =>
+    `@marketsync/database-sync-status:${scope.accountId}:${scope.businessId}:${scope.stallNumber}`;
+
+const readLastSyncedAt = async (scope: ProductScope & TransactionScope): Promise<number | null> => {
+    const raw = await AsyncStorage.getItem(syncStatusKey(scope));
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw) as { lastSyncedAt?: unknown };
+        return typeof parsed.lastSyncedAt === 'number' && Number.isFinite(parsed.lastSyncedAt)
+            ? parsed.lastSyncedAt
+            : null;
+    } catch {
+        return null;
+    }
+};
+
+export const getDatabaseSyncStatus = async (
+    scope: ProductScope & TransactionScope,
+): Promise<DatabaseSyncStatus> => {
+    const [transactions, products, lastSyncedAt] = await Promise.all([
+        getUnsyncedTransactions(scope),
+        getProductSyncSummary(scope),
+        readLastSyncedAt(scope),
+    ]);
+
+    return {
+        pending: transactions.length + products.pending + products.failed,
+        lastSyncedAt,
+    };
+};
 
 const logSyncDebug = (event: string, details?: Record<string, unknown>) => {
     debugLog('supabase-sync', event, details);
@@ -91,7 +141,7 @@ export const syncPersonnel = async (): Promise<BatchSyncResult> => {
     return emptyResult;
 };
 
-export const syncAllSupabaseData = async (scope: ProductScope): Promise<{
+export const syncAllSupabaseData = async (scope: ProductScope & TransactionScope): Promise<{
     transactions: { attempted: number; synced: number };
     products: BatchSyncResult;
     categories: BatchSyncResult;
@@ -101,9 +151,9 @@ export const syncAllSupabaseData = async (scope: ProductScope): Promise<{
     const aliases = await getListingIdAliases(scope);
     await Promise.all([
         reconcileCartListingIds(scope, aliases),
-        reconcileUnsyncedTransactionListingIds(scope.accountId, aliases),
+        reconcileUnsyncedTransactionListingIds(scope, aliases),
     ]);
-    const transactions = await syncUnsyncedTransactions(scope.accountId);
+    const transactions = await syncUnsyncedTransactions(scope);
     const [categories, personnel] = await Promise.all([syncCategories(), syncPersonnel()]);
 
     logSyncDebug('full sync complete', {
@@ -112,6 +162,18 @@ export const syncAllSupabaseData = async (scope: ProductScope): Promise<{
         categories,
         personnel,
     });
+
+    const hasFailures = transactions.synced < transactions.attempted
+        || products.synced < products.attempted
+        || categories.synced < categories.attempted
+        || Boolean(products.error)
+        || Boolean(categories.error)
+        || Boolean(personnel.error);
+
+    if (!hasFailures) {
+        await AsyncStorage.setItem(syncStatusKey(scope), JSON.stringify({ lastSyncedAt: Date.now() }));
+        notifyDatabaseSyncStatusChanged();
+    }
 
     return {
         transactions,

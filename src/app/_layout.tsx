@@ -30,16 +30,24 @@ function AuthGate({ children }: React.PropsWithChildren) {
   }, [isAuthenticated, isHydrating, isProtected, router]);
 
   useEffect(() => {
-    if (isAuthenticated && currentUser?.stallNumber) {
-      void syncAllSupabaseData({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber });
+    if (isAuthenticated && currentUser?.businessId && currentUser.stallNumber) {
+      void syncAllSupabaseData({
+        accountId: currentUser.accountId,
+        businessId: currentUser.businessId,
+        stallNumber: currentUser.stallNumber,
+      });
     }
-  }, [isAuthenticated, currentUser?.accountId, currentUser?.stallNumber]);
+  }, [isAuthenticated, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
 
   useEffect(() => NetInfo.addEventListener((state) => {
-    if (state.isConnected && isAuthenticated && currentUser?.stallNumber) {
-      void syncAllSupabaseData({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber });
+    if (state.isConnected && isAuthenticated && currentUser?.businessId && currentUser.stallNumber) {
+      void syncAllSupabaseData({
+        accountId: currentUser.accountId,
+        businessId: currentUser.businessId,
+        stallNumber: currentUser.stallNumber,
+      });
     }
-  }), [isAuthenticated, currentUser?.accountId, currentUser?.stallNumber]);
+  }), [isAuthenticated, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
 
   if (isHydrating || (isProtected && !isAuthenticated)) return null;
   return <>{children}</>;
@@ -200,6 +208,14 @@ function ThemedApp() {
       />
       <Stack.Screen
         name="debug-logging"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="app-details"
         options={{
           headerShown: false,
           presentation: "card",

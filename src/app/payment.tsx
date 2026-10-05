@@ -15,7 +15,9 @@ const PaymentRoute = () => {
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
     const parsedPreparedAt = Number(typeof preparedAt === 'string' ? preparedAt : '');
     const preparedAtRef = useRef(Number.isFinite(parsedPreparedAt) && parsedPreparedAt > 0 ? parsedPreparedAt : Date.now());
-    const clientOrderKeyRef = useRef(`checkout:${currentUser?.accountId ?? 'unknown'}:${preparedAtRef.current}`);
+    const clientOrderKeyRef = useRef(
+        `checkout:${currentUser?.accountId ?? 'unknown'}:${currentUser?.businessId ?? 'no-business'}:${preparedAtRef.current}`,
+    );
     const isSavingPaymentRef = useRef(false);
     const [isSavingPayment, setIsSavingPayment] = useState(false);
     const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -43,6 +45,12 @@ const PaymentRoute = () => {
 
         if (!currentUser) {
             router.replace('/');
+            return;
+        }
+        if (!currentUser.businessId || currentUser.businessId <= 0) {
+            setPaymentError('Cannot record this sale because no valid business is selected.');
+            isSavingPaymentRef.current = false;
+            setIsSavingPayment(false);
             return;
         }
 

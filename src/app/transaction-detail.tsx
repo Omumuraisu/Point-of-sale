@@ -19,18 +19,15 @@ const TransactionDetailRoute = () => {
 
     useEffect(() => {
         let isMounted = true;
+        setTransaction(null);
 
         const hydrateTransaction = async () => {
-            const localTransactions = await loadSavedTransactions(
-                currentUser?.accountId,
-                currentUser?.stallId,
-                currentUser?.stallNumber,
-            );
-            const remoteTransactions = await loadRemoteSalesTransactions({
-                accountId: currentUser?.accountId,
-                stallId: currentUser?.stallId,
-                stallNumber: currentUser?.stallNumber,
-            });
+            if (!currentUser?.accountId || !currentUser.businessId) {
+                return;
+            }
+            const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId };
+            const localTransactions = await loadSavedTransactions(scope);
+            const remoteTransactions = await loadRemoteSalesTransactions({ businessId: scope.businessId });
             const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
             const allTransactions = [...unsyncedLocalTransactions, ...remoteTransactions];
             const matched = allTransactions.find((entry) => entry.id === transactionId) ?? null;
@@ -45,7 +42,7 @@ const TransactionDetailRoute = () => {
         return () => {
             isMounted = false;
         };
-    }, [currentUser?.accountId, currentUser?.stallId, currentUser?.stallNumber, transactionId]);
+    }, [currentUser?.accountId, currentUser?.businessId, transactionId]);
 
     return (
         <TransactionDetail

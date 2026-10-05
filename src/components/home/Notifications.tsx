@@ -10,8 +10,13 @@ import {
     MobileNotification,
 } from '../../lib/mobileNotifications';
 import { useTheme, useThemedStyles } from '../../lib/theme';
-
-type NotificationType = 'warning' | 'alert' | 'success';
+import {
+    formatNotificationTitle,
+    getBillNavigationParams,
+    getNotificationType,
+    getReadNotificationAction,
+    NotificationType,
+} from '../../lib/notificationPresentation';
 
 interface NotificationCardProps {
     title: string;
@@ -48,6 +53,7 @@ function NotificationCard({
             <View style={styles.cardRow}>
                 <View style={[styles.iconWrap, { backgroundColor: palette.iconBg }]}>
                     {type === 'warning' ? <Ionicons name="warning" size={28} color={palette.iconColor} /> : null}
+                    {type === 'danger' ? <Ionicons name="alert-circle" size={30} color={palette.iconColor} /> : null}
                     {type === 'alert' ? <MaterialCommunityIcons name="file-document-outline" size={28} color={palette.iconColor} /> : null}
                     {type === 'success' ? <Ionicons name="checkmark" size={30} color={palette.iconColor} /> : null}
                 </View>
@@ -103,50 +109,12 @@ const NOTIFICATION_THEME = {
         iconBg: '#bde6c2',
         iconColor: '#4aad5d',
     },
+    danger: {
+        borderLeft: '#b93a32',
+        iconBg: '#f3d2d0',
+        iconColor: '#b93a32',
+    },
 } as const;
-
-const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    year: 'numeric',
-});
-
-const formatBillingMonthLabel = (value: string | null) => {
-    if (!value) {
-        return null;
-    }
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-
-    return MONTH_FORMATTER.format(date);
-};
-
-const formatNotificationTitle = (notification: MobileNotification) => {
-    if (notification.notificationType === 'vendor_compliance_requested') {
-        return notification.title || 'Vendor compliance request';
-    }
-
-    if (notification.notificationType === 'billing_payment_reminder') {
-        const monthLabel = formatBillingMonthLabel(notification.billingMonth);
-
-        return monthLabel
-            ? `${notification.title || 'Billing payment reminder'} - ${monthLabel}`
-            : notification.title || 'Billing payment reminder';
-    }
-
-    if (notification.notificationType === 'billing_submitted') {
-        return 'Monthly Bill';
-    }
-
-    if (notification.notificationType === 'billing_paid') {
-        return notification.title || 'Billing payment received';
-    }
-
-    return notification.title;
-};
 
 const formatNotificationMessage = (notification: MobileNotification) => {
     if (notification.notificationType !== 'vendor_compliance_requested') {
@@ -176,38 +144,6 @@ const formatNotificationMessage = (notification: MobileNotification) => {
         'Notes:',
         note.trim(),
     ].join('\n');
-};
-
-const getNotificationType = (notification: MobileNotification): NotificationType => {
-    if (notification.notificationType === 'vendor_compliance_requested') {
-        return 'warning';
-    }
-
-    if (notification.notificationType === 'billing_payment_reminder') {
-        return 'warning';
-    }
-
-    if (notification.notificationType === 'billing_paid') {
-        return 'success';
-    }
-
-    return 'alert';
-};
-
-const getReadNotificationAction = (notification: MobileNotification) => {
-    if (notification.notificationType === 'vendor_compliance_requested') {
-        return undefined;
-    }
-
-    if (
-        notification.notificationType === 'billing_submitted'
-        || notification.notificationType === 'billing_payment_reminder'
-        || notification.notificationType === 'billing_paid'
-    ) {
-        return 'View Bill';
-    }
-
-    return undefined;
 };
 
 const formatNotificationTime = (createdAt: string) => {
@@ -295,8 +231,9 @@ export default function Notifications() {
     );
 
     const handleMarkAsRead = async (notificationId: number) => {
+        if (!currentUser?.accountId) return;
         setActiveNotificationId(notificationId);
-        const didUpdate = await markNotificationAsRead(notificationId, currentUser?.accountId);
+        const didUpdate = await markNotificationAsRead(notificationId, currentUser.accountId);
         setActiveNotificationId(null);
 
         if (didUpdate) {
@@ -359,10 +296,13 @@ export default function Notifications() {
                                     title={formatNotificationTitle(item)}
                                     message={formatNotificationMessage(item)}
                                     time={formatNotificationTime(item.createdAt)}
-                                    type="success"
+                                    type={getNotificationType(item)}
                                     actionLabel={actionLabel}
                                     actionType="primary"
-                                    onActionPress={actionLabel ? () => router.push('/rent') : undefined}
+                                    onActionPress={actionLabel ? () => router.push({
+                                        pathname: '/rent',
+                                        params: getBillNavigationParams(item),
+                                    }) : undefined}
                                 />
                             );
                         })}

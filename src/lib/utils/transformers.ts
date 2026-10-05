@@ -57,7 +57,7 @@ export const toTransaction = ({
         clientOrderKey,
         accountId,
         username,
-        businessId: businessId ?? null,
+        businessId,
         stallId: stallId ?? stallNumber ?? null,
         stallNumber: stallNumber ?? null,
         item: itemTitle,

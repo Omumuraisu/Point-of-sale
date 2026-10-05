@@ -11,7 +11,7 @@ export default function TabsLayout() {
   const { currentUser, isHydrating } = useAuthSession();
   const { colors } = useTheme();
   const tabBarBottomPadding = Math.max(insets.bottom, 8);
-  useTransactionSyncMonitor(currentUser?.accountId);
+  useTransactionSyncMonitor(currentUser?.accountId, currentUser?.businessId);
 
   if (isHydrating) {
     return null;

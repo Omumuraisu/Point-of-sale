@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, View, Text, Pressable, ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthSession } from '../../lib/authSession';
-import { syncAllSupabaseData } from '../../lib/supabaseSync';
+import { DatabaseSyncStatus, getDatabaseSyncStatus, subscribeToDatabaseSyncStatus, syncAllSupabaseData } from '../../lib/supabaseSync';
 import { useTheme, useThemedStyles } from '../../lib/theme';
+import { subscribeToProductSyncChanges } from '../../components/pos/productsStore';
+import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
 
 const SETTINGS_ITEMS = [
     {
@@ -38,10 +40,10 @@ const SETTINGS_ITEMS = [
     },
     {
         id: 'sync-database',
-        title: 'Sync Database',
-        subtitle: 'Sync pending products, sales, and categories',
+        title: 'Sync to Database',
+        subtitle: 'Check pending records and sync activity',
         iconSet: 'material',
-        iconName: 'cloud-sync-outline',
+        iconName: 'sync',
     },
     {
         id: 'test-sms',
@@ -77,6 +79,17 @@ interface SettingsIconProps {
 
 const typedSettingsItems: readonly SettingItem[] = SETTINGS_ITEMS;
 
+const formatLastSynced = (timestamp: number | null) => {
+    if (!timestamp) return 'Never synced';
+
+    return `Last synced ${new Date(timestamp).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    })}`;
+};
+
 const SettingsIcon = ({ iconSet, iconName }: SettingsIconProps) => {
     const { colors } = useTheme();
     if (iconSet === 'material') {
@@ -92,16 +105,47 @@ const Settings = () => {
     const { isDark, colors, setMode } = useTheme();
     const styles = useThemedStyles(baseStyles);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<DatabaseSyncStatus>({ pending: 0, lastSyncedAt: null });
     const isDeveloper = currentUser?.profileTable === 'developer';
     const visibleSettingsItems = typedSettingsItems.filter((item) => {
         if (item.id === 'test-sms' || item.id === 'debug-logging') return isDeveloper;
         return isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business';
     });
 
+    const refreshSyncStatus = useCallback(async () => {
+        if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
+            setSyncStatus({ pending: 0, lastSyncedAt: null });
+            return;
+        }
+
+        try {
+            const status = await getDatabaseSyncStatus({
+                accountId: currentUser.accountId,
+                businessId: currentUser.businessId,
+                stallNumber: currentUser.stallNumber,
+            });
+            setSyncStatus(status);
+        } catch {
+            // Keep the last known status if local storage is temporarily unavailable.
+        }
+    }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
+
+    useEffect(() => {
+        void refreshSyncStatus();
+        const unsubscribeProducts = subscribeToProductSyncChanges(() => { void refreshSyncStatus(); });
+        const unsubscribeTransactions = subscribeToTransactionSyncEvents(() => { void refreshSyncStatus(); });
+        const unsubscribeDatabaseSync = subscribeToDatabaseSyncStatus(() => { void refreshSyncStatus(); });
+        return () => {
+            unsubscribeProducts();
+            unsubscribeTransactions();
+            unsubscribeDatabaseSync();
+        };
+    }, [refreshSyncStatus]);
+
     const handleManualSync = async () => {
         if (isSyncing) return;
 
-        if (!currentUser?.accountId || !currentUser.stallNumber) {
+        if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
             Alert.alert(
                 'No active stall',
                 'Select or configure a business with an active stall before syncing.',
@@ -114,6 +158,7 @@ const Settings = () => {
         try {
             const result = await syncAllSupabaseData({
                 accountId: currentUser.accountId,
+                businessId: currentUser.businessId,
                 stallNumber: currentUser.stallNumber,
             });
             const rows = [
@@ -156,6 +201,7 @@ const Settings = () => {
             );
         } finally {
             setIsSyncing(false);
+            await refreshSyncStatus();
         }
     };
 
@@ -177,6 +223,11 @@ const Settings = () => {
 
         if (id === 'security') {
             router.push('/security');
+            return;
+        }
+
+        if (id === 'app-details') {
+            router.push('/app-details');
             return;
         }
 
@@ -234,19 +285,29 @@ const Settings = () => {
                                 accessibilityState={{ disabled: isSyncAction && isSyncing, busy: isSyncAction && isSyncing }}
                             >
                                 <View style={styles.itemRow}>
-                                    <View style={styles.iconCircle}>
-                                        <SettingsIcon iconSet={item.iconSet} iconName={item.iconName} />
+                                    <View style={[styles.iconCircle, isSyncAction && styles.syncIconCircle]}>
+                                        {isSyncAction ? (
+                                            <MaterialCommunityIcons name="sync" size={32} color={colors.success} />
+                                        ) : (
+                                            <SettingsIcon iconSet={item.iconSet} iconName={item.iconName} />
+                                        )}
                                     </View>
 
                                     <View style={styles.itemTextWrap}>
                                         <Text style={styles.itemTitle}>{isSyncAction && isSyncing ? 'Syncing\u2026' : item.title}</Text>
                                         <Text style={styles.itemSubtitle}>
-                                            {isSyncAction && isSyncing ? 'Please keep the app open' : item.subtitle}
+                                            {isSyncAction
+                                                ? (isSyncing
+                                                    ? `${syncStatus.pending} pending | Please keep the app open`
+                                                    : `${syncStatus.pending} pending | ${formatLastSynced(syncStatus.lastSyncedAt)}`)
+                                                : item.subtitle}
                                         </Text>
                                     </View>
 
                                     {isSyncAction
-                                        ? (isSyncing ? <ActivityIndicator size="small" color={colors.primary} /> : null)
+                                        ? (isSyncing
+                                            ? <ActivityIndicator size="small" color={colors.success} />
+                                            : <Ionicons name="chevron-forward" size={28} color={colors.icon} />)
                                         : <Ionicons name="chevron-forward" size={28} color={colors.icon} />}
                                 </View>
                             </Pressable>
@@ -326,6 +387,9 @@ const baseStyles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: '#a9beef',
         marginRight: 16,
+    },
+    syncIconCircle: {
+        backgroundColor: '#d9f1dc',
     },
     itemTextWrap: {
         flex: 1,

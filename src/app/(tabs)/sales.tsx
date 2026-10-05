@@ -364,16 +364,12 @@ const Sales = () => {
 
             const hydrateTransactions = async () => {
                 try {
-                    const remoteTransactions = await loadRemoteSalesTransactions({
-                        accountId: currentUser?.accountId,
-                        stallId: currentUser?.stallId,
-                        stallNumber: currentUser?.stallNumber,
-                    });
-                    const localTransactions = await loadSavedTransactions(
-                        currentUser?.accountId,
-                        currentUser?.stallId,
-                        currentUser?.stallNumber,
-                    );
+                    if (!currentUser?.accountId || !currentUser.businessId) {
+                        return;
+                    }
+                    const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId };
+                    const remoteTransactions = await loadRemoteSalesTransactions({ businessId: scope.businessId });
+                    const localTransactions = await loadSavedTransactions(scope);
                     const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
                     const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
                         .sort((first, second) => second.createdAt - first.createdAt);
@@ -399,7 +395,7 @@ const Sales = () => {
                 isMounted = false;
                 unsubscribe();
             };
-        }, [currentUser?.accountId, currentUser?.stallId, currentUser?.stallNumber]),
+        }, [currentUser?.accountId, currentUser?.businessId]),
     );
 
     useEffect(() => {

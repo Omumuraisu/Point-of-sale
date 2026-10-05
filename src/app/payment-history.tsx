@@ -53,8 +53,11 @@ const PaymentHistoryRoute = () => {
 
             try {
                 const history = await fetchPaymentHistory(
-                    currentUser?.businessId,
-                    currentUser?.stallNumber,
+                    {
+                        businessOwnerId: currentUser?.businessOwnerId,
+                        businessId: currentUser?.businessId,
+                        stallNumber: currentUser?.stallNumber,
+                    },
                 );
 
                 if (isActive) {
@@ -77,7 +80,7 @@ const PaymentHistoryRoute = () => {
         return () => {
             isActive = false;
         };
-    }, [currentUser?.businessId, currentUser?.stallNumber]);
+    }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber]);
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -130,6 +133,9 @@ const PaymentHistoryRoute = () => {
                                 <View style={styles.paymentText}>
                                     <Text style={styles.paymentAmount}>{formatCurrency(payment.amount)}</Text>
                                     <Text style={styles.paymentDate}>{formatPaymentDate(payment.paidAt)}</Text>
+                                    {payment.referenceNumber ? (
+                                        <Text style={styles.paymentReference}>Reference: {payment.referenceNumber}</Text>
+                                    ) : null}
                                 </View>
                             </View>
                         ))}
@@ -212,6 +218,12 @@ const baseStyles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#6d7280',
+    },
+    paymentReference: {
+        marginTop: 2,
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#7b808e',
     },
     stateCard: {
         minHeight: 240,

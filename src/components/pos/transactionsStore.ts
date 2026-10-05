@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SaveReceiptTransactionInput, TransactionRecord } from '../../lib/types';
+import { SaveReceiptTransactionInput, TransactionRecord, TransactionScope } from '../../lib/types';
 import { formatCurrency, formatTransactionDate, isTransactionRecord, toTransaction } from '../../lib/utils';
 import { debugError, debugWarn } from '../../lib/debugLogging';
 
@@ -7,8 +7,22 @@ const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
 const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
 const MAX_SAVED_TRANSACTIONS = 100;
 
-const getAccountTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_KEY}:${accountId}`;
-const getAccountFallbackTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}`;
+const getScopedTransactionsKey = ({ accountId, businessId }: TransactionScope) => (
+    `${SALES_TRANSACTIONS_KEY}:${accountId}:${businessId}`
+);
+const getScopedFallbackTransactionsKey = ({ accountId, businessId }: TransactionScope) => (
+    `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}:${businessId}`
+);
+const getLegacyAccountTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_KEY}:${accountId}`;
+const getLegacyAccountFallbackTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}`;
+
+const isValidScope = (scope?: TransactionScope | null): scope is TransactionScope => Boolean(
+    scope
+    && Number.isInteger(scope.accountId)
+    && scope.accountId > 0
+    && Number.isInteger(scope.businessId)
+    && scope.businessId > 0
+);
 
 const withSyncDefaults = (transaction: TransactionRecord): TransactionRecord => ({
     ...transaction,
@@ -27,17 +41,17 @@ const trimTransactions = (transactions: TransactionRecord[]): TransactionRecord[
     return [...unsynced, ...synced].slice(0, MAX_SAVED_TRANSACTIONS);
 };
 
-const saveTransactions = async (accountId: number, transactions: TransactionRecord[]): Promise<boolean> => {
+const saveTransactions = async (scope: TransactionScope, transactions: TransactionRecord[]): Promise<boolean> => {
     const normalized = trimTransactions(transactions.map(withSyncDefaults));
 
     try {
-        await AsyncStorage.setItem(getAccountTransactionsKey(accountId), JSON.stringify(normalized));
+        await AsyncStorage.setItem(getScopedTransactionsKey(scope), JSON.stringify(normalized));
         return true;
     } catch (primaryError) {
         debugWarn('transactions-payments', 'primary transaction save failed; trying fallback', { error: primaryError });
 
         try {
-            await AsyncStorage.setItem(getAccountFallbackTransactionsKey(accountId), JSON.stringify(normalized));
+            await AsyncStorage.setItem(getScopedFallbackTransactionsKey(scope), JSON.stringify(normalized));
             return true;
         } catch (fallbackError) {
             debugError('transactions-payments', 'fallback transaction save failed', { error: fallbackError });
@@ -48,17 +62,23 @@ const saveTransactions = async (accountId: number, transactions: TransactionReco
 };
 
 export const loadSavedTransactions = async (
-    accountId?: number,
-    stallId?: string | null,
-    stallNumber?: string | null,
+    scope?: TransactionScope | null,
 ): Promise<TransactionRecord[]> => {
-    if (!accountId) {
+    if (!isValidScope(scope)) {
+        debugError('transactions-payments', 'cannot load local sales without a valid account and business scope', { scope });
         return [];
     }
 
     try {
-        const raw = await AsyncStorage.getItem(getAccountTransactionsKey(accountId))
-            ?? await AsyncStorage.getItem(getAccountFallbackTransactionsKey(accountId));
+        let raw = await AsyncStorage.getItem(getScopedTransactionsKey(scope))
+            ?? await AsyncStorage.getItem(getScopedFallbackTransactionsKey(scope));
+        let importedLegacyRecords = false;
+
+        if (!raw) {
+            raw = await AsyncStorage.getItem(getLegacyAccountTransactionsKey(scope.accountId))
+                ?? await AsyncStorage.getItem(getLegacyAccountFallbackTransactionsKey(scope.accountId));
+            importedLegacyRecords = Boolean(raw);
+        }
 
         if (!raw) {
             return [];
@@ -70,21 +90,19 @@ export const loadSavedTransactions = async (
             return [];
         }
 
-        // Keep only records that satisfy the strict typed shape.
-        const stallScope = [stallId, stallNumber].filter((value): value is string => Boolean(value));
-
-        return parsed
+        const scopedTransactions = parsed
             .filter(isTransactionRecord)
             .map(withSyncDefaults)
-            .filter((transaction) => transaction.accountId === undefined || transaction.accountId === accountId)
-            .filter((transaction) => {
-                if (stallScope.length === 0) {
-                    return true;
-                }
+            .filter((transaction) => (
+                transaction.accountId === scope.accountId
+                && transaction.businessId === scope.businessId
+            ));
 
-                return [transaction.stallId, transaction.stallNumber]
-                    .some((value) => value != null && stallScope.includes(value));
-            });
+        if (importedLegacyRecords && scopedTransactions.length > 0) {
+            await saveTransactions(scope, scopedTransactions);
+        }
+
+        return scopedTransactions;
     } catch (error) {
         debugError('transactions-payments', 'failed to load saved transactions', { error });
 
@@ -100,6 +118,12 @@ export interface SaveReceiptTransactionResult {
 export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput): Promise<SaveReceiptTransactionResult> => {
     const { cartItems } = input;
 
+    const scope: TransactionScope = { accountId: input.accountId, businessId: input.businessId };
+
+    if (!isValidScope(scope)) {
+        return { transaction: null, error: 'Cannot record or synchronize a sale without a valid businessId.' };
+    }
+
     if (cartItems.length === 0 || cartItems.some((item) => !Number.isFinite(item.pricePerUnit) || item.pricePerUnit <= 0)) {
         return { transaction: null, error: 'The cart contains an item without a valid selling price.' };
     }
@@ -112,7 +136,7 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
 
     try {
         const { syncTransactionRecordWithResult } = await import('../../lib/transactionsSync');
-        const result = await syncTransactionRecordWithResult(transaction);
+        const result = await syncTransactionRecordWithResult(transaction, scope);
         const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
 
         if (result.success && result.order) {
@@ -135,27 +159,52 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
                 syncError: undefined,
                 syncAttempts,
             };
-            const existing = await loadSavedTransactions(transaction.accountId);
-            await saveTransactions(transaction.accountId ?? 0, [syncedTransaction, ...existing]);
+            const existing = await loadSavedTransactions(scope);
+            await saveTransactions(scope, [syncedTransaction, ...existing]);
             const { notifyTransactionSyncChanged } = await import('../../lib/transactionSyncEvents');
             notifyTransactionSyncChanged();
 
             return { transaction: syncedTransaction };
         }
 
-        return { transaction: null, error: result.error ?? 'Unable to record the sale. Please try again.' };
+        const unsyncedTransaction: TransactionRecord = {
+            ...transaction,
+            synced: false,
+            syncError: result.error ?? 'Unable to synchronize this sale.',
+            syncAttempts,
+        };
+        const existing = await loadSavedTransactions(scope);
+        const saved = await saveTransactions(scope, [unsyncedTransaction, ...existing]);
+
+        if (!saved) {
+            return { transaction: null, error: 'Unable to save this sale locally for synchronization.' };
+        }
+
+        const { notifyTransactionSyncChanged } = await import('../../lib/transactionSyncEvents');
+        notifyTransactionSyncChanged();
+        return { transaction: unsyncedTransaction, error: unsyncedTransaction.syncError };
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to start Supabase transaction sync';
-        return { transaction: null, error: message };
+        const unsyncedTransaction: TransactionRecord = {
+            ...transaction,
+            synced: false,
+            syncError: message,
+            syncAttempts: (transaction.syncAttempts ?? 0) + 1,
+        };
+        const existing = await loadSavedTransactions(scope);
+        const saved = await saveTransactions(scope, [unsyncedTransaction, ...existing]);
+        return saved
+            ? { transaction: unsyncedTransaction, error: message }
+            : { transaction: null, error: 'Unable to save this sale locally for synchronization.' };
     }
 };
 
 export const updateTransactionSyncState = async (
-    accountId: number,
+    scope: TransactionScope,
     transactionId: string,
     patch: Pick<TransactionRecord, 'synced' | 'syncedAt' | 'syncError' | 'syncAttempts'>,
 ): Promise<void> => {
-    const existing = await loadSavedTransactions(accountId);
+    const existing = await loadSavedTransactions(scope);
     const index = existing.findIndex((transaction) => transaction.id === transactionId);
 
     if (index < 0) {
@@ -170,20 +219,20 @@ export const updateTransactionSyncState = async (
 
     const updated = [...existing];
     updated[index] = updatedTransaction;
-    await saveTransactions(accountId, updated);
+    await saveTransactions(scope, updated);
 };
 
-export const getUnsyncedTransactions = async (accountId: number): Promise<TransactionRecord[]> => {
-    const transactions = await loadSavedTransactions(accountId);
+export const getUnsyncedTransactions = async (scope: TransactionScope): Promise<TransactionRecord[]> => {
+    const transactions = await loadSavedTransactions(scope);
 
     return transactions.filter((transaction) => !transaction.synced);
 };
 
 export const reconcileUnsyncedTransactionListingIds = async (
-    accountId: number,
+    scope: TransactionScope,
     aliases: Record<string, string>,
 ): Promise<void> => {
-    const transactions = await loadSavedTransactions(accountId);
+    const transactions = await loadSavedTransactions(scope);
     const updated = transactions.map((transaction) => transaction.synced ? transaction : ({
         ...transaction,
         cartItems: transaction.cartItems?.map((item) => ({
@@ -191,5 +240,5 @@ export const reconcileUnsyncedTransactionListingIds = async (
             productListingId: aliases[item.productListingId] ?? item.productListingId,
         })),
     }));
-    await saveTransactions(accountId, updated);
+    await saveTransactions(scope, updated);
 };

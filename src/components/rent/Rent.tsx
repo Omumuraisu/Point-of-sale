@@ -8,14 +8,15 @@ import {
     LayoutAnimation,
     Platform,
     UIManager,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../pos/components/POSHeader';
 import { loadVendorApplications, PersonnelRecord } from './personnelStore';
 import { useAuthSession } from '../../lib/authSession';
-import { fetchBillingSummary, BillingSummary } from '../../lib/billing';
+import { fetchBillingSummary, BillingStatus, BillingSummary } from '../../lib/billing';
 import { useTheme, useThemedStyles } from '../../lib/theme';
 import { fetchBusinessLeaseAgreement, BusinessLeaseAgreement } from '../../lib/businessLease';
 import { formatCurrency } from '../../lib/utils';
@@ -90,18 +91,34 @@ const formatBillingMonthLabel = (value: string | null) => {
     return MONTH_FORMATTER.format(date);
 };
 
+const BILLING_STATUS_LABELS: Record<BillingStatus, string> = {
+    pending: 'PENDING',
+    partially_paid: 'PARTIALLY PAID',
+    overdue: 'OVERDUE',
+    overdue_partially_paid: 'OVERDUE - PARTIALLY PAID',
+    fully_paid: 'FULLY PAID',
+};
+
 const Rent = () => {
     const styles = useThemedStyles(baseStyles);
     const { colors } = useTheme();
     const router = useRouter();
+    const params = useLocalSearchParams<{ billingCycleId?: string | string[]; billingMonth?: string | string[] }>();
     const { currentUser } = useAuthSession();
     const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
     const [personnelRecords, setPersonnelRecords] = useState<PersonnelRecord[]>([]);
     const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
     const [leaseAgreement, setLeaseAgreement] = useState<BusinessLeaseAgreement | null>(null);
     const [isBillingLoading, setBillingLoading] = useState(true);
+    const [billingError, setBillingError] = useState<string | null>(null);
+    const [isLeaseLoading, setLeaseLoading] = useState(true);
     const isVendor = currentUser?.profileTable === 'vendor';
     const isDeveloper = currentUser?.userType.toLowerCase().trim() === 'developer';
+    const billingCycleParam = Array.isArray(params.billingCycleId) ? params.billingCycleId[0] : params.billingCycleId;
+    const billingMonthParam = Array.isArray(params.billingMonth) ? params.billingMonth[0] : params.billingMonth;
+    const focusedBillingCycleId = billingCycleParam && Number.isSafeInteger(Number(billingCycleParam))
+        ? Number(billingCycleParam)
+        : null;
 
     useEffect(() => {
         if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -109,36 +126,48 @@ const Rent = () => {
         }
     }, []);
 
-    useFocusEffect(
-        useCallback(() => {
-            let isActive = true;
+    const loadBilling = useCallback(async () => {
+        setBillingLoading(true);
+        setBillingError(null);
+        try {
+            const summary = await fetchBillingSummary({
+                businessOwnerId: currentUser?.businessOwnerId,
+                businessId: currentUser?.businessId,
+                stallNumber: currentUser?.stallNumber,
+            }, {
+                billingCycleId: focusedBillingCycleId,
+                billingMonth: billingMonthParam ?? null,
+            });
+            setBillingSummary(summary);
+            if (summary?.focusedBillId) setDueDetailsExpanded(true);
+        } catch {
+            setBillingSummary(null);
+            setBillingError('Billing information is temporarily unavailable. Please try again.');
+        } finally {
+            setBillingLoading(false);
+        }
+    }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber, focusedBillingCycleId, billingMonthParam]);
 
-            const loadPersonnel = async () => {
-                const [saved, summary, lease] = await Promise.all([
-                    loadVendorApplications(currentUser?.businessOwnerId),
-                    fetchBillingSummary(currentUser?.businessId, currentUser?.stallNumber),
-                    isVendor
-                        ? Promise.resolve(null)
-                        : fetchBusinessLeaseAgreement(currentUser?.businessId, currentUser?.businessOwnerId),
-                ]);
+    useFocusEffect(useCallback(() => {
+        let isActive = true;
+        setDueDetailsExpanded(Boolean(focusedBillingCycleId || billingMonthParam));
+        void loadBilling();
+        void loadVendorApplications(currentUser?.businessOwnerId)
+            .then((saved) => { if (isActive) setPersonnelRecords(saved); })
+            .catch(() => { if (isActive) setPersonnelRecords([]); });
 
-                if (isActive) {
-                    setPersonnelRecords(saved);
-                    setBillingSummary(summary);
-                    setLeaseAgreement(lease);
-                    setBillingLoading(false);
-                }
-            };
-
-            setBillingLoading(true);
-            setDueDetailsExpanded(false);
-            loadPersonnel();
-
-            return () => {
-                isActive = false;
-            };
-        }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber, isVendor])
-    );
+        if (isVendor) {
+            setLeaseAgreement(null);
+            setLeaseLoading(false);
+        } else {
+            setLeaseLoading(true);
+            void fetchBusinessLeaseAgreement(currentUser?.businessId, currentUser?.businessOwnerId)
+                .then((lease) => { if (isActive) setLeaseAgreement(lease); })
+                .catch(() => { if (isActive) setLeaseAgreement(null); })
+                .finally(() => { if (isActive) setLeaseLoading(false); });
+        }
+        return () => { isActive = false; };
+    }, [billingMonthParam, currentUser?.businessId, currentUser?.businessOwnerId, focusedBillingCycleId, isVendor, loadBilling]));
 
     const handleToggleDueDetails = () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -164,33 +193,32 @@ const Rent = () => {
         ? personnelRecords.filter((personnel) => personnel.accountId !== currentUser?.accountId)
         : personnelRecords;
     const stallNumber = currentUser?.stallNumber ?? 'Not assigned';
-    const billingStatus = billingSummary?.status ?? 'UNPAID';
-    const billingStatusIsPaid = billingStatus === 'PAID';
+    const currentBill = billingSummary?.currentBill ?? null;
+    const billingStatus = currentBill?.status ?? 'pending';
+    const billingStatusIsPaid = billingStatus === 'fully_paid';
+    const billingStatusIsPartial = billingStatus === 'partially_paid';
+    const billingStatusIsOverdue = billingStatus === 'overdue' || billingStatus === 'overdue_partially_paid';
     const totalAmount = isBillingLoading
         ? 'Loading...'
-        : formatCurrency(billingSummary?.totalAmount ?? 0);
-    const amountLabel = billingStatusIsPaid ? 'Total Amount Paid' : 'Total Amount Due';
-    const billingDateLabel = billingSummary
-        ? isVendor
-            ? `Due: ${formatDate(billingSummary.dueDate)}`
-            : billingStatusIsPaid
-                ? `Paid: ${formatDate(billingSummary.paidAt)}`
-                : `Due: ${formatDate(billingSummary.dueDate)}`
+        : formatCurrency(billingSummary?.totalOutstanding ?? 0);
+    const amountLabel = 'Total Outstanding';
+    const billingDateLabel = currentBill
+        ? billingStatusIsPaid
+            ? 'Paid in full'
+            : `Due: ${formatDate(currentBill.dueDate)}`
         : 'No billing record yet';
-    const billingDateIcon = isVendor
-        ? 'calendar-outline'
-        : billingStatusIsPaid
+    const billingDateIcon = billingStatusIsPaid
             ? 'checkmark-circle-outline'
             : 'calendar-outline';
-    const billBreakdown = billingSummary
-        ? [
-            { label: 'Rent', amount: billingSummary.rentAmount },
-            { label: 'Electricity', amount: billingSummary.electricityAmount },
-            { label: 'Water', amount: billingSummary.waterAmount },
-            ...(billingSummary.violationsAmount > 0
-                ? [{ label: 'Violations', amount: billingSummary.violationsAmount }]
-                : []),
-        ]
+    const billBreakdown = currentBill
+        ? currentBill.chargeBreakdown.length > 0
+            ? currentBill.chargeBreakdown.map((charge) => ({ label: charge.label, amount: charge.amount }))
+            : [
+                { label: 'Rent', amount: currentBill.rentAmount },
+                { label: 'Electricity', amount: currentBill.electricityAmount },
+                { label: 'Water', amount: currentBill.waterAmount },
+                ...(currentBill.otherAmount > 0 ? [{ label: 'Other Charges', amount: currentBill.otherAmount }] : []),
+            ].filter((charge) => charge.amount > 0)
         : [];
 
     return (
@@ -227,17 +255,47 @@ const Rent = () => {
                                 <Text style={styles.sectionTitle}>Billing Status</Text>
                                 {!isVendor ? (
                                     <Text style={styles.billingMonthTitle}>
-                                        {isBillingLoading ? 'Loading bill...' : formatBillingMonth(billingSummary?.billingMonth ?? null)}
+                                        {isBillingLoading ? 'Loading bill...' : formatBillingMonth(currentBill?.billingMonth ?? null)}
                                     </Text>
                                 ) : null}
                             </View>
-                            <View style={[styles.unpaidPill, billingStatusIsPaid ? styles.paidPill : null]}>
-                                <Text style={[styles.unpaidText, billingStatusIsPaid ? styles.paidText : null]}>
-                                    {isBillingLoading ? 'LOADING' : billingStatus}
+                            <View style={[
+                                styles.unpaidPill,
+                                billingStatusIsPaid ? styles.paidPill : null,
+                                billingStatusIsPartial ? styles.partialPill : null,
+                                billingStatusIsOverdue ? styles.overduePill : null,
+                            ]}>
+                                <Text style={[
+                                    styles.unpaidText,
+                                    billingStatusIsPaid ? styles.paidText : null,
+                                    billingStatusIsPartial ? styles.partialText : null,
+                                ]}>
+                                    {isBillingLoading ? 'LOADING' : BILLING_STATUS_LABELS[billingStatus]}
                                 </Text>
                             </View>
                         </View>
 
+                        {isBillingLoading ? (
+                            <View style={styles.billingState}>
+                                <ActivityIndicator color={colors.primary} />
+                                <Text style={styles.billingStateText}>Loading current billing information...</Text>
+                            </View>
+                        ) : billingError ? (
+                            <View style={styles.billingErrorState}>
+                                <Ionicons name="cloud-offline-outline" size={34} color={colors.textMuted} />
+                                <Text style={styles.billingErrorText}>{billingError}</Text>
+                                <Pressable style={styles.retryButton} onPress={() => void loadBilling()}>
+                                    <Text style={styles.retryButtonText}>Try Again</Text>
+                                </Pressable>
+                            </View>
+                        ) : !billingSummary ? (
+                            <View style={styles.billingState}>
+                                <Ionicons name="receipt-outline" size={34} color={colors.textMuted} />
+                                <Text style={styles.billingStateTitle}>No issued bills yet</Text>
+                                <Text style={styles.billingStateText}>Billing details will appear after a monthly bill is submitted.</Text>
+                            </View>
+                        ) : (
+                        <>
                         <Text style={styles.subLabel}>{amountLabel}</Text>
                         <Text style={styles.totalAmount}>{totalAmount}</Text>
 
@@ -264,7 +322,10 @@ const Rent = () => {
                                 <Text style={styles.extraDetailsTitle}>Bill Summary</Text>
                                 {billBreakdown.length > 0 ? (
                                     <>
-                                        <View style={styles.monthSectionHeader}>
+                                        <View style={[
+                                            styles.monthSectionHeader,
+                                            billingSummary?.focusedBillId === currentBill?.monthlyBillId ? styles.focusedBill : null,
+                                        ]}>
                                             <Text style={styles.monthSectionTitle}>Current Bill</Text>
                                             <Text style={styles.monthSectionMeta}>
                                                 {formatBillingMonthLabel(billingSummary?.currentBill?.billingMonth ?? null)}
@@ -277,24 +338,38 @@ const Rent = () => {
                                             </View>
                                         ))}
                                         <View style={[styles.breakdownRow, styles.subtotalRow]}>
-                                            <Text style={styles.subtotalLabel}>Current Period Subtotal</Text>
+                                            <Text style={styles.subtotalLabel}>Bill Total</Text>
                                             <Text style={styles.subtotalAmount}>
-                                                {formatCurrency(billingSummary?.currentBill?.totalAmount ?? 0)}
+                                                {formatCurrency(currentBill?.totalAmount ?? 0)}
                                             </Text>
                                         </View>
-                                        {billingSummary?.arrearsMonths.length ? (
+                                        <View style={styles.breakdownRow}>
+                                            <Text style={styles.extraDetailsLabel}>Payments Applied</Text>
+                                            <Text style={styles.extraDetailsAmount}>{formatCurrency(currentBill?.appliedAmount ?? 0)}</Text>
+                                        </View>
+                                        <View style={[styles.breakdownRow, styles.subtotalRow]}>
+                                            <Text style={styles.subtotalLabel}>Current Balance</Text>
+                                            <Text style={styles.subtotalAmount}>{formatCurrency(currentBill?.balance ?? 0)}</Text>
+                                        </View>
+                                        {billingSummary?.arrearsBills.length ? (
                                             <View style={styles.arrearsWrap}>
                                                 <View style={styles.monthSectionHeader}>
                                                     <Text style={styles.monthSectionTitle}>Arrears</Text>
                                                     <Text style={styles.monthSectionMeta}>Previous Balance</Text>
                                                 </View>
-                                                {billingSummary.arrearsMonths.map((month) => (
-                                                    <View style={styles.breakdownRow} key={month.billingMonth ?? 'unassigned'}>
+                                                {billingSummary.arrearsBills.map((month) => (
+                                                    <View
+                                                        style={[
+                                                            styles.breakdownRow,
+                                                            billingSummary.focusedBillId === month.monthlyBillId ? styles.focusedBill : null,
+                                                        ]}
+                                                        key={month.monthlyBillId}
+                                                    >
                                                         <Text style={styles.extraDetailsLabel}>
                                                             {formatBillingMonthLabel(month.billingMonth)}
                                                         </Text>
                                                         <Text style={styles.extraDetailsAmount}>
-                                                            {formatCurrency(month.unpaidAmount)}
+                                                            {formatCurrency(month.balance)}
                                                         </Text>
                                                     </View>
                                                 ))}
@@ -308,10 +383,10 @@ const Rent = () => {
                                         ) : null}
                                         <View style={[styles.breakdownRow, styles.overallRow]}>
                                             <Text style={styles.overallLabel}>
-                                                {billingStatusIsPaid ? 'Overall Total Paid' : 'Total Due'}
+                                                Total Outstanding
                                             </Text>
                                             <Text style={styles.overallAmount}>
-                                                {formatCurrency(billingSummary?.totalAmount ?? 0)}
+                                                {formatCurrency(billingSummary?.totalOutstanding ?? 0)}
                                             </Text>
                                         </View>
                                     </>
@@ -326,8 +401,10 @@ const Rent = () => {
                                     <Text style={styles.extraDetailsNote}>
                                         {billingSummary
                                             ? billingStatusIsPaid
-                                                ? 'Payment has been recorded.'
-                                                : 'Penalty starts after due date.'
+                                                ? 'This bill has been paid in full.'
+                                                : billingStatusIsOverdue
+                                                    ? 'This bill is overdue. The balance shown is current.'
+                                                    : 'The balance shown includes all payments currently applied.'
                                             : 'Billing details will appear once submitted.'}
                                     </Text>
                                 </View>
@@ -344,6 +421,8 @@ const Rent = () => {
                             <Text style={styles.paymentHistoryButtonText}>Payment History</Text>
                                 <Ionicons name="chevron-forward" size={18} color={colors.primary} />
                         </Pressable>
+                        </>
+                        )}
                     </View>
 
                     <Text style={styles.personnelTitle}>Other Personnel</Text>
@@ -415,7 +494,7 @@ const Rent = () => {
                             color={leaseAgreement ? colors.success : colors.danger}
                                     />
                                     <Text style={[styles.renewedText, !leaseAgreement ? styles.noLeaseText : null]}>
-                                        {isBillingLoading ? 'LOADING' : leaseAgreement ? 'ACTIVE' : 'NO RECORD'}
+                                        {isLeaseLoading ? 'LOADING' : leaseAgreement ? 'ACTIVE' : 'NO RECORD'}
                                     </Text>
                                 </View>
                             </View>
@@ -423,7 +502,7 @@ const Rent = () => {
                             <View style={styles.leaseItem}>
                                 <Text style={styles.leaseLabel}>LEASE DATE</Text>
                                 <Text style={styles.leaseDueDate}>
-                                    {isBillingLoading ? 'Loading...' : formatPlainDate(leaseAgreement?.leaseDate ?? null)}
+                                    {isLeaseLoading ? 'Loading...' : formatPlainDate(leaseAgreement?.leaseDate ?? null)}
                                 </Text>
                             </View>
                         </View>
@@ -538,7 +617,8 @@ const baseStyles = StyleSheet.create({
     },
     unpaidPill: {
         minWidth: 92,
-        height: 36,
+        minHeight: 36,
+        maxWidth: 172,
         borderRadius: 18,
         borderWidth: 1,
         borderColor: '#dc6a61',
@@ -558,6 +638,66 @@ const baseStyles = StyleSheet.create({
     },
     paidText: {
         color: '#2f7a40',
+    },
+    partialPill: {
+        borderColor: '#d59b28',
+        backgroundColor: '#fff0c9',
+    },
+    partialText: {
+        color: '#9a6410',
+    },
+    overduePill: {
+        borderColor: '#c4433a',
+        backgroundColor: '#f6dfdd',
+    },
+    billingState: {
+        minHeight: 150,
+        marginTop: 12,
+        borderRadius: 12,
+        backgroundColor: '#eef1f7',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 18,
+        gap: 8,
+    },
+    billingStateTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#252932',
+    },
+    billingStateText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#687083',
+        textAlign: 'center',
+    },
+    billingErrorState: {
+        minHeight: 160,
+        marginTop: 12,
+        borderRadius: 12,
+        backgroundColor: '#f3e8e7',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 18,
+    },
+    billingErrorText: {
+        marginTop: 8,
+        color: '#73403b',
+        fontSize: 14,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    retryButton: {
+        marginTop: 12,
+        borderRadius: 18,
+        backgroundColor: '#315fda',
+        paddingHorizontal: 18,
+        paddingVertical: 8,
+    },
+    retryButtonText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: '800',
     },
     subLabel: {
         marginTop: 10,
@@ -621,6 +761,11 @@ const baseStyles = StyleSheet.create({
         justifyContent: 'space-between',
         marginTop: 4,
         marginBottom: 4,
+    },
+    focusedBill: {
+        backgroundColor: '#e3eafb',
+        borderRadius: 8,
+        paddingHorizontal: 8,
     },
     monthSectionTitle: {
         fontSize: 16,

@@ -37,19 +37,16 @@ export default function Home() {
     useFocusEffect(
         useCallback(() => {
             let isMounted = true;
+            setRecentSales([]);
 
             const hydrateRecentSales = async () => {
+                if (!currentUser?.accountId || !currentUser.businessId) {
+                    return;
+                }
+                const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId };
                 const [remoteTransactions, localTransactions] = await Promise.all([
-                    loadRemoteSalesTransactions({
-                        accountId: currentUser?.accountId,
-                        stallId: currentUser?.stallId,
-                        stallNumber: currentUser?.stallNumber,
-                    }),
-                    loadSavedTransactions(
-                        currentUser?.accountId,
-                        currentUser?.stallId,
-                        currentUser?.stallNumber,
-                    ),
+                    loadRemoteSalesTransactions({ businessId: scope.businessId }),
+                    loadSavedTransactions(scope),
                 ]);
                 const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
                 const savedTransactions = [...unsyncedLocalTransactions, ...remoteTransactions]
@@ -69,7 +66,7 @@ export default function Home() {
                 isMounted = false;
                 unsubscribe();
             };
-        }, [currentUser?.accountId, currentUser?.stallId, currentUser?.stallNumber]),
+        }, [currentUser?.accountId, currentUser?.businessId]),
     );
 
     return (

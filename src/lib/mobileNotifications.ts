@@ -1,7 +1,15 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { debugError } from './debugLogging';
+import { applyNotificationScope } from './queryScopes';
 
 export type NotificationStatus = 'unread' | 'read';
+export type MobileNotificationType =
+    | 'billing_submitted'
+    | 'billing_payment_reminder'
+    | 'billing_due_soon'
+    | 'billing_due_today'
+    | 'billing_overdue'
+    | 'vendor_compliance_requested';
 
 export interface MobileNotification {
     notificationId: number;
@@ -12,7 +20,7 @@ export interface MobileNotification {
     stallNumber: string;
     billingCycleId: number | null;
     billingMonth: string | null;
-    notificationType: string;
+    notificationType: MobileNotificationType | string;
     title: string;
     message: string;
     status: NotificationStatus;
@@ -79,11 +87,9 @@ export const fetchNotifications = async (
         return [];
     }
 
-    let query = supabase
+    let query = applyNotificationScope(supabase
         .from('notifications')
-        .select(NOTIFICATION_COLUMNS)
-        .eq('recipient_account_id', accountId)
-        .eq('recipient_type', 'business_owner')
+        .select(NOTIFICATION_COLUMNS), accountId)
         .order('created_at', { ascending: false });
 
     if (status) {
@@ -108,11 +114,9 @@ export const fetchUnreadNotificationCount = async (accountId?: number): Promise<
         return 0;
     }
 
-    const { count, error } = await supabase
+    const { count, error } = await applyNotificationScope(supabase
         .from('notifications')
-        .select('notification_id', { count: 'exact', head: true })
-        .eq('recipient_account_id', accountId)
-        .eq('recipient_type', 'business_owner')
+        .select('notification_id', { count: 'exact', head: true }), accountId)
         .eq('status', 'unread');
 
     if (error) {
@@ -124,23 +128,18 @@ export const fetchUnreadNotificationCount = async (accountId?: number): Promise<
     return count ?? 0;
 };
 
-export const markNotificationAsRead = async (notificationId: number, accountId?: number): Promise<boolean> => {
-    if (!isSupabaseConfigured || !supabase) {
+export const markNotificationAsRead = async (notificationId: number, accountId: number): Promise<boolean> => {
+    if (!accountId || !isSupabaseConfigured || !supabase) {
         return false;
     }
 
-    let query = supabase
+    const query = applyNotificationScope(supabase
         .from('notifications')
         .update({
             status: 'read',
             read_at: new Date().toISOString(),
         })
-        .eq('notification_id', notificationId)
-        .eq('recipient_type', 'business_owner');
-
-    if (accountId) {
-        query = query.eq('recipient_account_id', accountId);
-    }
+        .eq('notification_id', notificationId), accountId);
 
     const { error } = await query;
 

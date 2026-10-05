@@ -9,26 +9,26 @@ const isInternetReachable = (isConnected: boolean | null, isReachable: boolean |
     isConnected === true && isReachable !== false
 );
 
-export const useTransactionSyncMonitor = (accountId?: number | null) => {
+export const useTransactionSyncMonitor = (accountId?: number | null, businessId?: number | null) => {
     const isSyncingRef = useRef(false);
     const wasReachableRef = useRef<boolean | null>(null);
 
     const retrySync = useCallback(async () => {
-        if (!accountId || isSyncingRef.current) {
+        if (!accountId || !businessId || isSyncingRef.current) {
             return;
         }
 
         isSyncingRef.current = true;
 
         try {
-            await syncUnsyncedTransactions(accountId);
+            await syncUnsyncedTransactions({ accountId, businessId });
         } finally {
             isSyncingRef.current = false;
         }
-    }, [accountId]);
+    }, [accountId, businessId]);
 
     useEffect(() => {
-        if (!accountId) {
+        if (!accountId || !businessId) {
             return undefined;
         }
 
@@ -63,5 +63,5 @@ export const useTransactionSyncMonitor = (accountId?: number | null) => {
             unsubscribe();
             clearInterval(interval);
         };
-    }, [accountId, retrySync]);
+    }, [accountId, businessId, retrySync]);
 };

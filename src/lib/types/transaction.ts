@@ -29,6 +29,11 @@ export interface TransactionRecord {
     syncAttempts?: number;
 }
 
+export interface TransactionScope {
+    accountId: number;
+    businessId: number;
+}
+
 export interface SaveReceiptTransactionInput {
     cartItems: CartItem[];
     paidAmount: number;
@@ -37,7 +42,7 @@ export interface SaveReceiptTransactionInput {
     username: string;
     clientOrderKey: string;
     preparedAt: number;
-    businessId?: number | null;
+    businessId: number;
     stallId?: string | null;
     stallNumber?: string | null;
 }

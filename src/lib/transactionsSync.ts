@@ -1,4 +1,4 @@
-import { CartItem, TransactionRecord } from './types';
+import { CartItem, TransactionRecord, TransactionScope } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getUnsyncedTransactions, updateTransactionSyncState } from '../components/pos/transactionsStore';
 import { formatCurrency, formatTransactionDate, getCategoryType } from './utils';
@@ -8,7 +8,7 @@ import { debugError, debugLog } from './debugLogging';
 interface SalesTransactionRow {
     transaction_id: number;
     order_id: number | null;
-    business_id: number | null;
+    business_id: number;
     stall_id: string;
     stall_number: string | null;
     account_id: number;
@@ -46,36 +46,6 @@ interface TransactionSyncResult {
         changeAmount: number;
     };
 }
-
-interface OwnerContextRow {
-    business_owner_id: number;
-}
-
-interface VendorContextRow {
-    vendor_id: number;
-    business_owner_id: number;
-}
-
-interface BusinessContextRow {
-    business_id: number;
-    stall_id: string | null;
-    stall_number: string | null;
-    stall_no: string | null;
-}
-
-interface StallContextRow {
-    stall_id: string | null;
-    stall_number: string;
-}
-
-interface TransactionContext {
-    businessId: number | null;
-    stallId: string | null;
-    stallNumber: string | null;
-}
-
-let lastContextResolutionError: string | null = null;
-let lastContextResolutionDetails: Record<string, unknown> | null = null;
 
 const logSyncDebug = (event: string, details?: Record<string, unknown>) => {
     debugLog('transactions-payments', event, details);
@@ -215,13 +185,14 @@ const toSalesTransactionRows = (transaction: TransactionRecord) => {
     const accountId = transaction.accountId;
     const stallId = transaction.stallId ?? transaction.stallNumber;
 
-    if (!accountId || !stallId || cartItems.length === 0) {
+    if (!accountId || !transaction.businessId || !stallId || cartItems.length === 0) {
         return [];
     }
 
     const transactionDate = new Date(transaction.createdAt).toISOString();
 
     return cartItems.map((item) => ({
+        business_id: transaction.businessId,
         stall_id: stallId,
         stall_number: transaction.stallNumber ?? stallId,
         account_id: accountId,
@@ -261,189 +232,28 @@ const getMissingSyncFields = (transaction: TransactionRecord): string[] => {
     return missingFields;
 };
 
-const resolveBusinessOwnerId = async (accountId: number): Promise<number | null> => {
-    if (!supabase) {
-        lastContextResolutionError = 'Supabase client is not available.';
-        lastContextResolutionDetails = { accountId, hasSupabaseClient: false };
-        return null;
-    }
-
-    const { data: owner, error: ownerError } = await supabase
-        .from('business_owner')
-        .select('business_owner_id')
-        .eq('account_id', accountId)
-        .maybeSingle<OwnerContextRow>();
-
-    if (owner) {
-        lastContextResolutionError = null;
-        lastContextResolutionDetails = {
-            accountId,
-            profileTable: 'business_owner',
-            businessOwnerId: owner.business_owner_id,
-        };
-        return owner.business_owner_id;
-    }
-
-    const { data: vendor, error: vendorError } = await supabase
-        .from('vendor')
-        .select('vendor_id, business_owner_id')
-        .eq('account_id', accountId)
-        .maybeSingle<VendorContextRow>();
-
-    if (vendor) {
-        lastContextResolutionError = null;
-        lastContextResolutionDetails = {
-            accountId,
-            profileTable: 'vendor',
-            vendorId: vendor.vendor_id,
-            businessOwnerId: vendor.business_owner_id,
-        };
-        return vendor.business_owner_id;
-    }
-
-    lastContextResolutionError = 'No business_owner or vendor profile row found for this account_id.';
-    lastContextResolutionDetails = {
-        accountId,
-        businessOwnerError: ownerError?.message,
-        vendorError: vendorError?.message,
-    };
-    logSyncError('unable to resolve owner/vendor profile for transaction sync', {
-        ...lastContextResolutionDetails,
-    });
-    return null;
-};
-
-const resolveTransactionContext = async (accountId?: number): Promise<TransactionContext | null> => {
-    if (!accountId || !supabase) {
-        lastContextResolutionError = !accountId
-            ? 'Transaction has no account_id.'
-            : 'Supabase client is not available.';
-        lastContextResolutionDetails = {
-            accountId,
-            hasSupabaseClient: Boolean(supabase),
-        };
-        logSyncError('cannot resolve transaction context without account or supabase client', {
-            ...lastContextResolutionDetails,
-        });
-        return null;
-    }
-
-    const businessOwnerId = await resolveBusinessOwnerId(accountId);
-
-    if (!businessOwnerId) {
-        return null;
-    }
-
-    const { data: business, error: businessError } = await supabase
-        .from('business')
-        .select('business_id, stall_id, stall_number, stall_no')
-        .eq('business_owner_id', businessOwnerId)
-        .order('business_id', { ascending: true })
-        .limit(1)
-        .maybeSingle<BusinessContextRow>();
-
-    if (businessError || !business) {
-        lastContextResolutionError = 'No business row found for the resolved business_owner_id.';
-        lastContextResolutionDetails = {
-            accountId,
-            businessOwnerId,
-            error: businessError?.message,
-        };
-        logSyncError('unable to resolve business for transaction sync', {
-            ...lastContextResolutionDetails,
-        });
-        return null;
-    }
-
-    const stallNumber = business.stall_number ?? business.stall_no ?? null;
-    let stallId = business.stall_id ?? null;
-
-    if (!stallId && stallNumber) {
-        const { data: stall, error: stallError } = await supabase
-            .from('stalls')
-            .select('stall_id, stall_number')
-            .eq('stall_number', stallNumber)
-            .maybeSingle<StallContextRow>();
-
-        if (stallError) {
-            logSyncError('unable to resolve stall by stall_number for transaction sync', {
-                accountId,
-                stallNumber,
-                error: stallError.message,
-            });
-        }
-
-        stallId = stall?.stall_id ?? stallNumber;
-    }
-
-    if (!stallId) {
-        lastContextResolutionError = 'Business row has no usable stall_id, stall_number, or stall_no.';
-        lastContextResolutionDetails = {
-            accountId,
-            businessId: business.business_id,
-            businessOwnerId,
-            businessStallId: business.stall_id,
-            businessStallNumber: business.stall_number,
-            businessStallNo: business.stall_no,
-        };
-        logSyncError('business has no stall context for transaction sync', {
-            ...lastContextResolutionDetails,
-        });
-    }
-
-    lastContextResolutionError = stallId ? null : lastContextResolutionError;
-    lastContextResolutionDetails = {
-        accountId,
-        businessOwnerId,
-        businessId: business.business_id,
-        stallId,
-        stallNumber,
-        businessStallId: business.stall_id,
-        businessStallNumber: business.stall_number,
-        businessStallNo: business.stall_no,
-    };
-
-    return {
-        businessId: business.business_id,
-        stallId,
-        stallNumber,
-    };
-};
-
-const enrichTransactionContext = async (transaction: TransactionRecord): Promise<TransactionRecord> => {
-    if (transaction.businessId && (transaction.stallId ?? transaction.stallNumber)) {
-        return transaction;
-    }
-
-    const context = await resolveTransactionContext(transaction.accountId);
-
-    if (!context) {
-        logSyncError('transaction context could not be resolved before sync', {
-            transactionId: transaction.id,
-            accountId: transaction.accountId,
-            reason: lastContextResolutionError,
-            details: lastContextResolutionDetails,
-        });
-        return transaction;
-    }
-
-    logSyncDebug('resolved missing transaction context', {
-        transactionId: transaction.id,
-        accountId: transaction.accountId,
-        context,
-    });
-
-    return {
-        ...transaction,
-        businessId: transaction.businessId ?? context.businessId,
-        stallId: transaction.stallId ?? context.stallId,
-        stallNumber: transaction.stallNumber ?? context.stallNumber,
-    };
-};
-
 export const syncTransactionRecordWithResult = async (
     transaction: TransactionRecord,
+    scope: TransactionScope,
 ): Promise<TransactionSyncResult> => {
+    if (
+        !Number.isInteger(scope.accountId)
+        || scope.accountId <= 0
+        || !Number.isInteger(scope.businessId)
+        || scope.businessId <= 0
+        || transaction.accountId !== scope.accountId
+        || transaction.businessId !== scope.businessId
+    ) {
+        const error = 'Transaction synchronization requires a valid, matching accountId and businessId.';
+        logSyncError('transaction scope mismatch', {
+            transactionId: transaction.id,
+            transactionAccountId: transaction.accountId,
+            transactionBusinessId: transaction.businessId,
+            scope,
+        });
+        return { success: false, error };
+    }
+
     if (!isSupabaseConfigured || !supabase) {
         return {
             success: false,
@@ -452,7 +262,7 @@ export const syncTransactionRecordWithResult = async (
     }
 
     try {
-        const transactionForSync = await enrichTransactionContext(transaction);
+        const transactionForSync = transaction;
         const rows = toSalesTransactionRows(transactionForSync);
 
         if (rows.length === 0) {
@@ -467,8 +277,6 @@ export const syncTransactionRecordWithResult = async (
                 businessId: transactionForSync.businessId,
                 cartItemsCount: transactionForSync.cartItems?.length ?? 0,
                 missingFields,
-                contextResolutionError: lastContextResolutionError,
-                contextResolutionDetails: lastContextResolutionDetails,
             });
 
             return {
@@ -487,7 +295,7 @@ export const syncTransactionRecordWithResult = async (
         }
 
         const clientOrderKey = transactionForSync.clientOrderKey
-            ?? `legacy:${transactionForSync.accountId}:${transactionForSync.createdAt}:${transactionForSync.id}`;
+            ?? `legacy:${transactionForSync.accountId}:${transactionForSync.businessId}:${transactionForSync.createdAt}:${transactionForSync.id}`;
         const paidAmount = transactionForSync.paidAmount ?? transactionForSync.totalDue ?? 0;
         const { data, error } = await supabase.rpc('record_open_stall_sale', {
             p_business_id: transactionForSync.businessId,
@@ -562,38 +370,33 @@ export const syncTransactionRecordWithResult = async (
 
 export const syncTransactionRecord = async (
     transaction: TransactionRecord,
+    scope: TransactionScope,
 ): Promise<boolean> => {
-    const result = await syncTransactionRecordWithResult(transaction);
+    const result = await syncTransactionRecordWithResult(transaction, scope);
     return result.success;
 };
 
 interface SalesTransactionScope {
-    accountId?: number;
-    stallId?: string | null;
-    stallNumber?: string | null;
+    businessId: number;
 }
 
 export const loadRemoteSalesTransactions = async ({
-    accountId,
-    stallId,
-    stallNumber,
+    businessId,
 }: SalesTransactionScope): Promise<TransactionRecord[]> => {
-    const stallScope = stallId ?? stallNumber;
+    if (!Number.isInteger(businessId) || businessId <= 0) {
+        debugError('transactions-payments', 'cannot load remote sales without a valid businessId', { businessId });
+        return [];
+    }
 
-    if ((!stallScope && !accountId) || !isSupabaseConfigured || !supabase) {
+    if (!isSupabaseConfigured || !supabase) {
         return [];
     }
 
     let query = supabase
         .from('sales_transaction')
         .select('transaction_id, order_id, business_id, stall_id, stall_number, account_id, username, category, product, quantity_sold_kg, unit_price_php, total_revenue_php, transaction_date, product_listing_id, catalog_product_id, sold_quantity, sold_unit, sales_order(order_id, client_order_key, total_due_php, paid_amount_php, change_amount_php, completed_at)')
+        .eq('business_id', businessId)
         .order('transaction_date', { ascending: false });
-
-    // Sales belong to a stall. The account filter is only a safe fallback for
-    // accounts whose business has not been assigned a stall yet.
-    query = stallScope
-        ? query.eq('stall_id', stallScope)
-        : query.eq('account_id', accountId as number);
 
     const { data, error } = await query;
 
@@ -625,25 +428,27 @@ export const loadRemoteSalesTransactions = async ({
     ].sort((first, second) => second.createdAt - first.createdAt);
 };
 
-export const syncUnsyncedTransactions = async (accountId?: number): Promise<{ attempted: number; synced: number }> => {
+export const syncUnsyncedTransactions = async (scope?: TransactionScope | null): Promise<{ attempted: number; synced: number }> => {
     if (!isSupabaseConfigured || !supabase) {
         return { attempted: 0, synced: 0 };
     }
 
-    if (!accountId) {
+    if (!scope || !Number.isInteger(scope.accountId) || scope.accountId <= 0
+        || !Number.isInteger(scope.businessId) || scope.businessId <= 0) {
+        logSyncError('cannot synchronize queued sales without a valid business scope', { scope });
         return { attempted: 0, synced: 0 };
     }
 
-    const unsyncedTransactions = await getUnsyncedTransactions(accountId);
+    const unsyncedTransactions = await getUnsyncedTransactions(scope);
     let synced = 0;
 
     for (const transaction of unsyncedTransactions) {
-        const result = await syncTransactionRecordWithResult(transaction);
+        const result = await syncTransactionRecordWithResult(transaction, scope);
         const nextAttempts = (transaction.syncAttempts ?? 0) + 1;
 
         if (result.success) {
             synced += 1;
-            await updateTransactionSyncState(accountId, transaction.id, {
+            await updateTransactionSyncState(scope, transaction.id, {
                 synced: true,
                 syncedAt: Date.now(),
                 syncError: undefined,
@@ -652,7 +457,8 @@ export const syncUnsyncedTransactions = async (accountId?: number): Promise<{ at
         } else {
             logSyncError('batch transaction sync failed', {
                 transactionId: transaction.id,
-                accountId,
+                accountId: scope.accountId,
+                businessId: scope.businessId,
                 error: result.error,
                 transactionAccountId: transaction.accountId,
                 transactionBusinessId: transaction.businessId,
@@ -661,7 +467,7 @@ export const syncUnsyncedTransactions = async (accountId?: number): Promise<{ at
                 cartItemsCount: transaction.cartItems?.length ?? 0,
             });
 
-            await updateTransactionSyncState(accountId, transaction.id, {
+            await updateTransactionSyncState(scope, transaction.id, {
                 synced: false,
                 syncError: result.error,
                 syncAttempts: nextAttempts,
