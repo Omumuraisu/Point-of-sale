@@ -22,6 +22,8 @@ const baseStyles = StyleSheet.create({
     secondaryButtonText: { color: NAVY, fontSize: 20, fontWeight: '800' },
     welcomeFooter: { color: '#898989', fontSize: 12, textAlign: 'center', marginTop: 'auto', marginBottom: 12 },
     formScreen: { flex: 1, backgroundColor: BACKGROUND },
+    formKeyboardAvoider: { flex: 1 },
+    formScrollContent: { flexGrow: 1 },
     formIntro: { paddingHorizontal: 20, paddingTop: 105, paddingBottom: 32 },
     horizontalLogo: { width: '100%', height: 76, marginBottom: 28 },
     greetTitle: { fontSize: 25, lineHeight: 31, fontWeight: '800', color: '#090909' },

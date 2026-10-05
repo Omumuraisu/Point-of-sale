@@ -42,7 +42,7 @@ const firstRow = (data: unknown): OperatingStatusRow | null => {
 const friendlyError = (message?: string) => {
     const normalized = message ?? '';
     if (normalized.includes('OPERATING_STATUS_FORBIDDEN')) {
-        return 'Only the owner or approved personnel can change this status.';
+        return 'Only the owner, approved personnel, or a developer can change this status.';
     }
     if (normalized.includes('Failed to fetch') || normalized.includes('Network request failed')) {
         return 'Unable to reach the server. Check your connection and try again.';
@@ -135,7 +135,7 @@ export const BusinessOperatingStatusProvider = ({ children }: { children: ReactN
 
     const updateStatus = useCallback(async (nextIsOpen: boolean): Promise<OperatingStatusResult> => {
         if (!canToggle) {
-            const message = 'Only the owner or approved personnel can change this status.';
+            const message = 'Only the owner, approved personnel, or a developer can change this status.';
             setError(message);
             return { success: false, error: message };
         }

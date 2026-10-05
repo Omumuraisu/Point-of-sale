@@ -143,7 +143,7 @@ const getSyncStatus = (transaction: TransactionRecord, styles: typeof baseStyles
 interface ChartViewProps {
     topSoldProducts: TopSoldProductBar[];
     todayTotal: number;
-    growthPercent: number | null;
+    yesterdayTotal: number;
     transactions: TransactionRecord[];
     isTransactionsLoading: boolean;
 }
@@ -445,7 +445,7 @@ const Sales = () => {
                         <ChartView
                             topSoldProducts={topSoldProducts}
                             todayTotal={todaySales.total}
-                            growthPercent={todaySales.growthPercent}
+                            yesterdayTotal={todaySales.yesterdayTotal}
                             transactions={savedTransactions}
                             isTransactionsLoading={isTransactionsLoading}
                         />
@@ -511,7 +511,7 @@ const formatCompactPeso = (value: number): string => {
 const ChartView = ({
     topSoldProducts,
     todayTotal,
-    growthPercent,
+    yesterdayTotal,
     transactions,
     isTransactionsLoading,
 }: ChartViewProps) => {
@@ -535,11 +535,9 @@ const ChartView = ({
             <View style={styles.summaryWrap}>
                 <Text style={styles.summaryLabel}>Today's Total Sales</Text>
                 <Text style={styles.summaryAmount}>{formatCurrency(todayTotal)}</Text>
-                <View style={styles.growthPill}>
-                    <Text style={styles.growthText}>
-                        {growthPercent === null
-                            ? 'No sales recorded yesterday'
-                            : `${growthPercent >= 0 ? '+' : ''}${growthPercent.toFixed(1)}% from yesterday`}
+                <View style={styles.yesterdayTotalPill}>
+                    <Text style={styles.yesterdayTotalText}>
+                        Yesterday&apos;s Total: {formatCurrency(yesterdayTotal)}
                     </Text>
                 </View>
             </View>
@@ -1058,7 +1056,7 @@ const baseStyles = StyleSheet.create({
         fontWeight: '800',
         color: '#242a32',
     },
-    growthPill: {
+    yesterdayTotalPill: {
         marginTop: 8,
         height: 30,
         borderRadius: 15,
@@ -1067,7 +1065,7 @@ const baseStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    growthText: {
+    yesterdayTotalText: {
         fontSize: 15,
         fontWeight: '700',
         color: '#2f7a36',

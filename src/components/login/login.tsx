@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { BackHandler, Image, Text, TouchableOpacity, View } from 'react-native';
+import {
+    BackHandler,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import LoginForm from './components/LoginForm';
@@ -27,12 +36,23 @@ const Login = () => {
     if (showForm) {
         return (
             <SafeAreaView style={styles.formScreen} edges={['top', 'left', 'right']}>
-                <View style={styles.formIntro}>
-                    <Image source={loginLogo} style={styles.horizontalLogo} resizeMode="contain" />
-                    <Text style={styles.greetTitle}>Welcome!</Text>
-                    <Text style={styles.greetSub}>Login to your account</Text>
-                </View>
-                <LoginForm />
+                <KeyboardAvoidingView
+                    style={styles.formKeyboardAvoider}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
+                    <ScrollView
+                        contentContainerStyle={styles.formScrollContent}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                    >
+                        <View style={styles.formIntro}>
+                            <Image source={loginLogo} style={styles.horizontalLogo} resizeMode="contain" />
+                            <Text style={styles.greetTitle}>Welcome!</Text>
+                            <Text style={styles.greetSub}>Login to your account</Text>
+                        </View>
+                        <LoginForm />
+                    </ScrollView>
+                </KeyboardAvoidingView>
             </SafeAreaView>
         );
     }
