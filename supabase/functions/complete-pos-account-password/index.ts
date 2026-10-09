@@ -28,7 +28,11 @@ const jsonResponse = (body: unknown, status = 200): Response =>
   });
 
 const isStrongPassword = (password: string): boolean =>
-  password.length >= 8 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password);
+  password.length >= 8 &&
+  /[a-z]/.test(password) &&
+  /[A-Z]/.test(password) &&
+  /\d/.test(password) &&
+  /[^A-Za-z0-9\s]/.test(password);
 
 const decodeJwtClaims = (token: string): Record<string, unknown> | null => {
   try {
@@ -112,7 +116,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     : null;
   if (!purpose || !isStrongPassword(password)) {
     return jsonResponse({
-      error: { message: "Use 8 or more characters with uppercase, lowercase, and a number" },
+      error: { message: "Use 8 or more characters with uppercase, lowercase, a number, and a symbol" },
     }, 400);
   }
 

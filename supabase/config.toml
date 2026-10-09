@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.start-developer-activation-test]
 verify_jwt = false
+
+[functions.dispatch-pos-push]
+verify_jwt = false

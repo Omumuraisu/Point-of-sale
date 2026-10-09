@@ -54,9 +54,7 @@ const PaymentHistoryRoute = () => {
             try {
                 const history = await fetchPaymentHistory(
                     {
-                        businessOwnerId: currentUser?.businessOwnerId,
                         businessId: currentUser?.businessId,
-                        stallNumber: currentUser?.stallNumber,
                     },
                 );
 
@@ -80,7 +78,7 @@ const PaymentHistoryRoute = () => {
         return () => {
             isActive = false;
         };
-    }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber]);
+    }, [currentUser?.businessId]);
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>

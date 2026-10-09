@@ -17,6 +17,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+google-services.json
 
 # Metro
 .metro-health-check*
@@ -38,6 +39,7 @@ yarn-error.*
 
 # Supabase CLI local state
 supabase/.temp/
+supabase/functions/.env
 
 # generated native folders
 /ios

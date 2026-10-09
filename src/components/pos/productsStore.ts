@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { CategoryType } from '../../lib/types';
-import { CATEGORY_ITEMS, createCustomCategory, normalizeCategoryLabel } from './data';
+import { normalizeCategoryLabel } from './data';
 import { flattenCatalog, loadProductCatalog } from './catalogStore';
 import { debugError, debugLog, debugWarn } from '../../lib/debugLogging';
+import { buildListingCategories } from './productSearch';
 
 const LEGACY_PRODUCTS_KEY = '@pos/products';
 const LEGACY_PRODUCTS_FALLBACK_KEY = 'pos-products';
@@ -436,10 +437,5 @@ export const loadMergedProductsByCategory = async (scope: ProductScope, category
 
 export const loadListingCategories = async (scope: ProductScope): Promise<CategoryType[]> => {
     const products = await loadScopedProducts(scope);
-    const unique = new Map<string, string>();
-    products.forEach((product) => unique.set(product.categoryId, product.categoryLabel));
-    return Array.from(unique, ([id, label]) => {
-        const style = CATEGORY_ITEMS.find((item) => item.label.toLowerCase() === label.toLowerCase());
-        return style ? { ...style, id, label } : { ...createCustomCategory(label), id };
-    });
+    return buildListingCategories(products);
 };

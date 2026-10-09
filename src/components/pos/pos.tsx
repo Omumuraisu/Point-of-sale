@@ -1,23 +1,27 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   FlatList,
   Pressable,
   Text,
+  TextInput,
   StyleSheet,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { CartItem, CategoryType } from '../../lib/types';
-import { getProductSyncSummary, loadListingCategories, ProductSyncSummary, retryAllProductSync, subscribeToProductSyncChanges } from './productsStore';
+import { getProductSyncSummary, loadScopedProducts, ProductSyncSummary, retryAllProductSync, SavedProductRecord, subscribeToProductSyncChanges } from './productsStore';
 import { useAuthSession } from '../../lib/authSession';
 import POSHeader from './components/POSHeader';
 import ProductsTitle from './components/ProductsTitle';
 import CategoryCard from './components/CategoryCard';
 import CartSummaryBar from './components/CartSummaryBar';
+import ProductSearchResult from './components/ProductSearchResult';
 import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
-import { useThemedStyles } from '../../lib/theme';
+import { useTheme, useThemedStyles } from '../../lib/theme';
+import { buildListingCategories, buildProductSelectionParams, filterProducts } from './productSearch';
 
 interface POSProps {
   cartItems?: CartItem[];
@@ -25,33 +29,42 @@ interface POSProps {
   cartTotal?: string;
 }
 
+type POSListItem =
+  | { kind: 'category'; value: CategoryType }
+  | { kind: 'product'; value: SavedProductRecord };
+
 const POS = ({
   cartItems = [],
   cartCount = 0,
   cartTotal = 'P 00.00',
 }: POSProps) => {
   const styles = useThemedStyles(baseStyles);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currentUser } = useAuthSession();
   const { isOpen, isLoading, error: statusError } = useBusinessOperatingStatus();
   const salesDisabled = isOpen !== true;
   const [categories, setCategories] = useState<CategoryType[]>([]);
+  const [products, setProducts] = useState<SavedProductRecord[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [syncSummary, setSyncSummary] = useState<ProductSyncSummary>({ attempted: 0, synced: 0, failed: 0, pending: 0 });
   const [isRetryingProducts, setIsRetryingProducts] = useState(false);
 
   const refreshProducts = useCallback(async () => {
     if (!currentUser?.stallNumber) {
       setCategories([]);
+      setProducts([]);
       setSyncSummary({ attempted: 0, synced: 0, failed: 0, pending: 0 });
       return;
     }
     const scope = { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber };
-    const [mergedCategories, summary] = await Promise.all([
-      loadListingCategories(scope),
+    const [mergedProducts, summary] = await Promise.all([
+      loadScopedProducts(scope),
       getProductSyncSummary(scope),
     ]);
-    setCategories(mergedCategories);
+    setProducts(mergedProducts);
+    setCategories(buildListingCategories(mergedProducts));
     setSyncSummary(summary);
   }, [currentUser?.accountId, currentUser?.stallNumber]);
 
@@ -98,6 +111,14 @@ const POS = ({
     router.push('/add-product');
   };
 
+  const handleProductPress = (product: SavedProductRecord) => {
+    if (salesDisabled) return;
+    router.push({
+      pathname: '/add-item',
+      params: buildProductSelectionParams(product, cartItems),
+    });
+  };
+
   const handleOpenReceipt = () => {
     if (salesDisabled) return;
     router.push({
@@ -108,17 +129,32 @@ const POS = ({
     });
   };
 
+  const normalizedSearchQuery = searchQuery.trim();
+  const isSearching = normalizedSearchQuery.length > 0;
+  const matchingProducts = useMemo(
+    () => filterProducts(products, normalizedSearchQuery),
+    [normalizedSearchQuery, products],
+  );
+  const listItems = useMemo<POSListItem[]>(() => (
+    isSearching
+      ? matchingProducts.map((product) => ({ kind: 'product', value: product }))
+      : categories.map((category) => ({ kind: 'category', value: category }))
+  ), [categories, isSearching, matchingProducts]);
+
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.container}>
         <FlatList
-          data={categories}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <CategoryCard item={item} onPress={handleCategoryPress} disabled={salesDisabled} />
+          key={isSearching ? 'product-results' : 'category-grid'}
+          data={listItems}
+          keyExtractor={(item) => `${item.kind}:${item.value.id}`}
+          renderItem={({ item }) => item.kind === 'category' ? (
+            <CategoryCard item={item.value} onPress={handleCategoryPress} disabled={salesDisabled} />
+          ) : (
+            <ProductSearchResult product={item.value} onPress={handleProductPress} disabled={salesDisabled} />
           )}
-          numColumns={2}
-          columnWrapperStyle={styles.columnWrap}
+          numColumns={isSearching ? 1 : 2}
+          columnWrapperStyle={isSearching ? undefined : styles.columnWrap}
           ListHeaderComponent={
             <>
               <POSHeader />
@@ -144,8 +180,39 @@ const POS = ({
                 </View>
               ) : null}
               <ProductsTitle />
+              <View style={styles.searchWrap}>
+                <Ionicons name="search" size={20} color={colors.textMuted} />
+                <TextInput
+                  accessibilityLabel="Search products"
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search products"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear product search"
+                    style={styles.clearSearchButton}
+                    onPress={() => setSearchQuery('')}
+                  >
+                    <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+                  </Pressable>
+                ) : null}
+              </View>
             </>
           }
+          ListEmptyComponent={isSearching ? (
+            <View style={styles.emptySearchWrap}>
+              <Ionicons name="search-outline" size={36} color={colors.textMuted} />
+              <Text style={styles.emptySearchTitle}>No matching products</Text>
+              <Text style={styles.emptySearchText}>Try another product, variant, or category name.</Text>
+            </View>
+          ) : null}
           ListFooterComponent={
             <View style={styles.footerWrap}>
               <Pressable style={[styles.addProductsButton, salesDisabled && styles.disabledButton]} onPress={handleAddNewProduct} disabled={salesDisabled}>
@@ -191,6 +258,56 @@ const baseStyles = StyleSheet.create({
   columnWrap: {
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  searchWrap: {
+    marginTop: 10,
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#c8cedc',
+    backgroundColor: '#f4f4f5',
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#151922',
+  },
+  clearSearchButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptySearchWrap: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#c8cedc',
+    backgroundColor: '#edf1f8',
+    paddingHorizontal: 18,
+    paddingVertical: 28,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  emptySearchTitle: {
+    marginTop: 9,
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#151922',
+  },
+  emptySearchText: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#6a7282',
+    textAlign: 'center',
   },
   footerWrap: {
     marginTop: 4,

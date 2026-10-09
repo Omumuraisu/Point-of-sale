@@ -131,9 +131,7 @@ const Rent = () => {
         setBillingError(null);
         try {
             const summary = await fetchBillingSummary({
-                businessOwnerId: currentUser?.businessOwnerId,
                 businessId: currentUser?.businessId,
-                stallNumber: currentUser?.stallNumber,
             }, {
                 billingCycleId: focusedBillingCycleId,
                 billingMonth: billingMonthParam ?? null,
@@ -146,7 +144,7 @@ const Rent = () => {
         } finally {
             setBillingLoading(false);
         }
-    }, [currentUser?.businessId, currentUser?.businessOwnerId, currentUser?.stallNumber, focusedBillingCycleId, billingMonthParam]);
+    }, [currentUser?.businessId, focusedBillingCycleId, billingMonthParam]);
 
     useFocusEffect(useCallback(() => {
         let isActive = true;
@@ -253,11 +251,9 @@ const Rent = () => {
                         <View style={styles.rowBetween}>
                             <View>
                                 <Text style={styles.sectionTitle}>Billing Status</Text>
-                                {!isVendor ? (
-                                    <Text style={styles.billingMonthTitle}>
-                                        {isBillingLoading ? 'Loading bill...' : formatBillingMonth(currentBill?.billingMonth ?? null)}
-                                    </Text>
-                                ) : null}
+                                <Text style={styles.billingMonthTitle}>
+                                    {isBillingLoading ? 'Loading bill...' : formatBillingMonth(currentBill?.billingMonth ?? null)}
+                                </Text>
                             </View>
                             <View style={[
                                 styles.unpaidPill,
@@ -301,23 +297,20 @@ const Rent = () => {
 
                         <Pressable
                             style={styles.rowBetween}
-                            disabled={isVendor}
-                            onPress={isVendor ? undefined : handleToggleDueDetails}
+                            onPress={handleToggleDueDetails}
                         >
                             <View style={styles.dueRow}>
                                     <Ionicons name={billingDateIcon} size={20} color={colors.primary} />
                                 <Text style={styles.dueText}>{billingDateLabel}</Text>
                             </View>
-                            {!isVendor ? (
-                                <Ionicons
-                                    name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
-                                    size={22}
-                                            color={colors.textMuted}
-                                />
-                            ) : null}
+                            <Ionicons
+                                name={isDueDetailsExpanded ? 'chevron-up' : 'chevron-down'}
+                                size={22}
+                                color={colors.textMuted}
+                            />
                         </Pressable>
 
-                        {!isVendor && isDueDetailsExpanded ? (
+                        {isDueDetailsExpanded ? (
                             <View style={styles.extraDetailsWrap}>
                                 <Text style={styles.extraDetailsTitle}>Bill Summary</Text>
                                 {billBreakdown.length > 0 ? (

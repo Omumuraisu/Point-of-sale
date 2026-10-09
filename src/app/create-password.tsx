@@ -48,7 +48,7 @@ export default function CreatePasswordScreen() {
 
     const handleSubmit = async () => {
         if (!isStrongPassword(password)) {
-            setMessage('Use 8 or more characters with uppercase, lowercase, and a number.');
+            setMessage('Use 8 or more characters with uppercase, lowercase, a number, and a symbol.');
             return;
         }
         if (password !== confirmPassword) {
@@ -118,7 +118,7 @@ export default function CreatePasswordScreen() {
                             ? 'Create Password'
                             : 'New Password'}
                 </Text>
-                <Text style={styles.subtitle}>Use at least 8 characters with uppercase, lowercase, and a number.</Text>
+                <Text style={styles.subtitle}>Use at least 8 characters with uppercase, lowercase, a number, and a symbol.</Text>
                 <View style={styles.iconCircle}><Ionicons name="key" size={52} color={colors.icon} /></View>
                 {field('New Password', password, setPassword, showPassword, () => setShowPassword((value) => !value))}
                 {field('Confirm Password', confirmPassword, setConfirmPassword, showConfirmPassword, () => setShowConfirmPassword((value) => !value))}

@@ -8,6 +8,7 @@ import { BusinessOperatingStatusProvider } from '../lib/businessOperatingStatus'
 import { DebugLoggingProvider } from '../lib/debugLogging';
 import { ThemeProvider, useTheme } from '../lib/theme';
 import { StatusBar } from 'expo-status-bar';
+import { PushNotificationsProvider } from '../lib/PushNotificationsProvider';
 
 const PUBLIC_ROUTES = new Set([
   '',
@@ -69,6 +70,7 @@ function ThemedApp() {
   return (
     <DebugLoggingProvider>
     <AuthSessionProvider>
+      <PushNotificationsProvider>
       <BusinessOperatingStatusProvider>
       <VerificationFlowProvider>
       <AuthGate>
@@ -226,6 +228,7 @@ function ThemedApp() {
       </AuthGate>
       </VerificationFlowProvider>
       </BusinessOperatingStatusProvider>
+      </PushNotificationsProvider>
     </AuthSessionProvider>
     </DebugLoggingProvider>
   );

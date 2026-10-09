@@ -38,6 +38,7 @@ export const isStrongPassword = (password: string): boolean => (
     && /[a-z]/.test(password)
     && /[A-Z]/.test(password)
     && /\d/.test(password)
+    && /[^A-Za-z0-9\s]/.test(password)
 );
 
 type FunctionErrorBody = {

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuthSession } from '../../../lib/authSession';
 import { useUnreadNotificationCount } from '../../../lib/useUnreadNotificationCount';
 import { useTheme, useThemedStyles } from '../../../lib/theme';
+import { getUserRoleLabel } from '../../../lib/userRole';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -30,9 +31,18 @@ const POSHeader = () => {
                     <Ionicons name="person" size={26} color={colors.icon} />
                     )}
                 </View>
-                <View>
-                    <Text style={styles.profileName}>{currentUser?.displayName ?? 'Loading...'}</Text>
-                    <Text style={styles.profileDate}>{currentDateLabel}</Text>
+                <View style={styles.profileDetails}>
+                    <Text style={styles.profileName} numberOfLines={1}>
+                        {currentUser?.displayName ?? 'Loading...'}
+                    </Text>
+                    <View style={styles.profileMetaRow}>
+                        {currentUser ? (
+                            <View style={styles.roleBadge}>
+                                <Text style={styles.roleLabel}>{getUserRoleLabel(currentUser.profileTable)}</Text>
+                            </View>
+                        ) : null}
+                        <Text style={styles.profileDate}>{currentDateLabel}</Text>
+                    </View>
                 </View>
             </View>
             <View style={styles.headerActions}>
@@ -61,9 +71,11 @@ const baseStyles = StyleSheet.create({
         marginBottom: 12,
     },
     profileGroup: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
+        minWidth: 0,
     },
     avatarCircle: {
         width: 46,
@@ -80,13 +92,36 @@ const baseStyles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+    profileDetails: {
+        flex: 1,
+        minWidth: 0,
+    },
     profileName: {
         fontSize: 16,
         fontWeight: '700',
         color: '#0f1014',
     },
+    profileMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 3,
+    },
+    roleBadge: {
+        borderRadius: 8,
+        backgroundColor: '#dbe4ff',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+    },
+    roleLabel: {
+        fontSize: 9,
+        lineHeight: 11,
+        fontWeight: '800',
+        color: '#2448a4',
+        letterSpacing: 0.3,
+    },
     profileDate: {
-        marginTop: 2,
         fontSize: 12,
         color: '#212328',
     },

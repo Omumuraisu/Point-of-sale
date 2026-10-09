@@ -1,13 +1,10 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { debugError } from './debugLogging';
-import { applyBillingScope } from './queryScopes';
 
 export type BillingStatus = 'pending' | 'partially_paid' | 'overdue' | 'overdue_partially_paid' | 'fully_paid';
 
 export interface BillingScope {
-    businessOwnerId: number | null | undefined;
     businessId: number | null | undefined;
-    stallNumber: string | null | undefined;
 }
 
 export interface BillingFocus {
@@ -98,13 +95,6 @@ interface MonthlyBillBalanceRow {
     charge_breakdown: unknown;
     payment_history: unknown;
 }
-
-const BILLING_COLUMNS = [
-    'monthly_bill_id', 'billing_cycle_id', 'business_owner_id', 'business_id', 'stall_number',
-    'billing_month', 'due_date', 'owner_name', 'business_name', 'issued_at', 'total_amount',
-    'rent_amount', 'electricity_amount', 'water_amount', 'other_amount', 'applied_amount',
-    'balance', 'status', 'is_arrears', 'charge_breakdown', 'payment_history',
-].join(', ');
 
 const BILLING_STATUSES = new Set<BillingStatus>([
     'pending', 'partially_paid', 'overdue', 'overdue_partially_paid', 'fully_paid',
@@ -207,23 +197,12 @@ export const buildBillingSummary = (bills: MonthlyBillBalance[], focus: BillingF
     };
 };
 
-const hasCompleteScope = (scope: BillingScope): scope is BillingScope & {
-    businessOwnerId: number;
-    businessId: number;
-    stallNumber: string;
-} => (
-    Boolean(scope.businessOwnerId && scope.businessId && scope.stallNumber)
-);
-
 const fetchScopedBills = async (scope: BillingScope): Promise<MonthlyBillBalance[]> => {
-    if (!hasCompleteScope(scope)) return [];
+    if (!scope.businessId) return [];
     if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-    const scopedQuery = applyBillingScope(supabase
-        .from('v_monthly_bill_balances')
-        .select(BILLING_COLUMNS), scope);
-    const { data, error } = await scopedQuery
-        .order('billing_month', { ascending: false })
-        .order('monthly_bill_id', { ascending: false });
+    const { data, error } = await supabase.rpc('get_pos_billing_balances', {
+        p_business_id: scope.businessId,
+    });
     if (error) {
         debugError('billing-lease', 'failed to fetch monthly bill balances', { message: error.message });
         throw error;

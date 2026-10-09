@@ -1,12 +1,22 @@
-jest.mock('../src/lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+const mockRpc = jest.fn();
+
+jest.mock('../src/lib/supabase', () => ({
+    isSupabaseConfigured: true,
+    supabase: { rpc: (...args: unknown[]) => mockRpc(...args) },
+}));
 jest.mock('../src/lib/debugLogging', () => ({ debugError: jest.fn() }));
 
 import {
     buildBillingSummary,
     buildPaymentHistory,
+    fetchBillingSummary,
     mapMonthlyBillRow,
     MonthlyBillBalance,
 } from '../src/lib/billing';
+
+beforeEach(() => {
+    mockRpc.mockReset();
+});
 
 const row = (overrides: Record<string, unknown> = {}) => ({
     monthly_bill_id: 1,
@@ -105,4 +115,27 @@ test('payment history groups allocations by transaction within the scoped bills'
         expect.objectContaining({ paymentId: 8, amount: 100 }),
         expect.objectContaining({ paymentId: 7, amount: 500 }),
     ]);
+});
+
+describe('authenticated billing RPC', () => {
+    test('loads bill balances using only the active business id', async () => {
+        mockRpc.mockResolvedValue({ data: [row()], error: null });
+
+        const summary = await fetchBillingSummary({ businessId: 30 });
+
+        expect(mockRpc).toHaveBeenCalledWith('get_pos_billing_balances', { p_business_id: 30 });
+        expect(summary?.currentBill.monthlyBillId).toBe(1);
+        expect(summary?.currentBill.balance).toBe(1000);
+    });
+
+    test('does not query Supabase without an active business', async () => {
+        await expect(fetchBillingSummary({ businessId: null })).resolves.toBeNull();
+        expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    test('surfaces RPC failures instead of treating them as an empty bill list', async () => {
+        mockRpc.mockResolvedValue({ data: null, error: { message: 'permission denied' } });
+
+        await expect(fetchBillingSummary({ businessId: 30 })).rejects.toEqual({ message: 'permission denied' });
+    });
 });

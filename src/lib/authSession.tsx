@@ -4,6 +4,7 @@ import React, { createContext, ReactNode, useCallback, useContext, useEffect, us
 
 import { normalizePhilippinePhone } from './authFlow';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { unregisterCurrentDevicePushToken } from './pushNotifications';
 
 const CURRENT_USER_KEY = '@auth/current-user';
 
@@ -280,6 +281,7 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
     }, [currentUser]);
 
     const logout = useCallback(async () => {
+        await unregisterCurrentDevicePushToken();
         await supabase?.auth.signOut();
         setSession(null);
         setCurrentUser(null);
