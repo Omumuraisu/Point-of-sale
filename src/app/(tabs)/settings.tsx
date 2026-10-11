@@ -105,7 +105,10 @@ const Settings = () => {
     const { isDark, colors, setMode } = useTheme();
     const styles = useThemedStyles(baseStyles);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [syncStatus, setSyncStatus] = useState<DatabaseSyncStatus>({ pending: 0, lastSyncedAt: null });
+    const [syncStatus, setSyncStatus] = useState<DatabaseSyncStatus>({
+        pending: 0, queued: 0, failed: 0, syncing: false, lastSyncedAt: null,
+        sales: { queued: 0, failed: 0 }, products: { queued: 0, failed: 0 },
+    });
     const isDeveloper = currentUser?.profileTable === 'developer';
     const visibleSettingsItems = typedSettingsItems.filter((item) => {
         if (item.id === 'test-sms' || item.id === 'debug-logging') return isDeveloper;
@@ -114,7 +117,10 @@ const Settings = () => {
 
     const refreshSyncStatus = useCallback(async () => {
         if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
-            setSyncStatus({ pending: 0, lastSyncedAt: null });
+            setSyncStatus({
+                pending: 0, queued: 0, failed: 0, syncing: false, lastSyncedAt: null,
+                sales: { queued: 0, failed: 0 }, products: { queued: 0, failed: 0 },
+            });
             return;
         }
 
@@ -162,19 +168,15 @@ const Settings = () => {
                 stallNumber: currentUser.stallNumber,
             });
             const rows = [
-                `Sales: ${result.transactions.synced}/${result.transactions.attempted}`,
+                `Sales: ${result.sales.synced}/${result.sales.attempted}`,
                 `Products: ${result.products.synced}/${result.products.attempted}`,
-                `Categories: ${result.categories.synced}/${result.categories.attempted}`,
             ];
-            const hasFailures = result.transactions.synced < result.transactions.attempted
-                || result.products.synced < result.products.attempted
-                || result.categories.synced < result.categories.attempted
-                || Boolean(result.products.error)
-                || Boolean(result.categories.error)
-                || Boolean(result.personnel.error);
+            const hasFailures = result.sales.remaining > 0
+                || result.products.remaining > 0
+                || Boolean(result.lastError);
 
             if (hasFailures) {
-                const errors = [result.products.error, result.categories.error, result.personnel.error]
+                const errors = [result.sales.error, result.products.error]
                     .filter((error): error is string => Boolean(error));
                 Alert.alert(
                     'Sync partially completed',
@@ -183,9 +185,7 @@ const Settings = () => {
                 return;
             }
 
-            const attempted = result.transactions.attempted
-                + result.products.attempted
-                + result.categories.attempted;
+            const attempted = result.sales.attempted + result.products.attempted;
             Alert.alert(
                 'Database synced',
                 attempted === 0
@@ -298,8 +298,8 @@ const Settings = () => {
                                         <Text style={styles.itemSubtitle}>
                                             {isSyncAction
                                                 ? (isSyncing
-                                                    ? `${syncStatus.pending} pending | Please keep the app open`
-                                                    : `${syncStatus.pending} pending | ${formatLastSynced(syncStatus.lastSyncedAt)}`)
+                                                    ? `${syncStatus.queued} queued | Please keep the app open`
+                                                    : `${syncStatus.queued} queued (${syncStatus.failed} failed) | ${formatLastSynced(syncStatus.lastSyncedAt)}`)
                                                 : item.subtitle}
                                         </Text>
                                     </View>

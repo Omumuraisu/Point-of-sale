@@ -150,12 +150,22 @@ const resolveBusinessById = async (businessId: number) => {
     return { business, resolvedStallId, error: undefined };
 };
 
-const loadAuthenticatedUser = async (): Promise<CurrentUser | null> => {
+export const loadAuthenticatedUser = async (): Promise<CurrentUser | null> => {
     if (!supabase) return null;
-    const { data, error } = await supabase.rpc('get_my_pos_profile');
-    const profile = (Array.isArray(data) ? data[0] : data) as PosProfileRow | null;
-    if (error || !profile) return null;
     const stored = parseStoredUser(await AsyncStorage.getItem(CURRENT_USER_KEY));
+    let response: Awaited<ReturnType<typeof supabase.rpc>>;
+    try {
+        response = await supabase.rpc('get_my_pos_profile');
+    } catch {
+        return stored;
+    }
+    const { data, error } = response;
+    const profile = (Array.isArray(data) ? data[0] : data) as PosProfileRow | null;
+    if (error) {
+        const message = error.message ?? '';
+        return /fetch|network|timeout|offline/i.test(message) ? stored : null;
+    }
+    if (!profile) return null;
 
     if (profile.profile_table === 'developer') {
         const sameStoredUser = stored?.accountId === profile.account_id ? stored : null;
@@ -215,10 +225,17 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
                 if (active) setIsHydrating(false);
                 return;
             }
-            const { data } = await supabase.auth.getSession();
+            let data: Awaited<ReturnType<typeof supabase.auth.getSession>>['data'];
+            try {
+                ({ data } = await supabase.auth.getSession());
+            } catch {
+                data = { session: null };
+            }
             if (!active) return;
             setSession(data.session);
             if (data.session) {
+                const cached = parseStoredUser(await AsyncStorage.getItem(CURRENT_USER_KEY));
+                if (active && cached) setCurrentUser(cached);
                 const user = await loadAuthenticatedUser();
                 if (active) setCurrentUser(user);
             } else {

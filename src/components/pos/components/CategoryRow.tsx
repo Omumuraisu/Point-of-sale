@@ -11,13 +11,19 @@ interface CategoryRowProps {
 
 const CategoryRow = ({ item, tintColor, onPress, disabled = false }: CategoryRowProps) => {
     const styles = useThemedStyles(baseStyles);
-    const { resolveColor, colors } = useTheme();
-    const resolvedTint = resolveColor(tintColor);
+    const { resolvePalette, resolveTextColor, colors } = useTheme();
+    const resolvedTint = resolveTextColor(tintColor, colors.background);
+    const thumbPalette = resolvePalette({
+        backgroundColor: '#bdc9eb',
+        borderColor: '#6690ff',
+        textColor: tintColor,
+        iconColor: tintColor,
+    });
     return (
     <Pressable style={[styles.row, disabled && styles.disabled]} onPress={() => onPress(item)} disabled={disabled}>
         <View style={styles.rowLeft}>
-            <View style={styles.thumb}>
-                <Ionicons name="cube-outline" size={18} color={resolvedTint} />
+            <View style={[styles.thumb, { backgroundColor: thumbPalette.backgroundColor, borderColor: thumbPalette.borderColor }]}>
+                <Ionicons name="cube-outline" size={18} color={thumbPalette.iconColor ?? thumbPalette.textColor} />
             </View>
             <Text style={[styles.rowLabel, { color: resolvedTint }]}>{item}</Text>
         </View>

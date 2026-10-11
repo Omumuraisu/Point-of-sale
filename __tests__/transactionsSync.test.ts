@@ -33,6 +33,7 @@ jest.doMock('../src/lib/transactionSyncEvents', () => ({
 
 const {
     loadRemoteSalesTransactions,
+    mergeLocalAndRemoteTransactions,
     syncTransactionRecordWithResult,
     syncUnsyncedTransactions,
 } = require('../src/lib/transactionsSync') as typeof import('../src/lib/transactionsSync');
@@ -110,7 +111,7 @@ test('invalid business context returns no sales without querying Supabase', asyn
 });
 
 test('sale synchronization carries business_id in both RPC scope and row payload', async () => {
-    const result = await syncTransactionRecordWithResult(transaction(), { accountId: 7, businessId: 10 });
+    const result = await syncTransactionRecordWithResult(transaction(), { accountId: 7, businessId: 10, stallNumber: '1' });
 
     expect(result.success).toBe(true);
     expect(mockSupabase.rpc).toHaveBeenCalledWith('record_open_stall_sale', expect.objectContaining({
@@ -120,7 +121,7 @@ test('sale synchronization carries business_id in both RPC scope and row payload
 });
 
 test('mismatched active business prevents synchronization', async () => {
-    const result = await syncTransactionRecordWithResult(transaction(), { accountId: 7, businessId: 20 });
+    const result = await syncTransactionRecordWithResult(transaction(), { accountId: 7, businessId: 20, stallNumber: '1' });
 
     expect(result).toMatchObject({ success: false });
     expect(result.error).toContain('businessId');
@@ -130,12 +131,20 @@ test('mismatched active business prevents synchronization', async () => {
 test('offline retry reads and updates only the active account-business queue', async () => {
     mockGetUnsyncedTransactions.mockResolvedValue([transaction()]);
 
-    await expect(syncUnsyncedTransactions({ accountId: 7, businessId: 10 }))
+    await expect(syncUnsyncedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' }))
         .resolves.toEqual({ attempted: 1, synced: 1 });
-    expect(mockGetUnsyncedTransactions).toHaveBeenCalledWith({ accountId: 7, businessId: 10 });
+    expect(mockGetUnsyncedTransactions).toHaveBeenCalledWith({ accountId: 7, businessId: 10, stallNumber: '1' });
     expect(mockUpdateTransactionSyncState).toHaveBeenCalledWith(
-        { accountId: 7, businessId: 10 },
+        { accountId: 7, businessId: 10, stallNumber: '1' },
         '#local',
-        expect.objectContaining({ synced: true }),
+        expect.objectContaining({ synced: true, id: '#55', orderId: 55 }),
     );
+});
+
+test('cached synced sales remain visible offline and remote copies replace duplicates online', () => {
+    const local = { ...transaction(), id: '#55', orderId: 55, synced: true };
+    const remote = { ...local, item: 'Canonical Rice', syncedAt: 10 };
+
+    expect(mergeLocalAndRemoteTransactions([local], [])).toEqual([local]);
+    expect(mergeLocalAndRemoteTransactions([local], [remote])).toEqual([remote]);
 });

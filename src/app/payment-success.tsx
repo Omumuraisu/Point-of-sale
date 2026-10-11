@@ -7,7 +7,9 @@ import { parseCart } from '../lib/utils';
 const PaymentSuccessRoute = () => {
     const router = useRouter();
     const { currentUser } = useAuthSession();
-    const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
+    const scope = currentUser?.stallNumber && currentUser.businessId
+        ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
+        : null;
     const { cart, paidAmount, totalDue, changeAmount, orderId, completedAt } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
 

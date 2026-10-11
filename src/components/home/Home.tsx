@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { loadSavedTransactions } from '../pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
 import { useAuthSession } from '../../lib/authSession';
-import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
+import { loadRemoteSalesTransactions, mergeLocalAndRemoteTransactions } from '../../lib/transactionsSync';
 import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
 import { useUnreadNotificationCount } from '../../lib/useUnreadNotificationCount';
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
@@ -41,17 +41,15 @@ export default function Home() {
             setRecentSales([]);
 
             const hydrateRecentSales = async () => {
-                if (!currentUser?.accountId || !currentUser.businessId) {
+                if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
                     return;
                 }
-                const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId };
+                const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber };
                 const [remoteTransactions, localTransactions] = await Promise.all([
                     loadRemoteSalesTransactions({ businessId: scope.businessId }),
                     loadSavedTransactions(scope),
                 ]);
-                const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
-                const savedTransactions = [...unsyncedLocalTransactions, ...remoteTransactions]
-                    .sort((first, second) => second.createdAt - first.createdAt);
+                const savedTransactions = mergeLocalAndRemoteTransactions(localTransactions, remoteTransactions);
 
                 if (isMounted) {
                     setRecentSales(savedTransactions);
@@ -67,7 +65,7 @@ export default function Home() {
                 isMounted = false;
                 unsubscribe();
             };
-        }, [currentUser?.accountId, currentUser?.businessId]),
+        }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
     );
 
     return (

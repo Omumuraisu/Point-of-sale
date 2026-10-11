@@ -22,7 +22,7 @@ import { CATEGORY_ITEMS } from '../../components/pos/data';
 import { loadSavedTransactions } from '../../components/pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
 import { useAuthSession } from '../../lib/authSession';
-import { loadRemoteSalesTransactions } from '../../lib/transactionsSync';
+import { loadRemoteSalesTransactions, mergeLocalAndRemoteTransactions } from '../../lib/transactionsSync';
 import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvents';
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
 import { formatCurrency } from '../../lib/utils';
@@ -364,15 +364,13 @@ const Sales = () => {
 
             const hydrateTransactions = async () => {
                 try {
-                    if (!currentUser?.accountId || !currentUser.businessId) {
+                    if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
                         return;
                     }
-                    const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId };
+                    const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber };
                     const remoteTransactions = await loadRemoteSalesTransactions({ businessId: scope.businessId });
                     const localTransactions = await loadSavedTransactions(scope);
-                    const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
-                    const stored = [...unsyncedLocalTransactions, ...remoteTransactions]
-                        .sort((first, second) => second.createdAt - first.createdAt);
+                    const stored = mergeLocalAndRemoteTransactions(localTransactions, remoteTransactions);
 
                     if (isMounted) {
                         setSavedTransactions(stored);
@@ -395,7 +393,7 @@ const Sales = () => {
                 isMounted = false;
                 unsubscribe();
             };
-        }, [currentUser?.accountId, currentUser?.businessId]),
+        }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
     );
 
     useEffect(() => {
@@ -694,7 +692,7 @@ const TransactionsView = ({
     stallNumber,
 }: TransactionsViewProps) => {
     const styles = useThemedStyles(baseStyles);
-    const { isDark, colors, resolveColor } = useTheme();
+    const { isDark, colors, resolvePalette } = useTheme();
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [isCategoryMenuOpen, setCategoryMenuOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -898,6 +896,7 @@ const TransactionsView = ({
             {filteredTransactions.map((transaction) => (
                 (() => {
                     const colorTheme = CATEGORY_COLOR_MAP[transaction.category.trim().toLowerCase()];
+                    const resolvedCategoryTheme = colorTheme ? resolvePalette(colorTheme) : null;
                     const syncStatus = getSyncStatus(transaction, styles);
 
                     return (
@@ -915,11 +914,11 @@ const TransactionsView = ({
                                 <View
                                     style={[
                                         styles.categoryPill,
-                                        colorTheme
+                                        resolvedCategoryTheme
                                             ? {
-                                                backgroundColor: resolveColor(colorTheme.backgroundColor),
+                                                backgroundColor: resolvedCategoryTheme.backgroundColor,
                                                 borderWidth: 1,
-                                                borderColor: resolveColor(colorTheme.borderColor),
+                                                borderColor: resolvedCategoryTheme.borderColor,
                                             }
                                             : styles.categoryPillNeutral,
                                     ]}
@@ -927,8 +926,8 @@ const TransactionsView = ({
                                     <Text
                                         style={[
                                             styles.categoryPillText,
-                                            colorTheme
-                                                ? { color: resolveColor(colorTheme.textColor) }
+                                            resolvedCategoryTheme
+                                                ? { color: resolvedCategoryTheme.textColor }
                                                 : styles.categoryPillTextNeutral,
                                         ]}
                                     >

@@ -15,6 +15,10 @@ export interface ThemeColors {
   text: string;
   textSecondary: string;
   textMuted: string;
+  textDisabled: string;
+  textOnPrimary: string;
+  textOnStatus: string;
+  interactiveText: string;
   icon: string;
   primary: string;
   primarySoft: string;
@@ -36,6 +40,10 @@ export const lightColors: ThemeColors = {
   text: '#151922',
   textSecondary: '#5f6875',
   textMuted: '#7d818b',
+  textDisabled: '#8f96a3',
+  textOnPrimary: '#ffffff',
+  textOnStatus: '#151922',
+  interactiveText: '#2448a4',
   icon: '#2a2f38',
   primary: '#2f5ada',
   primarySoft: '#dbe4ff',
@@ -57,8 +65,12 @@ export const darkColors: ThemeColors = {
   text: '#f4f6fb',
   textSecondary: '#bac2d0',
   textMuted: '#929cad',
+  textDisabled: '#929cad',
+  textOnPrimary: '#ffffff',
+  textOnStatus: '#f4f6fb',
+  interactiveText: '#9bb4ff',
   icon: '#d8deea',
-  primary: '#4f70d8',
+  primary: '#4d6bc4',
   primarySoft: '#26375f',
   success: '#70d184',
   warning: '#e5bd57',
@@ -76,6 +88,15 @@ interface ThemeContextValue {
   isHydrating: boolean;
   setMode: (mode: ThemeMode) => Promise<void>;
   resolveColor: (color: string) => string;
+  resolveTextColor: (color: string, backgroundColor?: string, minimumContrast?: number) => string;
+  resolvePalette: (palette: ColorPalette, minimumTextContrast?: number) => ColorPalette;
+}
+
+export interface ColorPalette {
+  backgroundColor: string;
+  borderColor: string;
+  textColor: string;
+  iconColor?: string;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -257,7 +278,7 @@ const darkColorMap: Record<string, string> = {
   'rgba(0, 0, 0, 0.35)': darkColors.overlay,
 };
 
-function parseHex(color: string): [number, number, number] | null {
+export function parseHexColor(color: string): [number, number, number] | null {
   const normalized = color.toLowerCase();
   if (/^#[0-9a-f]{3}$/.test(normalized)) {
     return [
@@ -276,19 +297,75 @@ function parseHex(color: string): [number, number, number] | null {
   return null;
 }
 
+const linearizeChannel = (channel: number) => {
+  const normalized = channel / 255;
+  return normalized <= 0.04045
+    ? normalized / 12.92
+    : ((normalized + 0.055) / 1.055) ** 2.4;
+};
+
+export function getRelativeLuminance(color: string): number | null {
+  const rgb = parseHexColor(color);
+  if (!rgb) return null;
+  return 0.2126 * linearizeChannel(rgb[0])
+    + 0.7152 * linearizeChannel(rgb[1])
+    + 0.0722 * linearizeChannel(rgb[2]);
+}
+
+export function getContrastRatio(foreground: string, background: string): number {
+  const foregroundLuminance = getRelativeLuminance(foreground);
+  const backgroundLuminance = getRelativeLuminance(background);
+  if (foregroundLuminance === null || backgroundLuminance === null) return 1;
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+const mixColor = (source: [number, number, number], target: number, progress: number) => (
+  rgbToHex(
+    source[0] + (target - source[0]) * progress,
+    source[1] + (target - source[1]) * progress,
+    source[2] + (target - source[2]) * progress,
+  )
+);
+
+export function ensureColorContrast(
+  foreground: string,
+  background: string,
+  minimumContrast = 4.5,
+  fallback = '#ffffff',
+): string {
+  if (getContrastRatio(foreground, background) >= minimumContrast) return foreground;
+  const source = parseHexColor(foreground);
+  const backgroundLuminance = getRelativeLuminance(background);
+  if (!source || backgroundLuminance === null) return fallback;
+  const target = backgroundLuminance < 0.5 ? 255 : 0;
+  for (let step = 1; step <= 20; step += 1) {
+    const candidate = mixColor(source, target, step / 20);
+    if (getContrastRatio(candidate, background) >= minimumContrast) return candidate;
+  }
+  return getContrastRatio(fallback, background) >= minimumContrast
+    ? fallback
+    : target === 255 ? '#ffffff' : '#000000';
+}
+
 function rgbToHex(red: number, green: number, blue: number): string {
   return `#${[red, green, blue].map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
 }
 
-function mapDarkColor(color: string, property?: string): string {
+export function mapDarkColor(color: string, property?: string): string {
   const normalized = color.toLowerCase();
-  const rgb = parseHex(normalized);
+  const rgb = parseHexColor(normalized);
 
   // White text is normally placed on a brand or destructive button and should stay white.
   if (property === 'color' && rgb && Math.min(...rgb) >= 225) return color;
 
   const mapped = darkColorMap[normalized];
-  if (mapped) return mapped;
+  if (mapped) {
+    return property === 'color'
+      ? ensureColorContrast(mapped, darkColors.surface, 4.5, darkColors.text)
+      : mapped;
+  }
   if (!rgb) return color;
 
   const [red, green, blue] = rgb;
@@ -298,12 +375,17 @@ function mapDarkColor(color: string, property?: string): string {
   const saturation = max === 0 ? 0 : (max - min) / max;
 
   if (property === 'color') {
-    if (luminance < 0.22 && saturation < 0.28) return darkColors.text;
-    if (luminance < 0.55 && saturation < 0.2) return darkColors.textSecondary;
+    if (saturation < 0.28 && luminance < 0.32) return darkColors.text;
+    if (saturation < 0.28 && luminance < 0.72) return darkColors.textSecondary;
     if (luminance < 0.58 && saturation >= 0.2) {
-      return rgbToHex(red * 0.62 + 97, green * 0.62 + 97, blue * 0.62 + 97);
+      return ensureColorContrast(
+        rgbToHex(red * 0.62 + 97, green * 0.62 + 97, blue * 0.62 + 97),
+        darkColors.surface,
+        4.5,
+        darkColors.text,
+      );
     }
-    return color;
+    return ensureColorContrast(color, darkColors.surface, 4.5, darkColors.text);
   }
 
   if (property?.toLowerCase().includes('border')) {
@@ -324,6 +406,36 @@ function mapDarkColor(color: string, property?: string): string {
   }
 
   return color;
+}
+
+export function resolveDarkTextColor(
+  color: string,
+  backgroundColor = darkColors.surface,
+  minimumContrast = 4.5,
+): string {
+  const resolvedBackground = mapDarkColor(backgroundColor, 'backgroundColor');
+  return ensureColorContrast(
+    mapDarkColor(color, 'color'),
+    resolvedBackground,
+    minimumContrast,
+    darkColors.text,
+  );
+}
+
+export function resolveDarkPalette(palette: ColorPalette, minimumTextContrast = 4.5): ColorPalette {
+  const backgroundColor = mapDarkColor(palette.backgroundColor, 'backgroundColor');
+  return {
+    backgroundColor,
+    borderColor: mapDarkColor(palette.borderColor, 'borderColor'),
+    textColor: resolveDarkTextColor(palette.textColor, backgroundColor, minimumTextContrast),
+    ...(palette.iconColor ? {
+      iconColor: resolveDarkTextColor(palette.iconColor, backgroundColor, 3),
+    } : {}),
+  };
+}
+
+export function resolveDarkDisabledOpacity(opacity: number): number {
+  return Math.max(opacity, 0.65);
 }
 
 export function ThemeProvider({ children }: React.PropsWithChildren) {
@@ -361,6 +473,18 @@ export function ThemeProvider({ children }: React.PropsWithChildren) {
 
   const isDark = mode === 'dark';
   const resolveColor = useCallback((color: string) => isDark ? mapDarkColor(color) : color, [isDark]);
+  const resolveTextColor = useCallback((
+    color: string,
+    backgroundColor = isDark ? darkColors.surface : lightColors.surface,
+    minimumContrast = 4.5,
+  ) => {
+    if (!isDark) return color;
+    return resolveDarkTextColor(color, backgroundColor, minimumContrast);
+  }, [isDark]);
+  const resolvePalette = useCallback((palette: ColorPalette, minimumTextContrast = 4.5): ColorPalette => {
+    if (!isDark) return palette;
+    return resolveDarkPalette(palette, minimumTextContrast);
+  }, [isDark]);
   const value = useMemo<ThemeContextValue>(() => ({
     mode,
     isDark,
@@ -368,7 +492,9 @@ export function ThemeProvider({ children }: React.PropsWithChildren) {
     isHydrating,
     setMode,
     resolveColor,
-  }), [isDark, isHydrating, mode, resolveColor, setMode]);
+    resolveTextColor,
+    resolvePalette,
+  }), [isDark, isHydrating, mode, resolveColor, resolvePalette, resolveTextColor, setMode]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
@@ -382,19 +508,28 @@ export function useTheme(): ThemeContextValue {
 type NamedStyles = Record<string, StyleProp<ViewStyle | TextStyle | ImageStyle>>;
 
 export function useThemedStyles<T extends NamedStyles>(source: T): T {
-  const { isDark, resolveColor } = useTheme();
+  const { isDark } = useTheme();
   return useMemo(() => {
     if (!isDark) return source;
     return Object.fromEntries(Object.entries(source).map(([name, value]) => {
       const flattened = StyleSheet.flatten(value) as Record<string, unknown> | undefined;
       if (!flattened) return [name, value];
       const themed = { ...flattened };
+      if (name.toLowerCase().includes('disabled') && typeof themed.opacity === 'number') {
+        themed.opacity = resolveDarkDisabledOpacity(themed.opacity);
+      }
+      const rawBackground = typeof flattened.backgroundColor === 'string' ? flattened.backgroundColor : undefined;
+      const resolvedBackground = rawBackground
+        ? mapDarkColor(rawBackground, 'backgroundColor')
+        : darkColors.surface;
       for (const [property, propertyValue] of Object.entries(themed)) {
         if (typeof propertyValue === 'string' && (property === 'color' || property.toLowerCase().endsWith('color'))) {
-          themed[property] = mapDarkColor(propertyValue, property);
+          themed[property] = property === 'color'
+            ? ensureColorContrast(mapDarkColor(propertyValue, property), resolvedBackground, 4.5, darkColors.text)
+            : mapDarkColor(propertyValue, property);
         }
       }
       return [name, themed];
     })) as T;
-  }, [isDark, resolveColor, source]);
+  }, [isDark, source]);
 }

@@ -2,17 +2,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SaveReceiptTransactionInput, TransactionRecord, TransactionScope } from '../../lib/types';
 import { formatCurrency, formatTransactionDate, isTransactionRecord, toTransaction } from '../../lib/utils';
 import { debugError, debugWarn } from '../../lib/debugLogging';
+import { notifyTransactionSyncChanged } from '../../lib/transactionSyncEvents';
 
 const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
 const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
 const MAX_SAVED_TRANSACTIONS = 100;
 
-const getScopedTransactionsKey = ({ accountId, businessId }: TransactionScope) => (
-    `${SALES_TRANSACTIONS_KEY}:${accountId}:${businessId}`
+const getScopedTransactionsKey = ({ accountId, businessId, stallNumber }: TransactionScope) => (
+    `${SALES_TRANSACTIONS_KEY}:v3:${accountId}:${businessId}:${stallNumber}`
 );
-const getScopedFallbackTransactionsKey = ({ accountId, businessId }: TransactionScope) => (
-    `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}:${businessId}`
+const getScopedFallbackTransactionsKey = ({ accountId, businessId, stallNumber }: TransactionScope) => (
+    `${SALES_TRANSACTIONS_FALLBACK_KEY}:v3:${accountId}:${businessId}:${stallNumber}`
 );
+const getV2TransactionsKey = ({ accountId, businessId }: TransactionScope) => `${SALES_TRANSACTIONS_KEY}:${accountId}:${businessId}`;
+const getV2FallbackTransactionsKey = ({ accountId, businessId }: TransactionScope) => `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}:${businessId}`;
 const getLegacyAccountTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_KEY}:${accountId}`;
 const getLegacyAccountFallbackTransactionsKey = (accountId: number) => `${SALES_TRANSACTIONS_FALLBACK_KEY}:${accountId}`;
 
@@ -22,6 +25,8 @@ const isValidScope = (scope?: TransactionScope | null): scope is TransactionScop
     && scope.accountId > 0
     && Number.isInteger(scope.businessId)
     && scope.businessId > 0
+    && typeof scope.stallNumber === 'string'
+    && scope.stallNumber.trim().length > 0
 );
 
 const withSyncDefaults = (transaction: TransactionRecord): TransactionRecord => ({
@@ -31,14 +36,12 @@ const withSyncDefaults = (transaction: TransactionRecord): TransactionRecord => 
 });
 
 const trimTransactions = (transactions: TransactionRecord[]): TransactionRecord[] => {
-    if (transactions.length <= MAX_SAVED_TRANSACTIONS) {
-        return transactions;
-    }
-
     const unsynced = transactions.filter((transaction) => !transaction.synced);
     const synced = transactions.filter((transaction) => transaction.synced);
-
-    return [...unsynced, ...synced].slice(0, MAX_SAVED_TRANSACTIONS);
+    return [
+        ...unsynced,
+        ...synced.slice(0, Math.max(MAX_SAVED_TRANSACTIONS - unsynced.length, 0)),
+    ];
 };
 
 const saveTransactions = async (scope: TransactionScope, transactions: TransactionRecord[]): Promise<boolean> => {
@@ -75,6 +78,12 @@ export const loadSavedTransactions = async (
         let importedLegacyRecords = false;
 
         if (!raw) {
+            raw = await AsyncStorage.getItem(getV2TransactionsKey(scope))
+                ?? await AsyncStorage.getItem(getV2FallbackTransactionsKey(scope));
+            importedLegacyRecords = Boolean(raw);
+        }
+
+        if (!raw) {
             raw = await AsyncStorage.getItem(getLegacyAccountTransactionsKey(scope.accountId))
                 ?? await AsyncStorage.getItem(getLegacyAccountFallbackTransactionsKey(scope.accountId));
             importedLegacyRecords = Boolean(raw);
@@ -96,6 +105,7 @@ export const loadSavedTransactions = async (
             .filter((transaction) => (
                 transaction.accountId === scope.accountId
                 && transaction.businessId === scope.businessId
+                && transaction.stallNumber === scope.stallNumber
             ));
 
         if (importedLegacyRecords && scopedTransactions.length > 0) {
@@ -118,7 +128,11 @@ export interface SaveReceiptTransactionResult {
 export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput): Promise<SaveReceiptTransactionResult> => {
     const { cartItems } = input;
 
-    const scope: TransactionScope = { accountId: input.accountId, businessId: input.businessId };
+    const scope: TransactionScope = {
+        accountId: input.accountId,
+        businessId: input.businessId,
+        stallNumber: input.stallNumber ?? '',
+    };
 
     if (!isValidScope(scope)) {
         return { transaction: null, error: 'Cannot record or synchronize a sale without a valid businessId.' };
@@ -129,21 +143,35 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
     }
 
     const createdAt = Date.now();
-    const transaction = withSyncDefaults(toTransaction({
+    const transaction: TransactionRecord = withSyncDefaults(toTransaction({
         ...input,
         createdAt,
     }));
 
+    const existing = await loadSavedTransactions(scope);
+    const existingAttempt = existing.find((item) => item.clientOrderKey === transaction.clientOrderKey);
+    const queuedTransaction = existingAttempt ?? transaction;
+    const initiallySaved = await saveTransactions(scope, [
+        queuedTransaction,
+        ...existing.filter((item) => item.id !== queuedTransaction.id && item.clientOrderKey !== queuedTransaction.clientOrderKey),
+    ]);
+
+    if (!initiallySaved) {
+        return { transaction: null, error: 'Unable to save this sale locally for synchronization.' };
+    }
+
+    notifyTransactionSyncChanged();
+
     try {
         const { syncTransactionRecordWithResult } = await import('../../lib/transactionsSync');
-        const result = await syncTransactionRecordWithResult(transaction, scope);
-        const syncAttempts = (transaction.syncAttempts ?? 0) + 1;
+        const result = await syncTransactionRecordWithResult(queuedTransaction, scope);
+        const syncAttempts = (queuedTransaction.syncAttempts ?? 0) + 1;
 
         if (result.success && result.order) {
             const syncedAt = Date.now();
-            const itemCount = transaction.cartItems?.length ?? 0;
+            const itemCount = queuedTransaction.cartItems?.length ?? 0;
             const syncedTransaction: TransactionRecord = {
-                ...transaction,
+                ...queuedTransaction,
                 id: `#${result.order.orderId}`,
                 orderId: result.order.orderId,
                 createdAt: result.order.completedAt,
@@ -159,40 +187,41 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
                 syncError: undefined,
                 syncAttempts,
             };
-            const existing = await loadSavedTransactions(scope);
-            await saveTransactions(scope, [syncedTransaction, ...existing]);
-            const { notifyTransactionSyncChanged } = await import('../../lib/transactionSyncEvents');
+            const latest = await loadSavedTransactions(scope);
+            await saveTransactions(scope, [syncedTransaction, ...latest.filter((item) => (
+                item.id !== queuedTransaction.id && item.clientOrderKey !== queuedTransaction.clientOrderKey
+            ))]);
             notifyTransactionSyncChanged();
 
             return { transaction: syncedTransaction };
         }
 
         const unsyncedTransaction: TransactionRecord = {
-            ...transaction,
+            ...queuedTransaction,
             synced: false,
             syncError: result.error ?? 'Unable to synchronize this sale.',
             syncAttempts,
         };
-        const existing = await loadSavedTransactions(scope);
-        const saved = await saveTransactions(scope, [unsyncedTransaction, ...existing]);
+        const latest = await loadSavedTransactions(scope);
+        const saved = await saveTransactions(scope, [unsyncedTransaction, ...latest.filter((item) => item.id !== queuedTransaction.id)]);
 
         if (!saved) {
             return { transaction: null, error: 'Unable to save this sale locally for synchronization.' };
         }
 
-        const { notifyTransactionSyncChanged } = await import('../../lib/transactionSyncEvents');
         notifyTransactionSyncChanged();
         return { transaction: unsyncedTransaction, error: unsyncedTransaction.syncError };
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to start Supabase transaction sync';
         const unsyncedTransaction: TransactionRecord = {
-            ...transaction,
+            ...queuedTransaction,
             synced: false,
             syncError: message,
-            syncAttempts: (transaction.syncAttempts ?? 0) + 1,
+            syncAttempts: (queuedTransaction.syncAttempts ?? 0) + 1,
         };
-        const existing = await loadSavedTransactions(scope);
-        const saved = await saveTransactions(scope, [unsyncedTransaction, ...existing]);
+        const latest = await loadSavedTransactions(scope);
+        const saved = await saveTransactions(scope, [unsyncedTransaction, ...latest.filter((item) => item.id !== queuedTransaction.id)]);
+        notifyTransactionSyncChanged();
         return saved
             ? { transaction: unsyncedTransaction, error: message }
             : { transaction: null, error: 'Unable to save this sale locally for synchronization.' };
@@ -202,7 +231,9 @@ export const saveReceiptTransaction = async (input: SaveReceiptTransactionInput)
 export const updateTransactionSyncState = async (
     scope: TransactionScope,
     transactionId: string,
-    patch: Pick<TransactionRecord, 'synced' | 'syncedAt' | 'syncError' | 'syncAttempts'>,
+    patch: Partial<Pick<TransactionRecord,
+        'id' | 'orderId' | 'createdAt' | 'completedAt' | 'dateLabel' | 'amount' | 'subtitle'
+        | 'totalDue' | 'paidAmount' | 'changeAmount' | 'synced' | 'syncedAt' | 'syncError' | 'syncAttempts'>>,
 ): Promise<void> => {
     const existing = await loadSavedTransactions(scope);
     const index = existing.findIndex((transaction) => transaction.id === transactionId);

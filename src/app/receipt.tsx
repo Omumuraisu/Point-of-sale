@@ -11,7 +11,9 @@ const ReceiptRoute = () => {
     const router = useRouter();
     const { currentUser } = useAuthSession();
     const { isOpen } = useBusinessOperatingStatus();
-    const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
+    const scope = currentUser?.stallNumber && currentUser.businessId
+        ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
+        : null;
     const { cart } = useLocalSearchParams();
     const cartItems = parseCart(typeof cart === 'string' ? cart : '');
     const isConfirmingRef = useRef(false);

@@ -69,8 +69,8 @@ export const BusinessOperatingStatusProvider = ({ children }: { children: ReactN
             return;
         }
         if (!isSupabaseConfigured || !supabase) {
-            setRow(null);
             setError('Unable to reach the server. Check your connection and try again.');
+            setIsLoading(false);
             return;
         }
 

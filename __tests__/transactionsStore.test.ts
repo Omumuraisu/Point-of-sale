@@ -58,21 +58,21 @@ test('local transactions are isolated by account and business even on the same s
         transaction(7, 20, '#business-20'),
     ]));
 
-    const business10 = await loadSavedTransactions({ accountId: 7, businessId: 10 });
-    const business20 = await loadSavedTransactions({ accountId: 7, businessId: 20 });
+    const business10 = await loadSavedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' });
+    const business20 = await loadSavedTransactions({ accountId: 7, businessId: 20, stallNumber: '1' });
 
     expect(business10.map(({ id }) => id)).toEqual(['#business-10']);
     expect(business20.map(({ id }) => id)).toEqual(['#business-20']);
     expect(await AsyncStorage.getItem('@pos/sales-transactions:7')).not.toBeNull();
-    expect(await AsyncStorage.getItem('@pos/sales-transactions:7:10')).not.toBeNull();
-    expect(await AsyncStorage.getItem('@pos/sales-transactions:7:20')).not.toBeNull();
+    expect(await AsyncStorage.getItem('@pos/sales-transactions:v3:7:10:1')).not.toBeNull();
+    expect(await AsyncStorage.getItem('@pos/sales-transactions:v3:7:20:1')).not.toBeNull();
 });
 
 test('ambiguous legacy records are retained but never exposed to a business', async () => {
     const ambiguous = { ...transaction(7, 10, '#ambiguous'), businessId: undefined };
     await AsyncStorage.setItem('@pos/sales-transactions:7', JSON.stringify([ambiguous]));
 
-    expect(await loadSavedTransactions({ accountId: 7, businessId: 10 })).toEqual([]);
+    expect(await loadSavedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' })).toEqual([]);
     expect(await AsyncStorage.getItem('@pos/sales-transactions:7')).not.toBeNull();
 });
 
@@ -93,8 +93,37 @@ test('a valid-business offline sale is saved only in its scoped queue', async ()
     });
 
     expect(result.transaction).toMatchObject({ accountId: 7, businessId: 10, synced: false });
-    expect(await loadSavedTransactions({ accountId: 7, businessId: 10 })).toHaveLength(1);
-    expect(await loadSavedTransactions({ accountId: 7, businessId: 20 })).toEqual([]);
+    expect(await loadSavedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' })).toHaveLength(1);
+    expect(await loadSavedTransactions({ accountId: 7, businessId: 20, stallNumber: '1' })).toEqual([]);
+});
+
+test('a sale is durable before its first network attempt and keeps its checkout key', async () => {
+    mockedSync.mockImplementation(async (queued) => {
+        expect(await AsyncStorage.getItem('@pos/sales-transactions:v3:7:10:1')).toContain(queued.clientOrderKey!);
+        return { success: false, error: 'Network unavailable' };
+    });
+
+    const result = await saveReceiptTransaction({
+        cartItems: transaction(7, 10, '#new').cartItems!, paidAmount: 100, totalDue: 100,
+        accountId: 7, businessId: 10, username: 'Owner', clientOrderKey: 'checkout:durable:1',
+        preparedAt: 1, stallId: 'STALL-1', stallNumber: '1',
+    });
+
+    expect(result.transaction?.clientOrderKey).toBe('checkout:durable:1');
+});
+
+test('transaction retention never discards unsynced sales', async () => {
+    const queued = Array.from({ length: 105 }, (_, index) => transaction(7, 10, `#queued-${index}`));
+    await AsyncStorage.setItem('@pos/sales-transactions:v3:7:10:1', JSON.stringify(queued));
+    mockedSync.mockResolvedValue({ success: false, error: 'offline' });
+
+    await saveReceiptTransaction({
+        cartItems: transaction(7, 10, '#new').cartItems!, paidAmount: 100, totalDue: 100,
+        accountId: 7, businessId: 10, username: 'Owner', clientOrderKey: 'checkout:retention:1',
+        preparedAt: 1, stallId: 'STALL-1', stallNumber: '1',
+    });
+
+    expect(await loadSavedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' })).toHaveLength(106);
 });
 
 test('missing business context fails before synchronization or local persistence', async () => {

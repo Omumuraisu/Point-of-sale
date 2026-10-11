@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Alert } from 'react-native';
+import { Alert, BackHandler } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
 import { getCategoryById } from '../../components/pos/data';
@@ -26,7 +26,9 @@ const CategoryRoute = () => {
       let isMounted = true;
 
       const hydrateCategoryContext = async () => {
-        const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
+        const scope = currentUser?.stallNumber && currentUser.businessId
+          ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
+          : null;
         const mergedCategories = scope ? await loadListingCategories(scope) : [];
         const selectedCategory = typeof categoryId === 'string'
           ? getCategoryById(categoryId, mergedCategories)
@@ -47,16 +49,37 @@ const CategoryRoute = () => {
       return () => {
         isMounted = false;
       };
-    }, [categoryId, currentUser?.accountId, currentUser?.stallNumber]),
+    }, [categoryId, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
   );
 
   const selectedCategory =
     typeof categoryId === 'string' ? getCategoryById(categoryId, categories) : undefined;
 
-  const cartItems = parseCart(typeof cart === 'string' ? cart : '');
+  const cartItems = useMemo(
+    () => parseCart(typeof cart === 'string' ? cart : ''),
+    [cart],
+  );
   const cartTotalValue = cartItems.reduce(
     (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),
     0,
+  );
+
+  const handleBack = useCallback(() => {
+    router.replace({
+      pathname: '/pos',
+      params: { cart: JSON.stringify(cartItems) },
+    });
+  }, [cartItems, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        handleBack();
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [handleBack]),
   );
 
   const handleProductPress = (product: string) => {
@@ -90,7 +113,7 @@ const CategoryRoute = () => {
       categoryLabel={selectedCategory?.label || 'Category'}
       tintColor={selectedCategory?.textColor || '#3a3f4a'}
       products={products}
-      onBack={() => router.back()}
+      onBack={handleBack}
       onProductPress={handleProductPress}
       cartCount={cartItems.length}
       cartTotal={formatCurrency(cartTotalValue)}

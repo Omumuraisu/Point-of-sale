@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
-import { CategoryType } from '../../lib/types';
+import { CategoryType, OfflineScope } from '../../lib/types';
 import { normalizeCategoryLabel } from './data';
 import { flattenCatalog, loadProductCatalog } from './catalogStore';
 import { debugError, debugLog, debugWarn } from '../../lib/debugLogging';
@@ -16,13 +16,14 @@ export const PRODUCT_UNITS: ProductUnit[] = ['pieces', 'kg', 'g', 'mg', 'L', 'mL
 export const isProductUnit = (value: unknown): value is ProductUnit =>
     typeof value === 'string' && PRODUCT_UNITS.includes(value as ProductUnit);
 
-export interface ProductScope { accountId: number; stallNumber: string }
+export type ProductScope = OfflineScope;
 export type ProductSyncState = 'pending' | 'synced' | 'error';
 export type ProductPendingAction = 'create' | 'update' | 'archive';
 
 export interface SavedProductRecord {
     id: string;
     accountId: number;
+    businessId: number;
     stallNumber: string;
     name: string;
     categoryId: string;
@@ -79,8 +80,12 @@ interface ProductsListRow {
     main_category?: string | null; section_name?: string | null; catalog_variant?: string | null;
 }
 
-const scopedKey = ({ accountId, stallNumber }: ProductScope) => `@pos/products:v2:${accountId}:${stallNumber}`;
-const aliasesKey = ({ accountId, stallNumber }: ProductScope) => `@pos/product-aliases:v2:${accountId}:${stallNumber}`;
+const scopedKey = ({ accountId, businessId, stallNumber }: ProductScope) => `@pos/products:v3:${accountId}:${businessId}:${stallNumber}`;
+const scopedFallbackKey = ({ accountId, businessId, stallNumber }: ProductScope) => `pos-products:v3:${accountId}:${businessId}:${stallNumber}`;
+const aliasesKey = ({ accountId, businessId, stallNumber }: ProductScope) => `@pos/product-aliases:v3:${accountId}:${businessId}:${stallNumber}`;
+const legacyScopedKey = ({ accountId, stallNumber }: ProductScope) => `@pos/products:v2:${accountId}:${stallNumber}`;
+const legacyAliasesKey = ({ accountId, stallNumber }: ProductScope) => `@pos/product-aliases:v2:${accountId}:${stallNumber}`;
+const scopedMigrationKey = (scope: ProductScope) => `@pos/products-migrated:v3:${scope.accountId}:${scope.businessId}:${scope.stallNumber}`;
 const identity = (product: Pick<SavedProductRecord, 'catalogProductId' | 'mainCategory' | 'section' | 'name' | 'variant'>) =>
     product.catalogProductId ?? [product.mainCategory, product.section, product.name, product.variant]
         .map((value) => normalizeCategoryLabel(value).toLowerCase()).join('::');
@@ -97,7 +102,7 @@ const isSavedProduct = (value: unknown): value is SavedProductRecord => {
     if (!value || typeof value !== 'object') return false;
     const row = value as Partial<SavedProductRecord>;
     return typeof row.id === 'string' && typeof row.accountId === 'number'
-        && typeof row.stallNumber === 'string' && typeof row.name === 'string'
+        && typeof row.businessId === 'number' && typeof row.stallNumber === 'string' && typeof row.name === 'string'
         && typeof row.categoryId === 'string' && typeof row.categoryLabel === 'string'
         && typeof row.mainCategory === 'string' && typeof row.section === 'string'
         && typeof row.variant === 'string' && typeof row.pricePerUnit === 'number'
@@ -107,15 +112,64 @@ const isSavedProduct = (value: unknown): value is SavedProductRecord => {
 };
 
 const persist = async (scope: ProductScope, products: SavedProductRecord[]) => {
-    await AsyncStorage.setItem(scopedKey(scope), JSON.stringify(products.slice(0, MAX_SAVED_PRODUCTS)));
+    const scoped = products.filter((item) => item.accountId === scope.accountId
+        && item.businessId === scope.businessId && item.stallNumber === scope.stallNumber);
+    const queued = scoped.filter((item) => item.syncState !== 'synced');
+    const synced = scoped.filter((item) => item.syncState === 'synced')
+        .slice(0, Math.max(MAX_SAVED_PRODUCTS - queued.length, 0));
+    const serialized = JSON.stringify([...queued, ...synced]);
+    try {
+        await AsyncStorage.setItem(scopedKey(scope), serialized);
+    } catch (error) {
+        debugWarn('product-sync', 'primary product save failed; trying fallback', { error });
+        await AsyncStorage.setItem(scopedFallbackKey(scope), serialized);
+    }
+};
+
+const persistSafely = async (scope: ProductScope, products: SavedProductRecord[]): Promise<boolean> => {
+    try {
+        await persist(scope, products);
+        return true;
+    } catch (error) {
+        debugError('product-sync', 'unable to persist product queue', { error, stallNumber: scope.stallNumber });
+        return false;
+    }
+};
+
+const migrateScopedProducts = async (scope: ProductScope) => {
+    if (await AsyncStorage.getItem(scopedMigrationKey(scope))) return;
+    const raw = await AsyncStorage.getItem(legacyScopedKey(scope));
+    const current = await AsyncStorage.getItem(scopedKey(scope)) ?? await AsyncStorage.getItem(scopedFallbackKey(scope));
+    if (raw && !current) {
+        try {
+            const parsed = JSON.parse(raw) as Array<Partial<SavedProductRecord>>;
+            if (Array.isArray(parsed)) {
+                const migrated = parsed
+                    .filter((item) => item.accountId === scope.accountId && item.stallNumber === scope.stallNumber)
+                    .map((item) => ({ ...item, businessId: scope.businessId }))
+                    .filter(isSavedProduct);
+                if (migrated.length > 0) await persist(scope, migrated);
+            }
+        } catch { /* Retain malformed and ambiguous legacy data untouched. */ }
+    }
+    const legacyAliases = await AsyncStorage.getItem(legacyAliasesKey(scope));
+    if (legacyAliases && !(await AsyncStorage.getItem(aliasesKey(scope)))) {
+        await AsyncStorage.setItem(aliasesKey(scope), legacyAliases);
+    }
+    await AsyncStorage.setItem(scopedMigrationKey(scope), 'complete');
 };
 
 export const loadSavedProducts = async (scope: ProductScope): Promise<SavedProductRecord[]> => {
     try {
-        const raw = await AsyncStorage.getItem(scopedKey(scope));
+        await migrateScopedProducts(scope);
+        const raw = await AsyncStorage.getItem(scopedKey(scope))
+            ?? await AsyncStorage.getItem(scopedFallbackKey(scope));
         if (!raw) return [];
         const parsed: unknown = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed.filter(isSavedProduct) : [];
+        return Array.isArray(parsed) ? parsed.filter(isSavedProduct).filter((item) => (
+            item.accountId === scope.accountId && item.businessId === scope.businessId
+            && item.stallNumber === scope.stallNumber
+        )) : [];
     } catch { return []; }
 };
 
@@ -128,7 +182,7 @@ const fromRemote = async (scope: ProductScope, row: ProductsListRow): Promise<Sa
     if (!isProductUnit(row.unit)) return null;
     const details = await catalogDetails(row.catalog_product_id ?? undefined);
     return {
-        id: row.id, accountId: scope.accountId, stallNumber: row.stall_number, name: row.name,
+        id: row.id, accountId: scope.accountId, businessId: scope.businessId, stallNumber: row.stall_number, name: row.name,
         categoryId: row.category_id, categoryLabel: row.category_label,
         mainCategory: row.main_category ?? details?.category.name ?? row.category_label,
         section: row.section_name ?? details?.section.name ?? '',
@@ -152,14 +206,17 @@ const mergeByIdentity = (remote: SavedProductRecord[], local: SavedProductRecord
 };
 
 export const migrateLegacyProducts = async (scope: ProductScope) => {
-    if (await AsyncStorage.getItem(LEGACY_MIGRATION_KEY)) return;
+    const marker = `${LEGACY_MIGRATION_KEY}:${scope.accountId}:${scope.businessId}:${scope.stallNumber}`;
+    if (await AsyncStorage.getItem(marker)) return;
     const raw = await AsyncStorage.getItem(LEGACY_PRODUCTS_KEY) ?? await AsyncStorage.getItem(LEGACY_PRODUCTS_FALLBACK_KEY);
     if (raw) {
         try {
             const old = JSON.parse(raw) as Array<Record<string, unknown>>;
-            const migrated = old.filter((item) => typeof item.id === 'string' && typeof item.name === 'string')
+            const migrated = old.filter((item) => typeof item.id === 'string' && typeof item.name === 'string'
+                && item.accountId === scope.accountId && item.businessId === scope.businessId
+                && item.stallNumber === scope.stallNumber)
                 .map((item): SavedProductRecord => ({
-                    id: String(item.id), accountId: scope.accountId, stallNumber: scope.stallNumber,
+                    id: String(item.id), accountId: scope.accountId, businessId: scope.businessId, stallNumber: scope.stallNumber,
                     name: String(item.name), categoryId: String(item.categoryId ?? ''),
                     categoryLabel: String(item.categoryLabel ?? 'General'), mainCategory: String(item.categoryLabel ?? 'General'),
                     section: String(item.categoryLabel ?? 'General'), variant: '',
@@ -171,7 +228,7 @@ export const migrateLegacyProducts = async (scope: ProductScope) => {
             await persist(scope, migrated);
         } catch { /* Ignore malformed legacy storage. */ }
     }
-    await AsyncStorage.setItem(LEGACY_MIGRATION_KEY, `${scope.accountId}:${scope.stallNumber}`);
+    await AsyncStorage.setItem(marker, 'complete');
 };
 
 export const loadScopedProducts = async (scope: ProductScope): Promise<SavedProductRecord[]> => {
@@ -236,7 +293,7 @@ const failedResult = async (
 ): Promise<ProductMutationResult> => {
     const failed = { ...product, syncState: 'error' as const, syncError: message };
     const all = await loadSavedProducts(scope);
-    await persist(scope, all.map((item) => item.id === product.id ? failed : item));
+    await persistSafely(scope, all.map((item) => item.id === product.id ? failed : item));
     emitProductSyncChange();
     return {
         product: failed,
@@ -331,14 +388,16 @@ export const saveProductRecord = async (scope: ProductScope, input: SaveProductI
     const duplicate = existing.find((item) => !item.archivedAt && identity(item) === identity(candidate as SavedProductRecord));
     const now = Date.now();
     const record: SavedProductRecord = {
-        id: duplicate?.id ?? newListingId(), accountId: scope.accountId, stallNumber: scope.stallNumber,
+        id: duplicate?.id ?? newListingId(), accountId: scope.accountId, businessId: scope.businessId, stallNumber: scope.stallNumber,
         name: normalizeCategoryLabel(input.name), categoryId: input.categoryId, categoryLabel: normalizeCategoryLabel(input.categoryLabel),
         mainCategory: normalizeCategoryLabel(input.mainCategory), section: normalizeCategoryLabel(input.section),
         variant: candidate.variant, catalogProductId: input.catalogProductId,
         pricePerUnit: input.pricePerUnit, unit: input.unit, createdAt: duplicate?.createdAt ?? now, updatedAt: now,
         syncState: 'pending', pendingAction: duplicate?.syncState === 'synced' ? 'update' : 'create',
     };
-    await persist(scope, [record, ...existing.filter((item) => item.id !== record.id)]);
+    if (!(await persistSafely(scope, [record, ...existing.filter((item) => item.id !== record.id)]))) {
+        return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'Unable to save this product locally for synchronization.' };
+    }
     emitProductSyncChange();
     return syncProductRecord(scope, record);
 };
@@ -352,7 +411,9 @@ export const updateProductRecord = async (scope: ProductScope, productId: string
     if (!current) return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'This product is no longer available.' };
     const pendingAction: ProductPendingAction = current.syncState === 'synced' ? 'update' : (current.pendingAction === 'archive' ? 'update' : current.pendingAction ?? 'create');
     const updated: SavedProductRecord = { ...current, pricePerUnit, unit, updatedAt: Date.now(), syncState: 'pending', pendingAction, syncError: undefined };
-    await persist(scope, [updated, ...existing.filter((item) => item.id !== productId)]);
+    if (!(await persistSafely(scope, [updated, ...existing.filter((item) => item.id !== productId)]))) {
+        return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'Unable to save this product change locally for synchronization.' };
+    }
     emitProductSyncChange();
     return syncProductRecord(scope, updated);
 };
@@ -362,13 +423,17 @@ export const deleteProductRecord = async (scope: ProductScope, productId: string
     const current = existing.find((item) => item.id === productId);
     if (!current) return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'This product is no longer available.' };
     if (current.pendingAction === 'create' && current.syncState !== 'synced') {
-        await persist(scope, existing.filter((item) => item.id !== productId));
+        if (!(await persistSafely(scope, existing.filter((item) => item.id !== productId)))) {
+            return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'Unable to remove this queued product locally.' };
+        }
         emitProductSyncChange();
         debugLog('product-sync', 'unsynced local product removed', { listingId: productId, stallNumber: scope.stallNumber });
         return { product: current, localSaved: true, synced: true, syncState: 'synced' };
     }
     const archived = { ...current, archivedAt: current.archivedAt ?? Date.now(), updatedAt: Date.now(), syncState: 'pending' as const, pendingAction: 'archive' as const, syncError: undefined };
-    await persist(scope, [archived, ...existing.filter((item) => item.id !== productId)]);
+    if (!(await persistSafely(scope, [archived, ...existing.filter((item) => item.id !== productId)]))) {
+        return { product: null, localSaved: false, synced: false, syncState: 'error', error: 'Unable to save this product removal locally for synchronization.' };
+    }
     emitProductSyncChange();
     return syncProductRecord(scope, archived);
 };

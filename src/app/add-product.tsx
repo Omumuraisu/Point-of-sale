@@ -26,13 +26,13 @@ export default function AddProductRoute() {
             Alert.alert('Stall closed', 'Open the stall before starting a sale.');
             return;
         }
-        if (!currentUser?.stallNumber) {
+        if (!currentUser?.stallNumber || !currentUser.businessId) {
             Alert.alert('No authorized stall', 'Select an authorized stall before adding products.');
             return;
         }
         setSaving(true);
         setSyncError(null);
-        const scope: ProductScope = { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber };
+        const scope: ProductScope = { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber };
         try {
             const result = await saveProductRecord(scope, payload);
             if (!result.localSaved || !result.product) {
@@ -42,18 +42,23 @@ export default function AddProductRoute() {
             if (!result.synced) {
                 setFailedProductId(result.product.id);
                 setSyncError(result.error ?? 'The product was saved on this device but did not sync to the server.');
+                Alert.alert(
+                    'Product saved offline',
+                    'This product is available on this device and will sync automatically when the connection returns.',
+                    [{ text: 'Continue', onPress: () => router.back() }],
+                );
                 return;
             }
             router.back();
         } finally { setSaving(false); }
     };
     const retry = async () => {
-        if (!currentUser?.stallNumber || !failedProductId) return;
+        if (!currentUser?.stallNumber || !currentUser.businessId || !failedProductId) return;
         setSaving(true);
         setSyncError(null);
         try {
             const result = await retryProductSync(
-                { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber },
+                { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber },
                 failedProductId,
             );
             if (result.synced) router.back();

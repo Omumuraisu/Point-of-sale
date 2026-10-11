@@ -2,6 +2,13 @@ import type { MobileNotification } from './mobileNotifications';
 
 export type NotificationType = 'warning' | 'alert' | 'danger' | 'success';
 
+export const NOTIFICATION_THEME = {
+    warning: { borderLeft: '#d95f57', iconBg: '#f1d9d7', iconColor: '#d95f57' },
+    alert: { borderLeft: '#e5c13d', iconBg: '#f5ebbf', iconColor: '#e4c444' },
+    success: { borderLeft: '#4aad5d', iconBg: '#bde6c2', iconColor: '#4aad5d' },
+    danger: { borderLeft: '#b93a32', iconBg: '#f3d2d0', iconColor: '#b93a32' },
+} as const;
+
 const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
 
 const formatBillingMonthLabel = (value: string | null) => {

@@ -25,8 +25,9 @@ export default function AddItemRoute() {
         pricePerUnit: Number.isFinite(parsedPrice) ? parsedPrice : 0,
         unit: parsedUnit as ProductUnit,
     });
-    const scope: ProductScope | null = currentUser?.stallNumber
-        ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
+    const scope: ProductScope | null = currentUser?.stallNumber && currentUser.businessId
+        ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
+        : null;
 
     const add = async (payload: AddCartItemPayload) => {
         if (isOpen !== true) {
@@ -49,7 +50,10 @@ export default function AddItemRoute() {
         }
         if (!scope) return { product: null, localSaved: false, synced: false, syncState: 'error' as const, error: 'Select an authorized stall before changing products.' };
         const result = await deleteProductRecord(scope, product.id);
-        if (result.synced) router.replace({ pathname: '/category', params: { categoryId: product.categoryId, cart: typeof params.cart === 'string' ? params.cart : '[]' } });
+        if (result.localSaved) {
+            if (!result.synced) Alert.alert('Removal saved offline', 'The product is hidden on this device and its removal will sync automatically.');
+            router.replace({ pathname: '/category', params: { categoryId: product.categoryId, cart: typeof params.cart === 'string' ? params.cart : '[]' } });
+        }
         return result;
     };
     const update = async ({ pricePerUnit, unit }: { pricePerUnit: number; unit: ProductUnit }) => {

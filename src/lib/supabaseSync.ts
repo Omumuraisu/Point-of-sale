@@ -1,7 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isSupabaseConfigured, supabase } from './supabase';
 import { syncUnsyncedTransactions } from './transactionsSync';
-import { loadMergedCategories } from '../components/pos/categoriesStore';
 import { ProductScope, getListingIdAliases, getProductSyncSummary, syncProducts as syncScopedProducts } from '../components/pos/productsStore';
 import { reconcileCartListingIds } from '../components/pos/cartStore';
 import { getUnsyncedTransactions, reconcileUnsyncedTransactionListingIds } from '../components/pos/transactionsStore';
@@ -11,12 +9,33 @@ import { TransactionScope } from './types';
 interface BatchSyncResult {
     attempted: number;
     synced: number;
+    failed?: number;
     error?: string;
 }
 
 export interface DatabaseSyncStatus {
     pending: number;
+    queued: number;
+    failed: number;
+    syncing: boolean;
     lastSyncedAt: number | null;
+    lastError?: string;
+    sales: { queued: number; failed: number };
+    products: { queued: number; failed: number };
+}
+
+export interface SyncDomainResult {
+    attempted: number;
+    synced: number;
+    failed: number;
+    remaining: number;
+    error?: string;
+}
+
+export interface SyncCoordinatorResult {
+    sales: SyncDomainResult;
+    products: SyncDomainResult;
+    lastError?: string;
 }
 
 const databaseSyncStatusListeners = new Set<() => void>();
@@ -32,6 +51,10 @@ const notifyDatabaseSyncStatusChanged = () => {
 
 const syncStatusKey = (scope: ProductScope & TransactionScope) =>
     `@marketsync/database-sync-status:${scope.accountId}:${scope.businessId}:${scope.stallNumber}`;
+const scopeKey = (scope: ProductScope & TransactionScope) =>
+    `${scope.accountId}:${scope.businessId}:${scope.stallNumber}`;
+const runtimeStatus = new Map<string, { syncing: boolean; lastError?: string }>();
+const inFlightSyncs = new Map<string, Promise<SyncCoordinatorResult>>();
 
 const readLastSyncedAt = async (scope: ProductScope & TransactionScope): Promise<number | null> => {
     const raw = await AsyncStorage.getItem(syncStatusKey(scope));
@@ -56,9 +79,19 @@ export const getDatabaseSyncStatus = async (
         readLastSyncedAt(scope),
     ]);
 
+    const salesFailed = transactions.filter((item) => Boolean(item.syncError)).length;
+    const productQueued = products.pending + products.failed;
+    const state = runtimeStatus.get(scopeKey(scope));
+    const queued = transactions.length + productQueued;
     return {
-        pending: transactions.length + products.pending + products.failed,
+        pending: queued,
+        queued,
+        failed: salesFailed + products.failed,
+        syncing: state?.syncing ?? false,
         lastSyncedAt,
+        lastError: state?.lastError,
+        sales: { queued: transactions.length, failed: salesFailed },
+        products: { queued: productQueued, failed: products.failed },
     };
 };
 
@@ -80,60 +113,14 @@ const getErrorMessage = (error: unknown): string => {
 
 const emptyResult: BatchSyncResult = { attempted: 0, synced: 0 };
 
-const ensureSupabaseClient = (): string | null => {
-    if (!isSupabaseConfigured || !supabase) {
-        return 'Supabase is not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY to .env.';
-    }
-
-    return null;
-};
-
 export const syncProducts = async (scope: ProductScope): Promise<BatchSyncResult> => {
     try { return await syncScopedProducts(scope); }
     catch (error) { return { ...emptyResult, error: getErrorMessage(error) }; }
 };
 
 export const syncCategories = async (): Promise<BatchSyncResult> => {
-    const configError = ensureSupabaseClient();
-    const client = supabase;
-
-    if (configError || !client) {
-        return {
-            ...emptyResult,
-            error: configError ?? 'Supabase is not configured.',
-        };
-    }
-
-    const categories = await loadMergedCategories();
-
-    if (categories.length === 0) {
-        return emptyResult;
-    }
-
-    try {
-        const { error } = await client
-            .from('categories')
-            .upsert(
-                categories.map((category) => ({
-                    id: category.id,
-                    label: category.label,
-                    icon: category.icon,
-                    bg_color: category.bgColor,
-                    border_color: category.borderColor,
-                    text_color: category.textColor,
-                })),
-                { onConflict: 'id' },
-            );
-
-        if (error) {
-            return { attempted: categories.length, synced: 0, error: error.message };
-        }
-
-        logSyncDebug('categories synced', { count: categories.length });
-        return { attempted: categories.length, synced: categories.length };
-    } catch (error) {
-        return { attempted: categories.length, synced: 0, error: getErrorMessage(error) };
-    }
+    logSyncDebug('category upload skipped; the shared catalog is a read-through cache');
+    return emptyResult;
 };
 
 export const syncPersonnel = async (): Promise<BatchSyncResult> => {
@@ -141,44 +128,59 @@ export const syncPersonnel = async (): Promise<BatchSyncResult> => {
     return emptyResult;
 };
 
-export const syncAllSupabaseData = async (scope: ProductScope & TransactionScope): Promise<{
-    transactions: { attempted: number; synced: number };
-    products: BatchSyncResult;
-    categories: BatchSyncResult;
-    personnel: BatchSyncResult;
-}> => {
-    const products = await syncProducts(scope);
-    const aliases = await getListingIdAliases(scope);
-    await Promise.all([
-        reconcileCartListingIds(scope, aliases),
-        reconcileUnsyncedTransactionListingIds(scope, aliases),
-    ]);
-    const transactions = await syncUnsyncedTransactions(scope);
-    const [categories, personnel] = await Promise.all([syncCategories(), syncPersonnel()]);
-
-    logSyncDebug('full sync complete', {
-        transactions,
-        products,
-        categories,
-        personnel,
-    });
-
-    const hasFailures = transactions.synced < transactions.attempted
-        || products.synced < products.attempted
-        || categories.synced < categories.attempted
-        || Boolean(products.error)
-        || Boolean(categories.error)
-        || Boolean(personnel.error);
-
-    if (!hasFailures) {
-        await AsyncStorage.setItem(syncStatusKey(scope), JSON.stringify({ lastSyncedAt: Date.now() }));
+const executeSync = async (scope: ProductScope & TransactionScope): Promise<SyncCoordinatorResult> => {
+    const key = scopeKey(scope);
+    runtimeStatus.set(key, { syncing: true });
+    notifyDatabaseSyncStatusChanged();
+    try {
+        const productAttempt = await syncProducts(scope);
+        const aliases = await getListingIdAliases(scope);
+        await Promise.all([
+            reconcileCartListingIds(scope, aliases),
+            reconcileUnsyncedTransactionListingIds(scope, aliases),
+        ]);
+        const saleAttempt = await syncUnsyncedTransactions(scope);
+        const [remainingSales, productSummary] = await Promise.all([
+            getUnsyncedTransactions(scope),
+            getProductSyncSummary(scope),
+        ]);
+        const sales: SyncDomainResult = {
+            ...saleAttempt,
+            failed: Math.max(saleAttempt.attempted - saleAttempt.synced, 0),
+            remaining: remainingSales.length,
+            error: remainingSales.find((item) => item.syncError)?.syncError,
+        };
+        const products: SyncDomainResult = {
+            attempted: productAttempt.attempted,
+            synced: productAttempt.synced,
+            failed: productAttempt.failed ?? Math.max(productAttempt.attempted - productAttempt.synced, 0),
+            remaining: productSummary.pending + productSummary.failed,
+            error: productAttempt.error,
+        };
+        const lastError = products.error ?? sales.error;
+        const result = { sales, products, ...(lastError ? { lastError } : {}) };
+        if (sales.remaining === 0 && products.remaining === 0 && !lastError) {
+            await AsyncStorage.setItem(syncStatusKey(scope), JSON.stringify({ lastSyncedAt: Date.now() }));
+        }
+        runtimeStatus.set(key, { syncing: false, ...(lastError ? { lastError } : {}) });
+        logSyncDebug('full sync complete', result);
+        return result;
+    } catch (error) {
+        const lastError = getErrorMessage(error);
+        runtimeStatus.set(key, { syncing: false, lastError });
+        throw error;
+    } finally {
         notifyDatabaseSyncStatusChanged();
     }
+};
 
-    return {
-        transactions,
-        products,
-        categories,
-        personnel,
-    };
+export const syncAllSupabaseData = (scope: ProductScope & TransactionScope): Promise<SyncCoordinatorResult> => {
+    const key = scopeKey(scope);
+    const active = inFlightSyncs.get(key);
+    if (active) return active;
+    const task = executeSync(scope).finally(() => {
+        if (inFlightSyncs.get(key) === task) inFlightSyncs.delete(key);
+    });
+    inFlightSyncs.set(key, task);
+    return task;
 };

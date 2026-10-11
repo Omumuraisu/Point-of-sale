@@ -14,7 +14,9 @@ export default function PosTabScreen() {
     const { isDark } = useTheme();
     const { cart } = useLocalSearchParams();
     const { currentUser } = useAuthSession();
-    const scope = currentUser?.stallNumber ? { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber } : null;
+    const scope = currentUser?.stallNumber && currentUser.businessId
+        ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
+        : null;
     const hasRouteCartParam = typeof cart === 'string';
     const routeCartItems = useMemo(
         () => parseCart(typeof cart === 'string' ? cart : ''),
@@ -47,7 +49,7 @@ export default function PosTabScreen() {
         return () => {
             isMounted = false;
         };
-    }, [hasRouteCartParam, routeCartItems, currentUser?.accountId, currentUser?.stallNumber]);
+    }, [hasRouteCartParam, routeCartItems, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
 
     const cartTotalValue = cartItems.reduce(
         (sum, item) => sum + (Number.isFinite(item?.total) ? item.total : 0),

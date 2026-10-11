@@ -4,7 +4,7 @@ import TransactionDetail from '../components/pos/TransactionDetail';
 import { loadSavedTransactions } from '../components/pos/transactionsStore';
 import { TransactionRecord } from '../lib/types';
 import { useAuthSession } from '../lib/authSession';
-import { loadRemoteSalesTransactions } from '../lib/transactionsSync';
+import { loadRemoteSalesTransactions, mergeLocalAndRemoteTransactions } from '../lib/transactionsSync';
 
 const TransactionDetailRoute = () => {
     const router = useRouter();
@@ -22,14 +22,13 @@ const TransactionDetailRoute = () => {
         setTransaction(null);
 
         const hydrateTransaction = async () => {
-            if (!currentUser?.accountId || !currentUser.businessId) {
+            if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
                 return;
             }
-            const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId };
+            const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber };
             const localTransactions = await loadSavedTransactions(scope);
             const remoteTransactions = await loadRemoteSalesTransactions({ businessId: scope.businessId });
-            const unsyncedLocalTransactions = localTransactions.filter((transaction) => !transaction.synced);
-            const allTransactions = [...unsyncedLocalTransactions, ...remoteTransactions];
+            const allTransactions = mergeLocalAndRemoteTransactions(localTransactions, remoteTransactions);
             const matched = allTransactions.find((entry) => entry.id === transactionId) ?? null;
 
             if (isMounted) {
@@ -42,7 +41,7 @@ const TransactionDetailRoute = () => {
         return () => {
             isMounted = false;
         };
-    }, [currentUser?.accountId, currentUser?.businessId, transactionId]);
+    }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber, transactionId]);
 
     return (
         <TransactionDetail

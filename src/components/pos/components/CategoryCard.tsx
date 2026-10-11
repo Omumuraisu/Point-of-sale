@@ -11,19 +11,25 @@ interface CategoryCardProps {
 
 const CategoryCard = ({ item, onPress, disabled = false }: CategoryCardProps) => {
     const styles = useThemedStyles(baseStyles);
-    const { resolveColor } = useTheme();
+    const { resolvePalette } = useTheme();
+    const palette = resolvePalette({
+        backgroundColor: item.bgColor,
+        borderColor: item.borderColor,
+        textColor: item.textColor,
+        iconColor: item.textColor,
+    });
     return (
     <Pressable
         style={[
             styles.card,
-            { backgroundColor: resolveColor(item.bgColor), borderColor: resolveColor(item.borderColor) },
+            { backgroundColor: palette.backgroundColor, borderColor: palette.borderColor },
             disabled && styles.disabled,
         ]}
         onPress={() => onPress(item)}
         disabled={disabled}
     >
-        <MaterialCommunityIcons name={item.icon as any} size={58} color={resolveColor(item.textColor)} />
-        <Text style={[styles.cardText, { color: resolveColor(item.textColor) }]}>{item.label}</Text>
+        <MaterialCommunityIcons name={item.icon as any} size={58} color={palette.iconColor ?? palette.textColor} />
+        <Text style={[styles.cardText, { color: palette.textColor }]}>{item.label}</Text>
     </Pressable>
     );
 };

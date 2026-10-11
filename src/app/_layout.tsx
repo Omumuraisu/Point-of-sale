@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from "expo-router";
-import { syncAllSupabaseData } from '../lib/supabaseSync';
 import { AuthSessionProvider, useAuthSession } from '../lib/authSession';
 import { VerificationFlowProvider } from '../lib/verificationFlow';
-import NetInfo from '@react-native-community/netinfo';
 import { BusinessOperatingStatusProvider } from '../lib/businessOperatingStatus';
 import { DebugLoggingProvider } from '../lib/debugLogging';
 import { ThemeProvider, useTheme } from '../lib/theme';
@@ -29,26 +27,6 @@ function AuthGate({ children }: React.PropsWithChildren) {
   useEffect(() => {
     if (!isHydrating && isProtected && !isAuthenticated) router.replace('/');
   }, [isAuthenticated, isHydrating, isProtected, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && currentUser?.businessId && currentUser.stallNumber) {
-      void syncAllSupabaseData({
-        accountId: currentUser.accountId,
-        businessId: currentUser.businessId,
-        stallNumber: currentUser.stallNumber,
-      });
-    }
-  }, [isAuthenticated, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
-
-  useEffect(() => NetInfo.addEventListener((state) => {
-    if (state.isConnected && isAuthenticated && currentUser?.businessId && currentUser.stallNumber) {
-      void syncAllSupabaseData({
-        accountId: currentUser.accountId,
-        businessId: currentUser.businessId,
-        stallNumber: currentUser.stallNumber,
-      });
-    }
-  }), [isAuthenticated, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
 
   if (isHydrating || (isProtected && !isAuthenticated)) return null;
   return <>{children}</>;

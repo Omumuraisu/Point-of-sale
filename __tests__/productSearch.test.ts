@@ -10,6 +10,7 @@ import type { CartItem } from '../src/lib/types';
 const product = (overrides: Partial<SavedProductRecord> = {}): SavedProductRecord => ({
     id: 'listing-1',
     accountId: 1,
+    businessId: 10,
     stallNumber: 'A-1',
     name: 'Premium Rice',
     categoryId: 'grains',

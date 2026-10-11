@@ -32,7 +32,10 @@ export interface TransactionRecord {
 export interface TransactionScope {
     accountId: number;
     businessId: number;
+    stallNumber: string;
 }
+
+export type OfflineScope = TransactionScope;
 
 export interface SaveReceiptTransactionInput {
     cartItems: CartItem[];

@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import CategoryRow from './components/CategoryRow';
 import CartSummaryBar from './components/CartSummaryBar';
-import { useThemedStyles } from '../../lib/theme';
+import { useTheme, useThemedStyles } from '../../lib/theme';
 
 interface CategoryScreenProps {
     categoryLabel: string;
@@ -27,6 +27,8 @@ const CategoryScreen = ({
     isStallOpen = false,
 }: CategoryScreenProps) => {
     const styles = useThemedStyles(baseStyles);
+    const { colors, resolveTextColor } = useTheme();
+    const resolvedTint = resolveTextColor(tintColor, colors.background);
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
             <View style={styles.header}>
@@ -36,7 +38,7 @@ const CategoryScreen = ({
                 <Text style={styles.headerTitle}>Category</Text>
             </View>
 
-            <Text style={[styles.categoryName, { color: tintColor }]}>{categoryLabel}</Text>
+            <Text style={[styles.categoryName, { color: resolvedTint }]}>{categoryLabel}</Text>
             {!isStallOpen ? <Text style={styles.closedText}>Open the stall before starting a sale.</Text> : null}
 
             <FlatList

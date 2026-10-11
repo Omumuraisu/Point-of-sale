@@ -52,13 +52,13 @@ const POS = ({
   const [isRetryingProducts, setIsRetryingProducts] = useState(false);
 
   const refreshProducts = useCallback(async () => {
-    if (!currentUser?.stallNumber) {
+    if (!currentUser?.stallNumber || !currentUser.businessId) {
       setCategories([]);
       setProducts([]);
       setSyncSummary({ attempted: 0, synced: 0, failed: 0, pending: 0 });
       return;
     }
-    const scope = { accountId: currentUser.accountId, stallNumber: currentUser.stallNumber };
+    const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId!, stallNumber: currentUser.stallNumber };
     const [mergedProducts, summary] = await Promise.all([
       loadScopedProducts(scope),
       getProductSyncSummary(scope),
@@ -66,7 +66,7 @@ const POS = ({
     setProducts(mergedProducts);
     setCategories(buildListingCategories(mergedProducts));
     setSyncSummary(summary);
-  }, [currentUser?.accountId, currentUser?.stallNumber]);
+  }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -88,7 +88,8 @@ const POS = ({
     if (!currentUser?.stallNumber || isRetryingProducts) return;
     setIsRetryingProducts(true);
     try {
-      await retryAllProductSync({ accountId: currentUser.accountId, stallNumber: currentUser.stallNumber });
+      if (!currentUser.businessId) return;
+      await retryAllProductSync({ accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber });
       await refreshProducts();
     } finally {
       setIsRetryingProducts(false);

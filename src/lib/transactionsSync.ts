@@ -241,10 +241,12 @@ export const syncTransactionRecordWithResult = async (
         || scope.accountId <= 0
         || !Number.isInteger(scope.businessId)
         || scope.businessId <= 0
+        || !scope.stallNumber?.trim()
         || transaction.accountId !== scope.accountId
         || transaction.businessId !== scope.businessId
+        || transaction.stallNumber !== scope.stallNumber
     ) {
-        const error = 'Transaction synchronization requires a valid, matching accountId and businessId.';
+        const error = 'Transaction synchronization requires a valid, matching accountId, businessId, and stallNumber.';
         logSyncError('transaction scope mismatch', {
             transactionId: transaction.id,
             transactionAccountId: transaction.accountId,
@@ -428,13 +430,30 @@ export const loadRemoteSalesTransactions = async ({
     ].sort((first, second) => second.createdAt - first.createdAt);
 };
 
+const transactionIdentity = (transaction: TransactionRecord) => (
+    transaction.orderId ? `order:${transaction.orderId}`
+        : transaction.clientOrderKey ? `client:${transaction.clientOrderKey}`
+            : `id:${transaction.id}`
+);
+
+export const mergeLocalAndRemoteTransactions = (
+    localTransactions: TransactionRecord[],
+    remoteTransactions: TransactionRecord[],
+): TransactionRecord[] => {
+    const merged = new Map<string, TransactionRecord>();
+    localTransactions.forEach((transaction) => merged.set(transactionIdentity(transaction), transaction));
+    remoteTransactions.forEach((transaction) => merged.set(transactionIdentity(transaction), transaction));
+    return Array.from(merged.values()).sort((first, second) => second.createdAt - first.createdAt);
+};
+
 export const syncUnsyncedTransactions = async (scope?: TransactionScope | null): Promise<{ attempted: number; synced: number }> => {
     if (!isSupabaseConfigured || !supabase) {
         return { attempted: 0, synced: 0 };
     }
 
     if (!scope || !Number.isInteger(scope.accountId) || scope.accountId <= 0
-        || !Number.isInteger(scope.businessId) || scope.businessId <= 0) {
+        || !Number.isInteger(scope.businessId) || scope.businessId <= 0
+        || !scope.stallNumber?.trim()) {
         logSyncError('cannot synchronize queued sales without a valid business scope', { scope });
         return { attempted: 0, synced: 0 };
     }
@@ -448,7 +467,21 @@ export const syncUnsyncedTransactions = async (scope?: TransactionScope | null):
 
         if (result.success) {
             synced += 1;
+            const order = result.order;
+            const itemCount = transaction.cartItems?.length ?? 0;
             await updateTransactionSyncState(scope, transaction.id, {
+                ...(order ? {
+                    id: `#${order.orderId}`,
+                    orderId: order.orderId,
+                    createdAt: order.completedAt,
+                    completedAt: order.completedAt,
+                    dateLabel: formatTransactionDate(order.completedAt),
+                    amount: formatCurrency(order.totalDue),
+                    subtitle: `${itemCount} item${itemCount === 1 ? '' : 's'} â€¢ Paid ${formatCurrency(order.paidAmount)}`,
+                    totalDue: order.totalDue,
+                    paidAmount: order.paidAmount,
+                    changeAmount: order.changeAmount,
+                } : {}),
                 synced: true,
                 syncedAt: Date.now(),
                 syncError: undefined,

@@ -15,6 +15,7 @@ import {
     getBillNavigationParams,
     getNotificationType,
     getReadNotificationAction,
+    NOTIFICATION_THEME,
     NotificationType,
 } from '../../lib/notificationPresentation';
 
@@ -40,12 +41,18 @@ function NotificationCard({
     onActionPress,
 }: NotificationCardProps) {
     const styles = useThemedStyles(baseStyles);
-    const { resolveColor } = useTheme();
+    const { resolvePalette } = useTheme();
     const sourcePalette = NOTIFICATION_THEME[type];
+    const resolvedPalette = resolvePalette({
+        backgroundColor: sourcePalette.iconBg,
+        borderColor: sourcePalette.borderLeft,
+        textColor: sourcePalette.iconColor,
+        iconColor: sourcePalette.iconColor,
+    }, 3);
     const palette = {
-        borderLeft: resolveColor(sourcePalette.borderLeft),
-        iconBg: resolveColor(sourcePalette.iconBg),
-        iconColor: resolveColor(sourcePalette.iconColor),
+        borderLeft: resolvedPalette.borderColor,
+        iconBg: resolvedPalette.backgroundColor,
+        iconColor: resolvedPalette.iconColor ?? resolvedPalette.textColor,
     };
 
     return (
@@ -92,29 +99,6 @@ function NotificationCard({
         </View>
     );
 }
-
-const NOTIFICATION_THEME = {
-    warning: {
-        borderLeft: '#d95f57',
-        iconBg: '#f1d9d7',
-        iconColor: '#d95f57',
-    },
-    alert: {
-        borderLeft: '#e5c13d',
-        iconBg: '#f5ebbf',
-        iconColor: '#e4c444',
-    },
-    success: {
-        borderLeft: '#4aad5d',
-        iconBg: '#bde6c2',
-        iconColor: '#4aad5d',
-    },
-    danger: {
-        borderLeft: '#b93a32',
-        iconBg: '#f3d2d0',
-        iconColor: '#b93a32',
-    },
-} as const;
 
 const formatNotificationMessage = (notification: MobileNotification) => {
     if (notification.notificationType !== 'vendor_compliance_requested') {

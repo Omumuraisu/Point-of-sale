@@ -42,7 +42,12 @@ const PaymentSuccess = ({
                         <Ionicons name="checkmark" size={52} color="#c8f4c8" />
                     </View>
                 </View>
-                <Text style={styles.successTitle}>Payment Successful!</Text>
+                <Text style={styles.successTitle}>
+                    {orderId > 0 ? 'Payment Successful!' : 'Payment Saved Offline'}
+                </Text>
+                {orderId <= 0 ? (
+                    <Text style={styles.offlineNote}>This sale is queued and will sync when the connection returns.</Text>
+                ) : null}
             </View>
 
             <View style={styles.card}>
@@ -126,6 +131,14 @@ const baseStyles = StyleSheet.create({
         fontSize: 56 / 2,
         fontWeight: '800',
         color: '#0f1118',
+    },
+    offlineNote: {
+        marginTop: 6,
+        maxWidth: 320,
+        textAlign: 'center',
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#626875',
     },
     card: {
         flex: 1,
