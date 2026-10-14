@@ -4,6 +4,7 @@ type AccountRow = {
   account_id: number;
   auth_user_id: string | null;
   phone_number: string | null;
+  email: string | null;
   status: string;
   is_verified: boolean;
   user_type: string;
@@ -54,6 +55,12 @@ const normalizePhone = (value: unknown): string => {
 };
 
 const maskPhone = (phone: string): string => `***${phone.slice(-4)}`;
+const normalizeEmail = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  const email = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+};
+const maskEmail = (email: string): string => `${email.slice(0, Math.min(2, email.indexOf("@")))}***@${email.split("@")[1]}`;
 
 Deno.serve(async (request: Request): Promise<Response> => {
   const debugId = crypto.randomUUID();
@@ -77,6 +84,14 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return errorResponse(500, "Activation testing is unavailable", debugId, "configuration_invalid");
   }
 
+  let requestedChannel: "email" | "sms" = "sms";
+  try {
+    const input = await request.json() as { channel?: unknown };
+    if (input.channel === "email" || input.channel === "sms") requestedChannel = input.channel;
+  } catch {
+    requestedChannel = "sms";
+  }
+
   const token = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token) {
     logInfo("authentication_rejected", { reason: "missing_token" });
@@ -97,7 +112,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: account, error: accountError } = await admin.from("accounts")
-    .select("account_id, auth_user_id, phone_number, status, is_verified, user_type")
+    .select("account_id, auth_user_id, phone_number, email, status, is_verified, user_type")
     .eq("auth_user_id", userData.user.id)
     .maybeSingle<AccountRow>();
 
@@ -114,41 +129,60 @@ Deno.serve(async (request: Request): Promise<Response> => {
   logInfo("account_validation_succeeded", { accountId: String(account.account_id) });
 
   const phone = normalizePhone(account.phone_number);
-  if (!phone || normalizePhone(userData.user.phone) !== phone) {
-    logInfo("phone_validation_rejected", {
+  const email = normalizeEmail(account.email);
+  const identifier = requestedChannel === "email" ? email : phone;
+  const identifierLabel = requestedChannel === "email" ? maskEmail(email) : maskPhone(phone);
+  if (!identifier) {
+    logInfo("identifier_validation_rejected", {
       accountId: String(account.account_id),
-      reason: "auth_phone_mismatch",
+      channel: requestedChannel,
+      reason: "missing_account_identifier",
     });
     return errorResponse(
       409,
-      "The developer account phone does not match its authentication identity",
+      `The developer account does not have a valid ${requestedChannel === "email" ? "email" : "phone number"}`,
       debugId,
-      "auth_phone_mismatch",
+      "missing_account_identifier",
     );
   }
 
-  const { data: phoneCandidates, error: phoneLookupError } = await admin.from("accounts")
-    .select("account_id, phone_number");
-  const matchingAccounts = ((phoneCandidates ?? []) as Pick<AccountRow, "account_id" | "phone_number">[])
-    .filter((candidate) => normalizePhone(candidate.phone_number) === phone);
-  if (phoneLookupError || matchingAccounts.length !== 1 || matchingAccounts[0].account_id !== account.account_id) {
-    logInfo("phone_validation_rejected", {
+  const { data: candidates, error: lookupError } = await admin.from("accounts")
+    .select("account_id, phone_number, email");
+  const matchingAccounts = ((candidates ?? []) as Pick<AccountRow, "account_id" | "phone_number" | "email">[])
+    .filter((candidate) => requestedChannel === "email"
+      ? normalizeEmail(candidate.email) === identifier
+      : normalizePhone(candidate.phone_number) === identifier);
+  if (lookupError || matchingAccounts.length !== 1 || matchingAccounts[0].account_id !== account.account_id) {
+    logInfo("identifier_validation_rejected", {
       accountId: String(account.account_id),
-      phone: maskPhone(phone),
-      reason: "phone_record_conflict",
+      channel: requestedChannel,
+      identifier: identifierLabel,
+      reason: "identifier_record_conflict",
       matchingAccountCount: matchingAccounts.length,
-      code: phoneLookupError?.code ?? null,
+      code: lookupError?.code ?? null,
     });
     return errorResponse(
       409,
-      "The registered phone number is linked to conflicting account records",
+      "The selected contact is linked to conflicting account records",
       debugId,
-      "phone_record_conflict",
+      "identifier_record_conflict",
     );
   }
-  logInfo("phone_validation_succeeded", {
+  const authIdentifier = requestedChannel === "email"
+    ? normalizeEmail(userData.user.email)
+    : normalizePhone(userData.user.phone);
+  if (authIdentifier && authIdentifier !== identifier) {
+    return errorResponse(409, "The selected contact does not match its authentication identity", debugId, "auth_identifier_mismatch");
+  }
+  if (!authIdentifier) {
+    const updates = requestedChannel === "email" ? { email: identifier } : { phone: identifier };
+    const { error: updateError } = await admin.auth.admin.updateUserById(userData.user.id, updates);
+    if (updateError) return errorResponse(409, "Unable to attach the selected contact", debugId, "auth_identifier_update_failed");
+  }
+  logInfo("identifier_validation_succeeded", {
     accountId: String(account.account_id),
-    phone: maskPhone(phone),
+    channel: requestedChannel,
+    identifier: identifierLabel,
   });
 
   const { data: claimData, error: claimError } = await admin.rpc("claim_account_verification", {
@@ -174,7 +208,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       : reason === "account_daily_limit"
       ? "Daily OTP request limit reached."
       : reason === "global_hourly_limit"
-      ? "The SMS service hourly request limit has been reached."
+      ? "The verification service hourly request limit has been reached."
       : "The OTP request limit has been reached.";
     logInfo("otp_dispatch_skipped", {
       accountId: String(account.account_id),
@@ -189,6 +223,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
       claim?.retry_after_seconds ?? 60,
     );
   }
+
+  const { error: channelError } = await admin.from("account_verification_requests")
+    .update({ channel: requestedChannel })
+    .eq("id", claim.request_id);
+  if (channelError) return errorResponse(500, "Unable to reserve an activation test", debugId, "channel_update_failed");
 
   let stateChanged = false;
   try {
@@ -215,12 +254,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
     });
     logInfo("otp_dispatch_started", {
       accountId: String(account.account_id),
-      phone: maskPhone(phone),
+      channel: requestedChannel,
+      identifier: identifierLabel,
     });
-    const { error: otpError } = await otpClient.auth.signInWithOtp({
-      phone,
-      options: { channel: "sms", shouldCreateUser: false },
-    });
+    const otpResult = requestedChannel === "email"
+      ? await otpClient.auth.signInWithOtp({ email: identifier, options: { shouldCreateUser: false } })
+      : await otpClient.auth.signInWithOtp({ phone: identifier, options: { channel: "sms", shouldCreateUser: false } });
+    const { error: otpError } = otpResult;
     if (otpError) throw otpError;
 
     const { error: sentStatusError } = await admin.from("account_verification_requests")
@@ -235,10 +275,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     logInfo("otp_dispatch_succeeded", {
       accountId: String(account.account_id),
-      phone: maskPhone(phone),
+      channel: requestedChannel,
+      identifier: identifierLabel,
       requestId: claim.request_id,
     });
-    return jsonResponse({ accepted: true, resendAfterSeconds: 60, phone, debugId });
+    return jsonResponse({ accepted: true, resendAfterSeconds: 60, identifier, channel: requestedChannel, debugId });
   } catch (error) {
     if (stateChanged) {
       logInfo("account_rollback_started", { accountId: String(account.account_id) });
@@ -264,7 +305,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       .eq("id", claim.request_id);
     logError("otp_dispatch_failed", {
       accountId: String(account.account_id),
-      message: error instanceof Error ? error.message.replaceAll(phone, maskPhone(phone)) : "Unknown error",
+      message: error instanceof Error ? error.message.replaceAll(identifier, identifierLabel) : "Unknown error",
     });
     return errorResponse(
       503,

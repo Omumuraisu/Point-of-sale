@@ -10,7 +10,7 @@ export const DEBUG_CHANNELS = [
     { id: 'personnel-vendors', label: 'Personnel & Vendors', description: 'Vendor applications, documents, and personnel records.' },
     { id: 'notifications', label: 'Notifications', description: 'Notification loading, unread counts, and updates.' },
     { id: 'billing-lease', label: 'Billing & Lease', description: 'Billing records and business lease information.' },
-    { id: 'authentication-sms', label: 'Authentication & SMS', description: 'Authentication flow and developer SMS testing.' },
+    { id: 'authentication-sms', label: 'Authentication & OTP', description: 'Email/SMS verification flows and developer activation testing.' },
     { id: 'analytics-export', label: 'Analytics & Export', description: 'Sales analysis and report export diagnostics.' },
     { id: 'supabase-sync', label: 'General Supabase Sync', description: 'Full synchronization lifecycle and summaries.' },
 ] as const;
@@ -24,7 +24,7 @@ const disabledSettings = (): DebugChannelSettings => Object.fromEntries(
 
 let runtimeSettings: DebugChannelSettings = disabledSettings();
 
-const redactKey = (key: string) => /password|passcode|otp|token|secret|authorization|session|phone/i.test(key);
+const redactKey = (key: string) => /password|passcode|otp|token|secret|authorization|session|phone|email|identifier/i.test(key);
 
 const sanitize = (value: unknown, key = '', depth = 0): unknown => {
     if (redactKey(key)) return '[REDACTED]';

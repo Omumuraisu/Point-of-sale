@@ -1,6 +1,12 @@
 import { debugLog, debugWarn } from './debugLogging';
 
 export type VerificationPurpose = 'activation' | 'recovery';
+export type VerificationChannel = 'email' | 'sms';
+
+export type AuthIdentifier = {
+    value: string;
+    channel: VerificationChannel;
+};
 
 type VerificationDebugLevel = 'info' | 'warn';
 
@@ -32,6 +38,42 @@ export const maskPhone = (phone: string): string => {
         ? `${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`
         : 'your phone';
 };
+
+export const normalizeEmail = (value: string): string => {
+    const email = value.trim().toLowerCase();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
+};
+
+export const parseAuthIdentifier = (value: string): AuthIdentifier | null => {
+    const email = normalizeEmail(value);
+    if (email) return { value: email, channel: 'email' };
+
+    const phone = normalizePhilippinePhone(value);
+    return phone ? { value: phone, channel: 'sms' } : null;
+};
+
+export const buildPasswordCredentials = (
+    identifierInput: string,
+    password: string,
+): { email: string; password: string } | { phone: string; password: string } | null => {
+    const identifier = parseAuthIdentifier(identifierInput);
+    if (!identifier) return null;
+    return identifier.channel === 'email'
+        ? { email: identifier.value, password }
+        : { phone: identifier.value, password };
+};
+
+export const maskEmail = (email: string): string => {
+    const normalized = normalizeEmail(email);
+    if (!normalized) return 'your email';
+    const [localPart, domain] = normalized.split('@');
+    const visiblePrefix = localPart.slice(0, Math.min(2, localPart.length));
+    return `${visiblePrefix}${'*'.repeat(Math.max(3, localPart.length - visiblePrefix.length))}@${domain}`;
+};
+
+export const maskIdentifier = (identifier: string, channel: VerificationChannel): string => (
+    channel === 'email' ? maskEmail(identifier) : maskPhone(identifier)
+);
 
 export const isStrongPassword = (password: string): boolean => (
     password.length >= 8

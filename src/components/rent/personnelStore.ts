@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { debugError } from '../../lib/debugLogging';
+import { normalizeEmail } from '../../lib/authFlow';
 
 const VENDOR_DOCUMENTS_BUCKET = 'vendor-documents';
 
@@ -341,12 +342,16 @@ export const createVendorApplication = async (
     const firstName = input.firstName.trim();
     const lastName = input.lastName.trim();
     const phoneNumber = input.phoneNumber.trim();
-    const email = normalizeOptionalText(input.email);
+    const rawEmail = normalizeOptionalText(input.email);
+    const email = rawEmail ? normalizeEmail(rawEmail) : null;
     const middleInitial = normalizeMiddleInitial(input.middleInitial);
     const documents = input.documents ?? [];
 
     if (!firstName || !lastName || !phoneNumber) {
         return { record: null, error: 'Please fill out all required fields.' };
+    }
+    if (rawEmail && !email) {
+        return { record: null, error: 'Enter a valid email address or leave the email field blank.' };
     }
 
     const { data: account, error: accountError } = await supabase

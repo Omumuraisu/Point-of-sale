@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { logVerificationDebug, maskPhone, normalizePhilippinePhone, readFunctionError } from '../../lib/authFlow';
+import { logVerificationDebug, maskEmail, maskIdentifier, maskPhone, normalizeEmail, normalizePhilippinePhone, readFunctionError, VerificationChannel } from '../../lib/authFlow';
 import { useAuthSession } from '../../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
@@ -18,7 +18,15 @@ const Security = () => {
     const [message, setMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const normalizedPhone = normalizePhilippinePhone(currentUser?.phoneNumber ?? '');
+    const normalizedEmail = normalizeEmail(currentUser?.email ?? '');
+    const [selectedChannel, setSelectedChannel] = useState<VerificationChannel>('email');
     const phoneLabel = normalizedPhone ? maskPhone(normalizedPhone) : 'No verified phone number';
+    const emailLabel = normalizedEmail ? maskEmail(normalizedEmail) : 'No registered email address';
+    const selectedIdentifier = selectedChannel === 'email' ? normalizedEmail : normalizedPhone;
+
+    useEffect(() => {
+        if (!normalizedEmail && normalizedPhone) setSelectedChannel('sms');
+    }, [normalizedEmail, normalizedPhone]);
 
     const handleBack = () => {
         clearFlow();
@@ -28,8 +36,8 @@ const Security = () => {
     const handleSendOtp = async () => {
         if (isSubmitting) return;
 
-        if (!currentUser || !normalizedPhone) {
-            setMessage('Your account does not have a valid verified phone number.');
+        if (!currentUser || !selectedIdentifier) {
+            setMessage('Your account does not have a valid contact for this verification method.');
             return;
         }
 
@@ -43,11 +51,12 @@ const Security = () => {
         clearFlow();
         logVerificationDebug('password_change_otp_request_started', {
             purpose: 'recovery',
-            phone: maskPhone(normalizedPhone),
+            channel: selectedChannel,
+            identifier: maskIdentifier(selectedIdentifier, selectedChannel),
         });
 
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
-            body: { phone: normalizedPhone, purpose: 'recovery' },
+            body: { identifier: selectedIdentifier, purpose: 'recovery' },
         });
 
         setIsSubmitting(false);
@@ -56,7 +65,8 @@ const Security = () => {
             const parsed = await readFunctionError(error, 'Unable to request a verification code.');
             logVerificationDebug('password_change_otp_request_failed', {
                 purpose: 'recovery',
-                phone: maskPhone(normalizedPhone),
+                channel: selectedChannel,
+                identifier: maskIdentifier(selectedIdentifier, selectedChannel),
                 message: parsed.message,
                 reason: parsed.reason,
                 retryAfterSeconds: parsed.retryAfterSeconds,
@@ -70,7 +80,7 @@ const Security = () => {
             ? data.resendAfterSeconds
             : 60;
 
-        startFlow(normalizedPhone, 'recovery', 'security');
+        startFlow(selectedIdentifier, selectedChannel, 'recovery', 'security');
         router.push({ pathname: '/activate-otp', params: { resendAfterSeconds } });
     };
 
@@ -87,25 +97,49 @@ const Security = () => {
                 <View style={styles.formCard}>
                     <Text style={styles.sectionTitle}>Change Password</Text>
                     <Text style={styles.description}>
-                        We will send a one-time verification code to your registered phone before you can set a new password.
+                        Choose where to receive a one-time verification code before setting a new password.
                     </Text>
 
-                    <View style={styles.phoneCard}>
-                        <View style={styles.phoneIcon}>
-                    <Ionicons name="phone-portrait-outline" size={24} color={colors.primary} />
-                        </View>
-                        <View style={styles.phoneTextWrap}>
-                            <Text style={styles.phoneLabel}>Verified phone number</Text>
-                            <Text style={styles.phoneValue}>{phoneLabel}</Text>
-                        </View>
-                    </View>
+                    {normalizedEmail ? (
+                        <Pressable
+                            style={[styles.phoneCard, selectedChannel === 'email' && styles.contactCardSelected]}
+                            onPress={() => { setSelectedChannel('email'); setMessage(''); }}
+                            disabled={isSubmitting}
+                        >
+                            <View style={styles.phoneIcon}>
+                                <Ionicons name="mail-outline" size={24} color={colors.primary} />
+                            </View>
+                            <View style={styles.phoneTextWrap}>
+                                <Text style={styles.phoneLabel}>Email</Text>
+                                <Text style={styles.phoneValue}>{emailLabel}</Text>
+                            </View>
+                            {selectedChannel === 'email' ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
+                        </Pressable>
+                    ) : null}
+
+                    {normalizedPhone ? (
+                        <Pressable
+                            style={[styles.phoneCard, normalizedEmail && styles.contactCardSpacing, selectedChannel === 'sms' && styles.contactCardSelected]}
+                            onPress={() => { setSelectedChannel('sms'); setMessage(''); }}
+                            disabled={isSubmitting}
+                        >
+                            <View style={styles.phoneIcon}>
+                                <Ionicons name="phone-portrait-outline" size={24} color={colors.primary} />
+                            </View>
+                            <View style={styles.phoneTextWrap}>
+                                <Text style={styles.phoneLabel}>SMS</Text>
+                                <Text style={styles.phoneValue}>{phoneLabel}</Text>
+                            </View>
+                            {selectedChannel === 'sms' ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
+                        </Pressable>
+                    ) : null}
 
                     {message ? <Text style={styles.errorText}>{message}</Text> : null}
 
                     <Pressable
-                        style={[styles.sendButton, (isSubmitting || !normalizedPhone) && styles.disabledButton]}
+                        style={[styles.sendButton, (isSubmitting || !selectedIdentifier) && styles.disabledButton]}
                         onPress={handleSendOtp}
-                        disabled={isSubmitting || !normalizedPhone}
+                        disabled={isSubmitting || !selectedIdentifier}
                     >
                         {isSubmitting ? (
                             <ActivityIndicator color="#ffffff" />
@@ -189,6 +223,13 @@ const baseStyles = StyleSheet.create({
         paddingHorizontal: 12,
         flexDirection: 'row',
         alignItems: 'center',
+    },
+    contactCardSelected: {
+        borderColor: '#2f5ada',
+        borderWidth: 2,
+    },
+    contactCardSpacing: {
+        marginTop: 10,
     },
     phoneIcon: {
         width: 42,

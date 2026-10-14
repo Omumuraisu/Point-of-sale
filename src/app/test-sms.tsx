@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { maskPhone, normalizePhilippinePhone, readFunctionError } from '../lib/authFlow';
+import { maskEmail, maskIdentifier, maskPhone, normalizeEmail, normalizePhilippinePhone, parseAuthIdentifier, readFunctionError, VerificationChannel } from '../lib/authFlow';
 import { useAuthSession } from '../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
@@ -14,7 +14,8 @@ import { useTheme, useThemedStyles } from '../lib/theme';
 type ActivationTestResponse = {
     accepted?: boolean;
     resendAfterSeconds?: number;
-    phone?: string;
+    identifier?: string;
+    channel?: VerificationChannel;
     debugId?: string;
 };
 
@@ -58,6 +59,13 @@ export default function TestSmsScreen() {
     const { startFlow } = useVerificationFlow();
     const [isStarting, setIsStarting] = useState(false);
     const [message, setMessage] = useState('');
+    const [selectedChannel, setSelectedChannel] = useState<VerificationChannel>('email');
+    const normalizedEmail = normalizeEmail(currentUser?.email ?? '');
+    const normalizedPhone = normalizePhilippinePhone(currentUser?.phoneNumber ?? '');
+
+    useEffect(() => {
+        if (!normalizedEmail && normalizedPhone) setSelectedChannel('sms');
+    }, [normalizedEmail, normalizedPhone]);
 
     if (isHydrating) return null;
     if (!currentUser) return <Redirect href="/" />;
@@ -73,14 +81,14 @@ export default function TestSmsScreen() {
         setMessage('');
         debugLog('Request started.', {
             accountId: currentUser.accountId,
-            phone: maskPhone(currentUser.phoneNumber),
+            channel: selectedChannel,
         });
         let data: ActivationTestResponse | null = null;
         let invokeError: unknown = null;
         try {
             const result = await supabase.functions.invoke<ActivationTestResponse>(
                 'start-developer-activation-test',
-                { body: {} },
+                { body: { channel: selectedChannel } },
             );
             data = result.data;
             invokeError = result.error;
@@ -106,8 +114,8 @@ export default function TestSmsScreen() {
             return;
         }
 
-        const phone = normalizePhilippinePhone(data?.phone ?? '');
-        if (!data?.accepted || !phone) {
+        const identifier = parseAuthIdentifier(data?.identifier ?? '');
+        if (!data?.accepted || !identifier || identifier.channel !== data.channel) {
             debugWarn('Invalid success response.', { debugId: data?.debugId ?? null });
             setIsStarting(false);
             setMessage('The activation test returned an invalid response. Use Activate Account to continue.');
@@ -117,10 +125,11 @@ export default function TestSmsScreen() {
         const resendAfterSeconds = typeof data.resendAfterSeconds === 'number'
             ? data.resendAfterSeconds
             : 60;
-        startFlow(phone, 'activation', 'developer-test');
+        startFlow(identifier.value, identifier.channel, 'activation', 'developer-test');
         debugLog('Activation flow initialized.', {
             debugId: data.debugId ?? null,
-            phone: maskPhone(phone),
+            channel: identifier.channel,
+            identifier: maskIdentifier(identifier.value, identifier.channel),
             resendAfterSeconds,
         });
         await logout();
@@ -149,15 +158,31 @@ export default function TestSmsScreen() {
                 <View style={styles.iconCircle}>
                 <MaterialCommunityIcons name="message-lock-outline" size={64} color={colors.primary} />
                 </View>
-                <Text style={styles.title}>Test SMS Activation</Text>
+                <Text style={styles.title}>Test Account Activation</Text>
                 <Text style={styles.subtitle}>
-                    Run the real developer activation flow using your registered phone number.
+                    Run the real developer activation flow using a registered contact.
                 </Text>
 
-                <View style={styles.phoneCard}>
-                    <Text style={styles.phoneLabel}>OTP will be sent to</Text>
-                    <Text style={styles.phoneValue}>{maskPhone(currentUser.phoneNumber)}</Text>
-                </View>
+                {normalizedEmail ? (
+                    <Pressable
+                        style={[styles.phoneCard, selectedChannel === 'email' && styles.contactCardSelected]}
+                        onPress={() => setSelectedChannel('email')}
+                        disabled={isStarting}
+                    >
+                        <Text style={styles.phoneLabel}>Email OTP</Text>
+                        <Text style={styles.phoneValue}>{maskEmail(normalizedEmail)}</Text>
+                    </Pressable>
+                ) : null}
+                {normalizedPhone ? (
+                    <Pressable
+                        style={[styles.phoneCard, normalizedEmail && styles.contactCardSpacing, selectedChannel === 'sms' && styles.contactCardSelected]}
+                        onPress={() => setSelectedChannel('sms')}
+                        disabled={isStarting}
+                    >
+                        <Text style={styles.phoneLabel}>SMS OTP</Text>
+                        <Text style={styles.phoneValue}>{maskPhone(normalizedPhone)}</Text>
+                    </Pressable>
+                ) : null}
 
                 <View style={styles.warningCard}>
                     <Ionicons name="warning-outline" size={24} color={colors.warning} />
@@ -190,6 +215,8 @@ const baseStyles = StyleSheet.create({
     title: { fontSize: 24, fontWeight: '800', color: '#171b22' },
     subtitle: { marginTop: 8, maxWidth: 330, textAlign: 'center', fontSize: 14, lineHeight: 20, color: '#4e5560' },
     phoneCard: { width: '100%', marginTop: 28, borderRadius: 18, backgroundColor: '#f4f4f5', paddingVertical: 18, paddingHorizontal: 20, alignItems: 'center' },
+    contactCardSelected: { borderWidth: 2, borderColor: '#2f5ada' },
+    contactCardSpacing: { marginTop: 10 },
     phoneLabel: { fontSize: 13, fontWeight: '600', color: '#747984' },
     phoneValue: { marginTop: 5, fontSize: 21, fontWeight: '800', letterSpacing: 2, color: '#20252c' },
     warningCard: { width: '100%', marginTop: 18, borderRadius: 16, borderWidth: 1, borderColor: '#e2b36d', backgroundColor: '#fff4df', padding: 16, flexDirection: 'row', alignItems: 'flex-start' },

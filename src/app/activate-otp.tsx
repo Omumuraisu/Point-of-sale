@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { logVerificationDebug, maskPhone, readFunctionError } from '../lib/authFlow';
+import { logVerificationDebug, maskIdentifier, readFunctionError } from '../lib/authFlow';
 import { supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
 import { useTheme, useThemedStyles } from '../lib/theme';
@@ -60,7 +60,8 @@ export default function ActivateOtpScreen() {
         if (!/^\d{6}$/.test(otp)) {
             logVerificationDebug('otp_verification_validation_failed', {
                 purpose: flow.purpose,
-                phone: maskPhone(flow.phone),
+                channel: flow.channel,
+                identifier: maskIdentifier(flow.identifier, flow.channel),
                 reason: 'invalid_otp_format',
             }, 'warn');
             setMessage('Enter the six-digit verification code.');
@@ -78,14 +79,19 @@ export default function ActivateOtpScreen() {
         setMessage('');
         logVerificationDebug('otp_verification_started', {
             purpose: flow.purpose,
-            phone: maskPhone(flow.phone),
+            channel: flow.channel,
+            identifier: maskIdentifier(flow.identifier, flow.channel),
         });
-        const { error } = await supabase.auth.verifyOtp({ phone: flow.phone, token: otp, type: 'sms' });
+        const verification = flow.channel === 'email'
+            ? await supabase.auth.verifyOtp({ email: flow.identifier, token: otp, type: 'email' })
+            : await supabase.auth.verifyOtp({ phone: flow.identifier, token: otp, type: 'sms' });
+        const { error } = verification;
         setIsVerifying(false);
         if (error) {
             logVerificationDebug('otp_verification_failed', {
                 purpose: flow.purpose,
-                phone: maskPhone(flow.phone),
+                channel: flow.channel,
+                identifier: maskIdentifier(flow.identifier, flow.channel),
                 status: error.status ?? null,
                 code: error.code ?? null,
                 message: error.message,
@@ -95,7 +101,8 @@ export default function ActivateOtpScreen() {
         }
         logVerificationDebug('otp_verification_succeeded', {
             purpose: flow.purpose,
-            phone: maskPhone(flow.phone),
+            channel: flow.channel,
+            identifier: maskIdentifier(flow.identifier, flow.channel),
         });
         markOtpVerified();
     };
@@ -113,10 +120,11 @@ export default function ActivateOtpScreen() {
         setMessage('');
         logVerificationDebug('resend_started', {
             purpose: flow.purpose,
-            phone: maskPhone(flow.phone),
+            channel: flow.channel,
+            identifier: maskIdentifier(flow.identifier, flow.channel),
         });
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
-            body: { phone: flow.phone, purpose: flow.purpose },
+            body: { identifier: flow.identifier, purpose: flow.purpose },
         });
         setIsResending(false);
         if (error) {
@@ -124,7 +132,8 @@ export default function ActivateOtpScreen() {
             const status = (error as { context?: Response } | null)?.context?.status ?? null;
             logVerificationDebug('resend_failed', {
                 purpose: flow.purpose,
-                phone: maskPhone(flow.phone),
+                channel: flow.channel,
+                identifier: maskIdentifier(flow.identifier, flow.channel),
                 status,
                 message: parsed.message,
                 reason: parsed.reason,
@@ -138,7 +147,8 @@ export default function ActivateOtpScreen() {
         const resendAfterSeconds = typeof data?.resendAfterSeconds === 'number' ? data.resendAfterSeconds : 60;
         logVerificationDebug('resend_accepted', {
             purpose: flow.purpose,
-            phone: maskPhone(flow.phone),
+            channel: flow.channel,
+            identifier: maskIdentifier(flow.identifier, flow.channel),
             resendAfterSeconds,
             debugId: typeof data?.debugId === 'string' ? data.debugId : null,
         });
@@ -153,10 +163,10 @@ export default function ActivateOtpScreen() {
             </TouchableOpacity>
             <View style={styles.contentWrap}>
                 <Text style={styles.title}>
-                    {flow.origin === 'security' ? 'Verify Password Change' : 'Verify your Number'}
+                    {flow.origin === 'security' ? 'Verify Password Change' : 'Verify Your Account'}
                 </Text>
-                <Text style={styles.subtitle}>Enter the 6-digit OTP sent to</Text>
-                <Text style={styles.subtitle}>{maskPhone(flow.phone)}</Text>
+                <Text style={styles.subtitle}>Enter the 6-digit OTP sent by {flow.channel === 'email' ? 'email' : 'SMS'} to</Text>
+                <Text style={styles.subtitle}>{maskIdentifier(flow.identifier, flow.channel)}</Text>
                 <View style={styles.iconCircle}>
                 <MaterialCommunityIcons name="shield-lock" size={86} color={colors.primary} />
                 </View>

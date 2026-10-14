@@ -31,8 +31,8 @@ import { getCurrentWeekSales } from '../../lib/weeklySalesPatterns';
 
 type TopSoldProductBar = {
     label: string;
-    value: number;
-    quantity: number;
+    barWidthPercentage: number;
+    salesPercentage: number;
     categoryKey: string;
 };
 
@@ -40,6 +40,8 @@ type TopProductGroup = {
     key: string;
     label: string;
 };
+
+const TRANSACTIONS_PER_PAGE = 10;
 
 const formatTopProductLabel = (rawLabel: string): string => {
     const label = rawLabel.trim().replace(/\s+/g, ' ');
@@ -321,7 +323,9 @@ const Sales = () => {
             });
         });
 
-        const rankedProducts = Array.from(quantityByProduct.values())
+        const allProducts = Array.from(quantityByProduct.values());
+        const totalQuantity = allProducts.reduce((total, product) => total + product.quantity, 0);
+        const rankedProducts = allProducts
             .sort((first, second) => (
                 second.quantity - first.quantity
                 || first.label.localeCompare(second.label)
@@ -341,10 +345,12 @@ const Sales = () => {
 
             return {
                 label,
-                quantity: Number(product.quantity.toFixed(2)),
                 categoryKey: dominantCategory,
-                value: highestQuantity > 0
+                barWidthPercentage: highestQuantity > 0
                     ? Math.max(12, Math.round((product.quantity / highestQuantity) * 100))
+                    : 0,
+                salesPercentage: totalQuantity > 0
+                    ? Number(((product.quantity / totalQuantity) * 100).toFixed(1))
                     : 0,
             };
         });
@@ -656,7 +662,7 @@ const ChartView = ({
                                             <View
                                                 style={[
                                                     styles.topProductBarFill,
-                                                    { width: `${bar.value}%` },
+                                                    { width: `${bar.barWidthPercentage}%` },
                                                     barFillStyle,
                                                     isActive && styles.topProductBarFillActive,
                                                 ]}
@@ -665,7 +671,7 @@ const ChartView = ({
                                     </View>
                                     <View style={styles.topProductValueCell}>
                                         <Text style={[styles.topProductValue, isActive && styles.topProductValueActive]}>
-                                            {bar.quantity}
+                                            {bar.salesPercentage}%
                                         </Text>
                                     </View>
                                 </View>
@@ -698,6 +704,7 @@ const TransactionsView = ({
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [isDatePickerOpen, setDatePickerOpen] = useState(false);
     const [isExporting, setExporting] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
 
     const categoryOptions = useMemo(() => {
         const uniqueCategories = Array.from(
@@ -718,6 +725,20 @@ const TransactionsView = ({
             && (!selectedDateKey || getManilaTransactionDateKey(transaction.createdAt) === selectedDateKey)
         ));
     }, [selectedCategory, selectedDate, transactions]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / TRANSACTIONS_PER_PAGE));
+    const paginatedTransactions = useMemo(() => {
+        const pageStart = (currentPage - 1) * TRANSACTIONS_PER_PAGE;
+        return filteredTransactions.slice(pageStart, pageStart + TRANSACTIONS_PER_PAGE);
+    }, [currentPage, filteredTransactions]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedCategory, selectedDate]);
+
+    useEffect(() => {
+        setCurrentPage((page) => Math.min(page, totalPages));
+    }, [totalPages]);
 
     const handleDateChange = (event: DateTimePickerEvent, nextDate?: Date) => {
         if (Platform.OS === 'android') setDatePickerOpen(false);
@@ -893,7 +914,7 @@ const TransactionsView = ({
                 </View>
             ) : null}
 
-            {filteredTransactions.map((transaction) => (
+            {paginatedTransactions.map((transaction) => (
                 (() => {
                     const colorTheme = CATEGORY_COLOR_MAP[transaction.category.trim().toLowerCase()];
                     const resolvedCategoryTheme = colorTheme ? resolvePalette(colorTheme) : null;
@@ -958,6 +979,41 @@ const TransactionsView = ({
                     );
                 })()
             ))}
+
+            {filteredTransactions.length > 0 ? (
+                <View style={styles.paginationWrap}>
+                    <Text style={styles.paginationSummary}>
+                        Showing {(currentPage - 1) * TRANSACTIONS_PER_PAGE + 1}–{Math.min(currentPage * TRANSACTIONS_PER_PAGE, filteredTransactions.length)} of {filteredTransactions.length}
+                    </Text>
+                    {totalPages > 1 ? (
+                        <View style={styles.paginationControls}>
+                            <Pressable
+                                style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
+                                onPress={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                disabled={currentPage === 1}
+                                accessibilityRole="button"
+                                accessibilityLabel="Previous transactions page"
+                                accessibilityState={{ disabled: currentPage === 1 }}
+                            >
+                                <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
+                                <Text style={styles.paginationButtonText}>Previous</Text>
+                            </Pressable>
+                            <Text style={styles.paginationPageText}>Page {currentPage} of {totalPages}</Text>
+                            <Pressable
+                                style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
+                                onPress={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                                disabled={currentPage === totalPages}
+                                accessibilityRole="button"
+                                accessibilityLabel="Next transactions page"
+                                accessibilityState={{ disabled: currentPage === totalPages }}
+                            >
+                                <Text style={styles.paginationButtonText}>Next</Text>
+                                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                            </Pressable>
+                        </View>
+                    ) : null}
+                </View>
+            ) : null}
         </ScrollView>
     );
 };
@@ -1483,6 +1539,51 @@ const baseStyles = StyleSheet.create({
         color: '#80848e',
         textAlign: 'right',
         flexShrink: 0,
+    },
+    paginationWrap: {
+        marginTop: 18,
+        alignItems: 'center',
+        gap: 10,
+    },
+    paginationSummary: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#6d7280',
+    },
+    paginationControls: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+    },
+    paginationButton: {
+        minHeight: 42,
+        minWidth: 104,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#b7bdca',
+        backgroundColor: '#f4f4f5',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+    },
+    paginationButtonDisabled: {
+        opacity: 0.45,
+    },
+    paginationButtonText: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#475067',
+    },
+    paginationPageText: {
+        flexShrink: 1,
+        textAlign: 'center',
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#2e3138',
     },
     syncPill: {
         alignSelf: 'flex-start',

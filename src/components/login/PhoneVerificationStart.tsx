@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { logVerificationDebug, maskPhone, normalizePhilippinePhone, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
+import { logVerificationDebug, maskIdentifier, parseAuthIdentifier, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
 import { useTheme, useThemedStyles } from '../../lib/theme';
@@ -14,16 +14,16 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
     const { colors } = useTheme();
     const router = useRouter();
     const { startFlow } = useVerificationFlow();
-    const [phone, setPhone] = useState('');
+    const [identifierInput, setIdentifierInput] = useState('');
     const [message, setMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const isActivation = purpose === 'activation';
 
     const handleSubmit = async () => {
-        const normalized = normalizePhilippinePhone(phone);
-        if (!normalized) {
-            logVerificationDebug('request_validation_failed', { purpose, reason: 'invalid_phone' }, 'warn');
-            setMessage('Enter a valid Philippine mobile number.');
+        const identifier = parseAuthIdentifier(identifierInput);
+        if (!identifier) {
+            logVerificationDebug('request_validation_failed', { purpose, reason: 'invalid_identifier' }, 'warn');
+            setMessage('Enter a valid email address or Philippine mobile number.');
             return;
         }
         if (!isSupabaseConfigured || !supabase) {
@@ -34,9 +34,13 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
 
         setIsSubmitting(true);
         setMessage('');
-        logVerificationDebug('request_started', { purpose, phone: maskPhone(normalized) });
+        logVerificationDebug('request_started', {
+            purpose,
+            channel: identifier.channel,
+            identifier: maskIdentifier(identifier.value, identifier.channel),
+        });
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
-            body: { phone: normalized, purpose },
+            body: { identifier: identifier.value, purpose },
         });
         setIsSubmitting(false);
         if (error) {
@@ -44,7 +48,8 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
             const status = (error as { context?: Response } | null)?.context?.status ?? null;
             logVerificationDebug('request_failed', {
                 purpose,
-                phone: maskPhone(normalized),
+                channel: identifier.channel,
+                identifier: maskIdentifier(identifier.value, identifier.channel),
                 status,
                 message: parsed.message,
                 reason: parsed.reason,
@@ -60,11 +65,12 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
             : 60;
         logVerificationDebug('request_accepted', {
             purpose,
-            phone: maskPhone(normalized),
+            channel: identifier.channel,
+            identifier: maskIdentifier(identifier.value, identifier.channel),
             resendAfterSeconds,
             debugId: typeof data?.debugId === 'string' ? data.debugId : null,
         });
-        startFlow(normalized, purpose, isActivation ? 'activation' : 'forgot-password');
+        startFlow(identifier.value, identifier.channel, purpose, isActivation ? 'activation' : 'forgot-password');
         router.push({ pathname: '/activate-otp', params: { resendAfterSeconds } });
     };
 
@@ -76,28 +82,30 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
             <View style={styles.contentWrap}>
                 <Text style={styles.title}>{isActivation ? 'Account Verification' : 'Forgot Password'}</Text>
                 <Text style={styles.subtitle}>
-                    {isActivation ? 'Enter your registered phone number to activate your account.' : 'Enter your registered phone number to reset your password.'}
+                    {isActivation ? 'Enter your registered email or phone number to activate your account.' : 'Enter your registered email or phone number to reset your password.'}
                 </Text>
                 <View style={styles.iconCircle}>
                 <MaterialCommunityIcons name={isActivation ? 'cellphone-check' : 'lock-reset'} size={70} color={colors.icon} />
                 </View>
-                <Text style={styles.label}>Phone Number</Text>
+                <Text style={styles.label}>Email or Phone Number</Text>
                 <TextInput
                     style={styles.input}
-                    placeholder="09XX XXX XXXX"
+                    placeholder="Email or 09XX XXX XXXX"
                     placeholderTextColor={colors.textMuted}
-                    keyboardType="phone-pad"
-                    autoComplete="tel"
-                    value={phone}
+                    keyboardType="default"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={identifierInput}
                     editable={!isSubmitting}
                     onChangeText={(value) => {
-                        setPhone(value);
+                        setIdentifierInput(value);
                         setMessage('');
                     }}
                     onSubmitEditing={handleSubmit}
                 />
                 {message ? <Text style={styles.error}>{message}</Text> : null}
-                <Text style={styles.helperText}>If the number is eligible, a verification code will be sent by SMS.</Text>
+                <Text style={styles.helperText}>If the account is eligible, a verification code will be sent to the email or phone number entered.</Text>
                 <TouchableOpacity style={[styles.primaryButton, isSubmitting && styles.disabled]} onPress={handleSubmit} disabled={isSubmitting}>
                     {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
                 </TouchableOpacity>

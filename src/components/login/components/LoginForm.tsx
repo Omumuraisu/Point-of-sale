@@ -36,7 +36,7 @@ const LoginForm = () => {
         setIsLoggingIn(false);
 
         if (result.error || !result.user) {
-            setErrorMessage(result.error ?? 'Unable to login with this phone number.');
+            setErrorMessage(result.error ?? 'Unable to login with this email or phone number.');
             return;
         }
 
@@ -49,12 +49,12 @@ const LoginForm = () => {
 
     return (
         <View style={styles.formCard}>
-            <Text style={styles.label}>Phone Number</Text>
+            <Text style={styles.label}>Email or Phone Number</Text>
             <View style={styles.inputWrapper}>
-                <Ionicons name="call-outline" size={20} color={colors.icon} />
+                <Ionicons name="person-outline" size={20} color={colors.icon} />
                 <TextInput
                     style={styles.input}
-                    placeholder="0923 123 2134"
+                    placeholder="Email or 09XX XXX XXXX"
                     placeholderTextColor={colors.textMuted}
                     value={username}
                     onChangeText={(value) => {
@@ -63,8 +63,8 @@ const LoginForm = () => {
                     }}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    keyboardType="phone-pad"
-                    autoComplete="tel"
+                    keyboardType="default"
+                    autoComplete="username"
                     editable={!isLoggingIn}
                 />
             </View>

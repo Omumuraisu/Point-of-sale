@@ -47,8 +47,8 @@ const SETTINGS_ITEMS = [
     },
     {
         id: 'test-sms',
-        title: 'Test SMS',
-        subtitle: 'Test developer OTP activation',
+        title: 'Test Activation',
+        subtitle: 'Test developer email or SMS activation',
         iconSet: 'material',
         iconName: 'message-lock-outline',
     },

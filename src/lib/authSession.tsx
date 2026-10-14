@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { normalizePhilippinePhone } from './authFlow';
+import { buildPasswordCredentials, normalizePhilippinePhone } from './authFlow';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { unregisterCurrentDevicePushToken } from './pushNotifications';
 
@@ -13,6 +13,7 @@ export type ProfileTable = 'business_owner' | 'vendor' | 'developer';
 export interface CurrentUser {
     accountId: number;
     phoneNumber: string;
+    email: string | null;
     userType: string;
     displayName: string;
     profileTable: ProfileTable;
@@ -65,7 +66,7 @@ interface AuthSessionContextValue {
     currentUser: CurrentUser | null;
     isHydrating: boolean;
     isAuthenticated: boolean;
-    loginWithPassword: (phoneNumber: string, password: string) => Promise<AuthResult>;
+    loginWithPassword: (identifier: string, password: string) => Promise<AuthResult>;
     refreshProfile: () => Promise<CurrentUser | null>;
     selectDeveloperBusiness: (businessId: number) => Promise<AuthResult>;
     logout: () => Promise<void>;
@@ -105,7 +106,10 @@ const parseStoredUser = (value: string | null): CurrentUser | null => {
             && typeof parsed.userType === 'string'
             && typeof parsed.displayName === 'string'
             && ['business_owner', 'vendor', 'developer'].includes(parsed.profileTable)
-        ) return parsed;
+        ) return {
+            ...parsed,
+            email: typeof parsed.email === 'string' ? parsed.email : null,
+        };
     } catch {
         return null;
     }
@@ -172,6 +176,7 @@ export const loadAuthenticatedUser = async (): Promise<CurrentUser | null> => {
         const user: CurrentUser = {
             accountId: profile.account_id,
             phoneNumber: profile.phone_number,
+            email: profile.email,
             userType: profile.user_type,
             displayName: buildDisplayName(profile),
             profileTable: 'developer',
@@ -192,6 +197,7 @@ export const loadAuthenticatedUser = async (): Promise<CurrentUser | null> => {
     const user: CurrentUser = {
         accountId: profile.account_id,
         phoneNumber: profile.phone_number,
+        email: profile.email,
         userType: profile.user_type,
         displayName: buildDisplayName(profile),
         profileTable: profile.profile_table,
@@ -261,14 +267,14 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
         };
     }, [refreshProfile]);
 
-    const loginWithPassword = useCallback(async (phoneNumber: string, password: string): Promise<AuthResult> => {
-        const phone = normalizePhilippinePhone(phoneNumber);
-        if (!phone) return { user: null, error: 'Enter a valid Philippine mobile number.' };
+    const loginWithPassword = useCallback(async (identifierInput: string, password: string): Promise<AuthResult> => {
+        const credentials = buildPasswordCredentials(identifierInput, password);
+        if (!credentials) return { user: null, error: 'Enter a valid email address or Philippine mobile number.' };
         if (!password) return { user: null, error: 'Enter your password to continue.' };
         if (!isSupabaseConfigured || !supabase) return { user: null, error: 'Supabase is not configured.' };
 
-        const { data, error } = await supabase.auth.signInWithPassword({ phone, password });
-        if (error || !data.session) return { user: null, error: 'Invalid phone number or password.' };
+        const { data, error } = await supabase.auth.signInWithPassword(credentials);
+        if (error || !data.session) return { user: null, error: 'Invalid email, phone number, or password.' };
         const user = await loadAuthenticatedUser();
         if (!user) {
             await supabase.auth.signOut();

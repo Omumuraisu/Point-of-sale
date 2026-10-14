@@ -127,7 +127,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: userData, error: userError } = await authClient.auth.getUser(token);
-  if (userError || !userData.user?.phone_confirmed_at) {
+  if (userError || (!userData.user?.phone_confirmed_at && !userData.user?.email_confirmed_at)) {
     return jsonResponse({ error: { message: "Verification has expired" } }, 401);
   }
   if (!hasRecentOtpAuthentication(token)) {

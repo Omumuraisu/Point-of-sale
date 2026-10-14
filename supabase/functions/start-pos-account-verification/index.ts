@@ -5,10 +5,12 @@ type AccountRow = {
   account_id: number;
   auth_user_id: string | null;
   phone_number: string | null;
+  email: string | null;
   status: string;
   is_verified: boolean;
   user_type: string;
 };
+type VerificationChannel = "email" | "sms";
 type VerificationClaim = {
   allowed: boolean;
   request_id: string | null;
@@ -49,6 +51,27 @@ const normalizePhone = (value: unknown): string => {
 };
 
 const maskPhone = (phone: string): string => `***${phone.slice(-4)}`;
+
+const normalizeEmail = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  const email = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+};
+
+const parseIdentifier = (value: unknown): { value: string; channel: VerificationChannel } | null => {
+  const email = normalizeEmail(value);
+  if (email) return { value: email, channel: "email" };
+  const phone = normalizePhone(value);
+  return phone ? { value: phone, channel: "sms" } : null;
+};
+
+const maskEmail = (email: string): string => {
+  const [localPart, domain] = email.split("@");
+  return `${localPart.slice(0, Math.min(2, localPart.length))}***@${domain}`;
+};
+
+const maskIdentifier = (value: string, channel: VerificationChannel): string =>
+  channel === "email" ? maskEmail(value) : maskPhone(value);
 
 const parsePurpose = (value: unknown): VerificationPurpose | null =>
   value === "activation" || value === "recovery" ? value : null;
@@ -114,7 +137,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return errorResponse(500, "Verification is unavailable", debugId);
   }
 
-  let input: { phone?: unknown; purpose?: unknown };
+  let input: { identifier?: unknown; phone?: unknown; purpose?: unknown };
   try {
     input = await request.json();
   } catch {
@@ -122,24 +145,25 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return genericResponse(debugId);
   }
 
-  const phone = normalizePhone(input.phone);
+  const identifier = parseIdentifier(input.identifier ?? input.phone);
   const purpose = parsePurpose(input.purpose);
-  if (!phone || !purpose) {
+  if (!identifier || !purpose) {
     logInfo("request_rejected", {
       reason: "invalid_input",
-      phoneValid: Boolean(phone),
+      identifierValid: Boolean(identifier),
       purposeValid: Boolean(purpose),
     });
     return genericResponse(debugId);
   }
-  logInfo("request_validated", { phone: maskPhone(phone), purpose });
+  const identifierLabel = maskIdentifier(identifier.value, identifier.channel);
+  logInfo("request_validated", { identifier: identifierLabel, channel: identifier.channel, purpose });
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  logInfo("account_lookup_started", { phone: maskPhone(phone), purpose });
+  logInfo("account_lookup_started", { identifier: identifierLabel, channel: identifier.channel, purpose });
   const { data: candidates, error: accountError } = await admin.from("accounts")
-    .select("account_id, auth_user_id, phone_number, status, is_verified, user_type")
+    .select("account_id, auth_user_id, phone_number, email, status, is_verified, user_type")
     .in("user_type", ["business_owner", "vendor", "developer"])
     .in("status", ["active", "pending"]);
   if (accountError) {
@@ -147,10 +171,14 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return errorResponse(500, "Verification is unavailable", debugId);
   }
 
-  const matches = ((candidates ?? []) as AccountRow[]).filter((row: AccountRow) => normalizePhone(row.phone_number) === phone);
-  logInfo("account_lookup_completed", { phone: maskPhone(phone), matchCount: matches.length });
+  const matches = ((candidates ?? []) as AccountRow[]).filter((row: AccountRow) => (
+    identifier.channel === "email"
+      ? normalizeEmail(row.email) === identifier.value
+      : normalizePhone(row.phone_number) === identifier.value
+  ));
+  logInfo("account_lookup_completed", { identifier: identifierLabel, channel: identifier.channel, matchCount: matches.length });
   if (matches.length !== 1) {
-    logInfo("otp_dispatch_skipped", { reason: matches.length === 0 ? "account_not_found" : "duplicate_phone_records" });
+    logInfo("otp_dispatch_skipped", { reason: matches.length === 0 ? "account_not_found" : "duplicate_identifier_records" });
     return genericResponse(debugId);
   }
   const account = matches[0] as AccountRow;
@@ -207,24 +235,26 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return genericResponse(debugId, claim?.retry_after_seconds ?? 60);
   }
 
+  const { error: channelError } = await admin.from("account_verification_requests")
+    .update({ channel: identifier.channel })
+    .eq("id", claim.request_id);
+  if (channelError) {
+    logError("request_channel_update_failed", { requestId: claim.request_id, code: channelError.code });
+    return errorResponse(500, "Verification is unavailable", debugId);
+  }
+
   let authUserId = account.auth_user_id;
+  const accountPhone = normalizePhone(account.phone_number);
+  const accountEmail = normalizeEmail(account.email);
   let failedStage = "auth_identity_validation";
   try {
-    if (authUserId) {
-      logInfo("auth_identity_validation_started", {
-        accountId: String(account.account_id),
-        authUserId,
-      });
-      const { data, error } = await admin.auth.admin.getUserById(authUserId);
-      if (error || normalizePhone(data.user?.phone) !== phone) throw new Error("Auth identity phone mismatch");
-      logInfo("auth_identity_validation_succeeded", {
-        accountId: String(account.account_id),
-        authUserId,
-      });
-    } else {
+    if (!authUserId) {
       failedStage = "auth_identity_lookup";
       logInfo("auth_identity_lookup_started", { accountId: String(account.account_id) });
-      const { data: existingAuthUserId, error: findError } = await admin.rpc("find_auth_user_by_phone", { p_phone: phone });
+      const lookup = identifier.channel === "email"
+        ? await admin.rpc("find_auth_user_by_email", { p_email: identifier.value })
+        : await admin.rpc("find_auth_user_by_phone", { p_phone: identifier.value });
+      const { data: existingAuthUserId, error: findError } = lookup;
       if (findError) throw findError;
       authUserId = typeof existingAuthUserId === "string" ? existingAuthUserId : null;
       logInfo("auth_identity_lookup_completed", {
@@ -248,13 +278,27 @@ Deno.serve(async (request: Request): Promise<Response> => {
         failedStage = "auth_identity_creation";
         logInfo("auth_identity_creation_started", {
           accountId: String(account.account_id),
-          phone: maskPhone(phone),
+          channel: identifier.channel,
+          identifier: identifierLabel,
         });
-        const { data: created, error: createError } = await admin.auth.admin.createUser({
-          phone,
-          phone_confirm: false,
+        const authAttributes: {
+          email?: string;
+          phone?: string;
+          email_confirm?: boolean;
+          phone_confirm?: boolean;
+          user_metadata: Record<string, string>;
+        } = {
           user_metadata: { application: "marketsync-pos" },
-        });
+        };
+        if (accountEmail) {
+          authAttributes.email = accountEmail;
+          authAttributes.email_confirm = false;
+        }
+        if (accountPhone) {
+          authAttributes.phone = accountPhone;
+          authAttributes.phone_confirm = false;
+        }
+        const { data: created, error: createError } = await admin.auth.admin.createUser(authAttributes);
         if (createError || !created.user) throw createError ?? new Error("Auth user creation failed");
         authUserId = created.user.id;
         logInfo("auth_identity_creation_succeeded", {
@@ -282,6 +326,25 @@ Deno.serve(async (request: Request): Promise<Response> => {
       });
     }
 
+    failedStage = "auth_identity_validation";
+    if (!authUserId) throw new Error("Auth identity missing after provisioning");
+    logInfo("auth_identity_validation_started", { accountId: String(account.account_id), authUserId });
+    const { data: authData, error: authError } = await admin.auth.admin.getUserById(authUserId);
+    if (authError || !authData.user) throw authError ?? new Error("Auth identity missing");
+    const currentEmail = normalizeEmail(authData.user.email);
+    const currentPhone = normalizePhone(authData.user.phone);
+    if (currentEmail && accountEmail && currentEmail !== accountEmail) throw new Error("Auth identity email mismatch");
+    if (currentPhone && accountPhone && currentPhone !== accountPhone) throw new Error("Auth identity phone mismatch");
+
+    const updates: { email?: string; phone?: string } = {};
+    if (accountEmail && !currentEmail) updates.email = accountEmail;
+    if (accountPhone && !currentPhone) updates.phone = accountPhone;
+    if (Object.keys(updates).length > 0) {
+      const { error: updateError } = await admin.auth.admin.updateUserById(authUserId, updates);
+      if (updateError) throw updateError;
+    }
+    logInfo("auth_identity_validation_succeeded", { accountId: String(account.account_id), authUserId });
+
     if (purpose === "activation") {
       failedStage = "account_state_update";
       logInfo("account_state_update_started", { accountId: String(account.account_id), purpose });
@@ -304,18 +367,26 @@ Deno.serve(async (request: Request): Promise<Response> => {
     logInfo("otp_dispatch_started", {
       accountId: String(account.account_id),
       purpose,
-      phone: maskPhone(phone),
+      channel: identifier.channel,
+      identifier: identifierLabel,
       requestId: claim.request_id,
     });
-    const { error: otpError } = await authClient.auth.signInWithOtp({
-      phone,
-      options: { channel: "sms", shouldCreateUser: false },
-    });
+    const otpResult = identifier.channel === "email"
+      ? await authClient.auth.signInWithOtp({
+        email: identifier.value,
+        options: { shouldCreateUser: false },
+      })
+      : await authClient.auth.signInWithOtp({
+        phone: identifier.value,
+        options: { channel: "sms", shouldCreateUser: false },
+      });
+    const { error: otpError } = otpResult;
     if (otpError) throw otpError;
     logInfo("otp_dispatch_succeeded", {
       accountId: String(account.account_id),
       purpose,
-      phone: maskPhone(phone),
+      channel: identifier.channel,
+      identifier: identifierLabel,
       requestId: claim.request_id,
     });
 
@@ -355,7 +426,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       failedStage,
       code: typeof errorRecord?.code === "string" ? errorRecord.code : null,
       status: typeof errorRecord?.status === "number" ? errorRecord.status : null,
-      message: error instanceof Error ? error.message.replaceAll(phone, maskPhone(phone)) : "Unknown error",
+      message: error instanceof Error ? error.message.replaceAll(identifier.value, identifierLabel) : "Unknown error",
     });
     return errorResponse(503, "Unable to send a verification code", debugId);
   }
