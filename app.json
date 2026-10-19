@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Point-of-sale",
+    "name": "MarketSync POS",
     "slug": "Point-of-sale",
     "scheme": "pos-scheme",
     "version": "1.0.0",
@@ -17,9 +17,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/Msync P.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.anonymous.Pointofsale"
