@@ -15,9 +15,14 @@ import { Redirect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useAuthSession } from '../../lib/authSession';
+import {
+    PROFILE_PHOTO_BUCKET,
+    PROFILE_PHOTO_MAX_BYTES,
+    addProfilePhotoCacheBuster,
+    getProfilePhotoPath,
+    validateProfilePhoto,
+} from '../../lib/profilePhoto';
 import { useTheme, useThemedStyles } from '../../lib/theme';
-
-const PROFILE_PHOTO_BUCKET = 'profile-pictures';
 
 const splitDisplayName = (displayName: string) => {
     const parts = displayName.trim().split(/\s+/).filter(Boolean);
@@ -30,37 +35,23 @@ const splitDisplayName = (displayName: string) => {
     };
 };
 
-const getProfileIdColumn = (profileTable: 'business_owner' | 'vendor') => (
-    profileTable === 'business_owner' ? 'business_owner_id' : 'vendor_id'
-);
-
-const getAssetExtension = (asset: ImagePicker.ImagePickerAsset) => {
-    if (asset.fileName?.includes('.')) {
-        return asset.fileName.split('.').pop()?.toLowerCase() ?? 'jpg';
-    }
-
-    if (asset.mimeType?.includes('/')) {
-        return asset.mimeType.split('/').pop()?.toLowerCase() ?? 'jpg';
-    }
-
-    return 'jpg';
-};
-
 const Profile = () => {
     const styles = useThemedStyles(baseStyles);
     const { colors } = useTheme();
     const router = useRouter();
-    const { currentUser, updateCurrentUser } = useAuthSession();
+    const { session, currentUser, updateCurrentUser } = useAuthSession();
     const [name, setName] = useState('');
     const [selectedPhoto, setSelectedPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
+    const [removePhoto, setRemovePhoto] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         setName(currentUser?.displayName ?? '');
         setSelectedPhoto(null);
+        setRemovePhoto(false);
     }, [currentUser]);
 
-    const photoUri = selectedPhoto?.uri ?? currentUser?.profilePictureUrl ?? null;
+    const photoUri = selectedPhoto?.uri ?? (removePhoto ? null : currentUser?.profilePictureUrl) ?? null;
 
     const handleUploadPhoto = async () => {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -78,20 +69,40 @@ const Profile = () => {
         });
 
         if (!result.canceled) {
-            setSelectedPhoto(result.assets[0]);
+            const asset = result.assets[0];
+            const validationError = validateProfilePhoto(asset);
+            if (validationError) {
+                Alert.alert('Unsupported photo', validationError);
+                return;
+            }
+            setSelectedPhoto(asset);
+            setRemovePhoto(false);
         }
     };
 
+    const handleRemovePhoto = () => {
+        setSelectedPhoto(null);
+        setRemovePhoto(true);
+    };
+
     const uploadSelectedPhoto = async () => {
-        if (!selectedPhoto || !currentUser || !supabase) {
+        if (!selectedPhoto) {
             return currentUser?.profilePictureUrl ?? null;
         }
+        if (!currentUser || !supabase || !session?.user.id) {
+            throw new Error('Your session has expired. Please sign in again.');
+        }
 
-        const extension = getAssetExtension(selectedPhoto);
-        const contentType = selectedPhoto.mimeType ?? `image/${extension === 'jpg' ? 'jpeg' : extension}`;
-        const path = `${currentUser.profileTable}/${currentUser.accountId}-${Date.now()}.${extension}`;
+        const validationError = validateProfilePhoto(selectedPhoto);
+        if (validationError) throw new Error(validationError);
+
+        const contentType = selectedPhoto.mimeType!;
+        const path = getProfilePhotoPath(session.user.id);
         const response = await fetch(selectedPhoto.uri);
         const arrayBuffer = await response.arrayBuffer();
+        if (arrayBuffer.byteLength > PROFILE_PHOTO_MAX_BYTES) {
+            throw new Error('Profile picture must be 3 MB or smaller.');
+        }
         const { error } = await supabase.storage
             .from(PROFILE_PHOTO_BUCKET)
             .upload(path, arrayBuffer, {
@@ -107,7 +118,7 @@ const Profile = () => {
             .from(PROFILE_PHOTO_BUCKET)
             .getPublicUrl(path);
 
-        return data.publicUrl;
+        return addProfilePhotoCacheBuster(data.publicUrl);
     };
 
     const handleSave = async () => {
@@ -138,29 +149,31 @@ const Profile = () => {
         setIsSaving(true);
 
         try {
-            const profilePictureUrl = await uploadSelectedPhoto();
+            const profilePictureUrl = removePhoto ? '' : await uploadSelectedPhoto();
             const { firstName, lastName } = splitDisplayName(trimmedName);
-            const profileIdColumn = getProfileIdColumn(currentUser.profileTable);
-
-            const { error: profileError } = await supabase
-                .from(currentUser.profileTable)
-                .update({
-                    first_name: firstName,
-                    middle_initial: 'NA',
-                    last_name: lastName,
-                    profile_picture_url: profilePictureUrl,
-                })
-                .eq(profileIdColumn, currentUser.profileId);
+            const { error: profileError } = await supabase.rpc('update_my_pos_profile', {
+                p_first_name: firstName,
+                p_last_name: lastName,
+                p_profile_picture_url: selectedPhoto || removePhoto ? profilePictureUrl : null,
+            });
 
             if (profileError) {
                 throw new Error(profileError.message);
             }
 
+            if (removePhoto && session?.user.id) {
+                const { error: removeError } = await supabase.storage
+                    .from(PROFILE_PHOTO_BUCKET)
+                    .remove([getProfilePhotoPath(session.user.id)]);
+                if (removeError) throw new Error(removeError.message);
+            }
+
             await updateCurrentUser({
                 displayName: trimmedName,
-                profilePictureUrl,
+                profilePictureUrl: removePhoto ? null : profilePictureUrl,
             });
             setSelectedPhoto(null);
+            setRemovePhoto(false);
             Alert.alert('Profile saved', 'Your profile has been updated.');
         } catch (error) {
             Alert.alert(
@@ -199,8 +212,13 @@ const Profile = () => {
                 <View style={styles.formCard}>
                     <Text style={styles.sectionTitle}>Change Profile Picture</Text>
                     <Pressable style={styles.uploadBtn} onPress={handleUploadPhoto}>
-                        <Text style={styles.uploadText}>Upload Photo</Text>
+                        <Text style={styles.uploadText}>{photoUri ? 'Replace Photo' : 'Upload Photo'}</Text>
                     </Pressable>
+                    {photoUri ? (
+                        <Pressable style={styles.removeBtn} onPress={handleRemovePhoto}>
+                            <Text style={styles.removeText}>Remove Photo</Text>
+                        </Pressable>
+                    ) : null}
 
                     <Text style={styles.sectionTitle}>Change Name</Text>
                     <TextInput
@@ -325,6 +343,17 @@ const baseStyles = StyleSheet.create({
         fontSize: 30 / 2,
         fontWeight: '700',
         color: '#2a2f38',
+    },
+    removeBtn: {
+        alignSelf: 'flex-start',
+        marginTop: 8,
+        paddingVertical: 7,
+        paddingHorizontal: 4,
+    },
+    removeText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#c23934',
     },
     input: {
         height: 48,

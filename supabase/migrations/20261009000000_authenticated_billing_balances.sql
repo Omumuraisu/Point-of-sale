@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.get_pos_billing_balances(p_business_id bigint)
 returns setof public.v_monthly_bill_balances
 language plpgsql
@@ -37,8 +36,6 @@ begin
     order by bill.billing_month desc, bill.monthly_bill_id desc;
 end;
 $$;
-
 revoke all on function public.get_pos_billing_balances(bigint) from public, anon;
 grant execute on function public.get_pos_billing_balances(bigint) to authenticated;
-
 commit;

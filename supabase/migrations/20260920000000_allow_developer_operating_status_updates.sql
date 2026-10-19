@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.set_business_operating_status(p_business_id bigint, p_is_open boolean)
 returns table (
     business_id bigint,
@@ -42,7 +41,7 @@ begin
     select b.business_id, coalesce(b.stall_number, b.stall_no), false
     from public.business b
     where b.business_id = p_business_id
-    on conflict do nothing;
+    on conflict (business_id) do nothing;
 
     select * into v_status
     from public.business_operating_status s
@@ -67,8 +66,6 @@ begin
            v_status.updated_at, v_status.updated_by_account_id;
 end;
 $$;
-
 revoke all on function public.set_business_operating_status(bigint, boolean) from public;
 grant execute on function public.set_business_operating_status(bigint, boolean) to authenticated;
-
 commit;

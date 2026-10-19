@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.can_manage_stall_catalog(p_stall_number text)
 returns boolean
 language sql
@@ -26,7 +25,6 @@ as $$
           )
     )
 $$;
-
 create or replace function public.can_manage_business_operating_status(p_business_id bigint)
 returns boolean
 language sql
@@ -53,7 +51,6 @@ as $$
           )
     )
 $$;
-
 create or replace function public.record_open_stall_sale(
     p_business_id bigint,
     p_client_order_key text,
@@ -205,9 +202,7 @@ begin
            v_order.paid_amount_php, v_order.change_amount_php;
 end;
 $$;
-
 revoke all on function public.can_manage_stall_catalog(text) from public;
 revoke all on function public.record_open_stall_sale(bigint, text, numeric, jsonb) from public;
 grant execute on function public.record_open_stall_sale(bigint, text, numeric, jsonb) to authenticated;
-
 commit;

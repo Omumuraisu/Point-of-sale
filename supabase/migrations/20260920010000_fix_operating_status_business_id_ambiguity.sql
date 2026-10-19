@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.set_business_operating_status(p_business_id bigint, p_is_open boolean)
 returns table (
     business_id bigint,
@@ -67,8 +66,6 @@ begin
            v_status.updated_at, v_status.updated_by_account_id;
 end;
 $$;
-
 revoke all on function public.set_business_operating_status(bigint, boolean) from public;
 grant execute on function public.set_business_operating_status(bigint, boolean) to authenticated;
-
 commit;

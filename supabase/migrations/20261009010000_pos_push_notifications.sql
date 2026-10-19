@@ -1,5 +1,4 @@
 begin;
-
 create table if not exists public.pos_push_tokens (
     push_token_id bigint generated always as identity primary key,
     account_id bigint not null references public.accounts(account_id) on delete cascade,
@@ -11,10 +10,8 @@ create table if not exists public.pos_push_tokens (
     last_registered_at timestamptz not null default now(),
     last_error text
 );
-
 create index if not exists pos_push_tokens_account_active_idx
     on public.pos_push_tokens(account_id, active);
-
 create table if not exists public.push_notification_deliveries (
     delivery_id bigint generated always as identity primary key,
     notification_id bigint not null references public.notifications(notification_id) on delete cascade,
@@ -28,16 +25,12 @@ create table if not exists public.push_notification_deliveries (
     updated_at timestamptz not null default now(),
     unique (notification_id, expo_push_token)
 );
-
 create index if not exists push_notification_deliveries_notification_idx
     on public.push_notification_deliveries(notification_id, created_at desc);
-
 alter table public.pos_push_tokens enable row level security;
 alter table public.push_notification_deliveries enable row level security;
-
 revoke all on public.pos_push_tokens from anon, authenticated;
 revoke all on public.push_notification_deliveries from anon, authenticated;
-
 create or replace function public.register_pos_push_token(
     p_expo_push_token text,
     p_platform text
@@ -81,7 +74,6 @@ begin
     return v_push_token_id;
 end;
 $$;
-
 create or replace function public.unregister_pos_push_token(p_expo_push_token text)
 returns boolean
 language plpgsql
@@ -107,10 +99,8 @@ begin
     return v_updated_count > 0;
 end;
 $$;
-
 revoke all on function public.register_pos_push_token(text, text) from public, anon;
 revoke all on function public.unregister_pos_push_token(text) from public, anon;
 grant execute on function public.register_pos_push_token(text, text) to authenticated;
 grant execute on function public.unregister_pos_push_token(text) to authenticated;
-
 commit;
