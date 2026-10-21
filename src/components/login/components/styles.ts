@@ -38,7 +38,11 @@ const baseStyles = StyleSheet.create({
         paddingHorizontal: 14, marginBottom: 32, height: 49, gap: 10,
     },
     input: { flex: 1, fontSize: 13, color: '#333' },
-    forgotRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: -19, marginBottom: 28 },
+    loginOptionsRow: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -19, marginBottom: 28,
+    },
+    rememberMeControl: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 32 },
+    rememberMeLabel: { color: '#fff', fontSize: 13 },
     forgotLink: { color: '#edf2ff', fontSize: 13, textDecorationLine: 'underline' },
     loginBtn: { backgroundColor: '#f8f4f4', borderRadius: 28, height: 49, justifyContent: 'center', alignItems: 'center' },
     loginBtnText: { fontSize: 20, fontWeight: '800', color: NAVY },

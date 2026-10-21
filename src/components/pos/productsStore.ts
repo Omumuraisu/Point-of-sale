@@ -4,7 +4,7 @@ import { CategoryType, OfflineScope } from '../../lib/types';
 import { normalizeCategoryLabel } from './data';
 import { flattenCatalog, loadProductCatalog } from './catalogStore';
 import { debugError, debugLog, debugWarn } from '../../lib/debugLogging';
-import { buildListingCategories } from './productSearch';
+import { buildListingCategories, filterProductsByCategoryLabel } from './productSearch';
 
 const LEGACY_PRODUCTS_KEY = '@pos/products';
 const LEGACY_PRODUCTS_FALLBACK_KEY = 'pos-products';
@@ -497,8 +497,8 @@ export const retryAllProductSync = async (scope: ProductScope): Promise<ProductS
     return summary;
 };
 
-export const loadMergedProductsByCategory = async (scope: ProductScope, categoryId: string) =>
-    (await loadScopedProducts(scope)).filter((product) => product.categoryId === categoryId);
+export const loadMergedProductsByCategoryLabel = async (scope: ProductScope, categoryLabel: string) =>
+    filterProductsByCategoryLabel(await loadScopedProducts(scope), categoryLabel);
 
 export const loadListingCategories = async (scope: ProductScope): Promise<CategoryType[]> => {
     const products = await loadScopedProducts(scope);

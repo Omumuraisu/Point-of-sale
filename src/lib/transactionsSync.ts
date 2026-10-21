@@ -1,5 +1,5 @@
 import { CartItem, TransactionRecord, TransactionScope } from './types';
-import { isSupabaseConfigured, supabase } from './supabase';
+import { isSupabaseConfigured, supabase, supabaseConfigurationError } from './supabase';
 import { getUnsyncedTransactions, updateTransactionSyncState } from '../components/pos/transactionsStore';
 import { formatCurrency, formatTransactionDate, getCategoryType } from './utils';
 import { notifyTransactionSyncChanged } from './transactionSyncEvents';
@@ -259,7 +259,7 @@ export const syncTransactionRecordWithResult = async (
     if (!isSupabaseConfigured || !supabase) {
         return {
             success: false,
-            error: 'Supabase is not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY to .env.',
+            error: supabaseConfigurationError ?? 'Supabase is not configured.',
         };
     }
 

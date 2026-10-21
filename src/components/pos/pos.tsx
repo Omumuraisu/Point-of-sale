@@ -102,6 +102,7 @@ const POS = ({
       pathname: '/category',
       params: {
         categoryId: item.id,
+        categoryLabel: item.label,
         cart: JSON.stringify(cartItems),
       },
     });

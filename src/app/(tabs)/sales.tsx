@@ -18,7 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme, useThemedStyles } from '../../lib/theme';
 import POSHeader from '../../components/pos/components/POSHeader';
-import { CATEGORY_ITEMS } from '../../components/pos/data';
+import { CATEGORY_ITEMS, getCanonicalCategoryLabel } from '../../components/pos/data';
 import { loadSavedTransactions } from '../../components/pos/transactionsStore';
 import { TransactionRecord } from '../../lib/types';
 import { useAuthSession } from '../../lib/authSession';
@@ -298,7 +298,7 @@ const Sales = () => {
                 if (existing) {
                     existing.quantity += quantity;
 
-                    const normalizedCategory = item.category.trim().toLowerCase();
+                    const normalizedCategory = getCanonicalCategoryLabel(item.category).toLowerCase();
 
                     if (normalizedCategory) {
                         const previous = existing.categoryTotals.get(normalizedCategory) ?? 0;
@@ -309,7 +309,7 @@ const Sales = () => {
                 }
 
                 const initialCategoryTotals = new Map<string, number>();
-                const normalizedCategory = item.category.trim().toLowerCase();
+                const normalizedCategory = getCanonicalCategoryLabel(item.category).toLowerCase();
 
                 if (normalizedCategory) {
                     initialCategoryTotals.set(normalizedCategory, quantity);
@@ -916,7 +916,7 @@ const TransactionsView = ({
 
             {paginatedTransactions.map((transaction) => (
                 (() => {
-                    const colorTheme = CATEGORY_COLOR_MAP[transaction.category.trim().toLowerCase()];
+                    const colorTheme = CATEGORY_COLOR_MAP[getCanonicalCategoryLabel(transaction.category).toLowerCase()];
                     const resolvedCategoryTheme = colorTheme ? resolvePalette(colorTheme) : null;
                     const syncStatus = getSyncStatus(transaction, styles);
 

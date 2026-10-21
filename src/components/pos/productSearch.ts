@@ -1,19 +1,35 @@
 import type { CartItem, CategoryType } from '../../lib/types';
 import type { SavedProductRecord } from './productsStore';
-import { CATEGORY_ITEMS, createCustomCategory } from './data';
+import { createCustomCategory, getCanonicalCategoryLabel, getCategoryStyleByLabel } from './data';
 
 const normalizeSearchText = (value: string): string => value.trim().toLocaleLowerCase();
 
 export const buildListingCategories = (products: SavedProductRecord[]): CategoryType[] => {
-    const unique = new Map<string, string>();
-    products
-        .filter((product) => !product.archivedAt)
-        .forEach((product) => unique.set(product.categoryId, product.categoryLabel));
+    const categories = new Map<string, CategoryType>();
 
-    return Array.from(unique, ([id, label]) => {
-        const style = CATEGORY_ITEMS.find((item) => item.label.toLowerCase() === label.toLowerCase());
-        return style ? { ...style, id, label } : { ...createCustomCategory(label), id };
+    products.filter((product) => !product.archivedAt).forEach((product) => {
+        const label = getCanonicalCategoryLabel(product.categoryLabel);
+        const key = label.toLowerCase();
+        if (categories.has(key)) return;
+
+        const style = getCategoryStyleByLabel(label);
+        categories.set(key, style
+            ? { ...style, label }
+            : { ...createCustomCategory(label), id: product.categoryId });
     });
+
+    return Array.from(categories.values());
+};
+
+export const filterProductsByCategoryLabel = (
+    products: SavedProductRecord[],
+    categoryLabel: string,
+): SavedProductRecord[] => {
+    const canonicalLabel = getCanonicalCategoryLabel(categoryLabel).toLowerCase();
+    return products.filter((product) => (
+        !product.archivedAt
+        && getCanonicalCategoryLabel(product.categoryLabel).toLowerCase() === canonicalLabel
+    ));
 };
 
 export const filterProducts = (

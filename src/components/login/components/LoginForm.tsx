@@ -20,6 +20,7 @@ const LoginForm = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -31,7 +32,7 @@ const LoginForm = () => {
         setErrorMessage('');
         setIsLoggingIn(true);
 
-        const result = await loginWithPassword(username, password);
+        const result = await loginWithPassword(username, password, rememberMe);
 
         setIsLoggingIn(false);
 
@@ -95,7 +96,22 @@ const LoginForm = () => {
                 </TouchableOpacity>
             </View>
 
-            <View style={styles.forgotRow}>
+            <View style={styles.loginOptionsRow}>
+                <TouchableOpacity
+                    style={styles.rememberMeControl}
+                    onPress={() => setRememberMe((value) => !value)}
+                    disabled={isLoggingIn}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: rememberMe, disabled: isLoggingIn }}
+                    accessibilityLabel="Remember me"
+                >
+                    <Ionicons
+                        name={rememberMe ? 'checkbox' : 'square-outline'}
+                        size={20}
+                        color="#ffffff"
+                    />
+                    <Text style={styles.rememberMeLabel}>Remember me</Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/forgot-password')} disabled={isLoggingIn}>
                     <Text style={styles.forgotLink}>Forgot password?</Text>
                 </TouchableOpacity>

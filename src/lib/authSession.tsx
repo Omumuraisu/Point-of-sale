@@ -3,10 +3,11 @@ import type { Session } from '@supabase/supabase-js';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { buildPasswordCredentials, normalizePhilippinePhone } from './authFlow';
-import { isSupabaseConfigured, supabase } from './supabase';
+import { isSupabaseConfigured, supabase, supabaseConfigurationError } from './supabase';
 import { unregisterCurrentDevicePushToken } from './pushNotifications';
 
 const CURRENT_USER_KEY = '@auth/current-user';
+const REMEMBER_SESSION_KEY = '@auth/remember-session';
 
 export type ProfileTable = 'business_owner' | 'vendor' | 'developer';
 
@@ -66,7 +67,7 @@ interface AuthSessionContextValue {
     currentUser: CurrentUser | null;
     isHydrating: boolean;
     isAuthenticated: boolean;
-    loginWithPassword: (identifier: string, password: string) => Promise<AuthResult>;
+    loginWithPassword: (identifier: string, password: string, rememberMe?: boolean) => Promise<AuthResult>;
     refreshProfile: () => Promise<CurrentUser | null>;
     selectDeveloperBusiness: (businessId: number) => Promise<AuthResult>;
     logout: () => Promise<void>;
@@ -136,7 +137,11 @@ const resolveBusinessContext = async (businessOwnerId: number) => {
 };
 
 const resolveBusinessById = async (businessId: number) => {
-    if (!supabase) return { business: null, resolvedStallId: null, error: 'Supabase is not configured.' };
+    if (!supabase) return {
+        business: null,
+        resolvedStallId: null,
+        error: supabaseConfigurationError ?? 'Supabase is not configured.',
+    };
     const { data: business, error } = await supabase.from('business')
         .select('business_id, business_owner_id, business_name, stall_id, stall_number, stall_no')
         .eq('business_id', businessId).maybeSingle<BusinessRow>();
@@ -231,6 +236,17 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
                 if (active) setIsHydrating(false);
                 return;
             }
+            const rememberSession = await AsyncStorage.getItem(REMEMBER_SESSION_KEY);
+            if (rememberSession === 'false') {
+                await supabase.auth.signOut({ scope: 'local' });
+                await persistCurrentUser(null);
+                if (active) {
+                    setSession(null);
+                    setCurrentUser(null);
+                    setIsHydrating(false);
+                }
+                return;
+            }
             let data: Awaited<ReturnType<typeof supabase.auth.getSession>>['data'];
             try {
                 ({ data } = await supabase.auth.getSession());
@@ -267,11 +283,17 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
         };
     }, [refreshProfile]);
 
-    const loginWithPassword = useCallback(async (identifierInput: string, password: string): Promise<AuthResult> => {
+    const loginWithPassword = useCallback(async (
+        identifierInput: string,
+        password: string,
+        rememberMe = false,
+    ): Promise<AuthResult> => {
         const credentials = buildPasswordCredentials(identifierInput, password);
         if (!credentials) return { user: null, error: 'Enter a valid email address or Philippine mobile number.' };
         if (!password) return { user: null, error: 'Enter your password to continue.' };
-        if (!isSupabaseConfigured || !supabase) return { user: null, error: 'Supabase is not configured.' };
+        if (!isSupabaseConfigured || !supabase) {
+            return { user: null, error: supabaseConfigurationError ?? 'Supabase is not configured.' };
+        }
 
         const { data, error } = await supabase.auth.signInWithPassword(credentials);
         if (error || !data.session) return { user: null, error: 'Invalid email, phone number, or password.' };
@@ -282,6 +304,7 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
         }
         setSession(data.session);
         setCurrentUser(user);
+        await AsyncStorage.setItem(REMEMBER_SESSION_KEY, String(rememberMe));
         return { user };
     }, []);
 
@@ -308,7 +331,10 @@ export const AuthSessionProvider = ({ children }: { children: ReactNode }) => {
         await supabase?.auth.signOut();
         setSession(null);
         setCurrentUser(null);
-        await persistCurrentUser(null);
+        await Promise.all([
+            persistCurrentUser(null),
+            AsyncStorage.removeItem(REMEMBER_SESSION_KEY),
+        ]);
     }, []);
 
     const updateCurrentUser = useCallback(async (updates: Partial<CurrentUser>) => {

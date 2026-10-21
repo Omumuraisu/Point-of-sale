@@ -26,8 +26,8 @@ export const CATEGORY_ITEMS: CategoryType[] = [
         textColor: '#8f2e2b',
     },
     {
-        id: 'veggies',
-        label: 'Veggies',
+        id: 'vegetables',
+        label: 'Vegetables',
         icon: 'food-apple-outline',
         bgColor: '#acdcb5',
         borderColor: '#4ea75a',
@@ -50,16 +50,16 @@ export const CATEGORY_ITEMS: CategoryType[] = [
         textColor: '#25282e',
     },
     {
-        id: 'grains',
-        label: 'Grains',
+        id: 'rice',
+        label: 'Rice',
         icon: 'grain',
         bgColor: '#dcd49a',
         borderColor: '#a19346',
         textColor: '#675d24',
     },
     {
-        id: 'seafood',
-        label: 'Seafood',
+        id: 'seafoods',
+        label: 'Seafoods',
         icon: 'fish',
         bgColor: '#bdabe7',
         borderColor: '#8d66e9',
@@ -78,6 +78,22 @@ export const normalizeCategoryLabel = (label: string): string =>
     label
         .trim()
         .replace(/\s+/g, ' ');
+
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
+    grains: 'Rice',
+    seafood: 'Seafoods',
+    veggies: 'Vegetables',
+};
+
+export const getCanonicalCategoryLabel = (label: string): string => {
+    const normalizedLabel = normalizeCategoryLabel(label);
+    return LEGACY_CATEGORY_LABELS[normalizedLabel.toLowerCase()] ?? normalizedLabel;
+};
+
+export const getCategoryStyleByLabel = (label: string): CategoryType | undefined => {
+    const canonicalLabel = getCanonicalCategoryLabel(label).toLowerCase();
+    return CATEGORY_ITEMS.find((category) => category.label.toLowerCase() === canonicalLabel);
+};
 
 export const createCategoryIdFromLabel = (label: string): string => {
     const normalizedLabel = normalizeCategoryLabel(label).toLowerCase();
@@ -110,9 +126,11 @@ export const getCategoryByLabel = (
     categories: CategoryType[],
     label: string,
 ): CategoryType | undefined => {
-    const normalizedLabel = normalizeCategoryLabel(label).toLowerCase();
+    const normalizedLabel = getCanonicalCategoryLabel(label).toLowerCase();
 
-    return categories.find((category) => category.label.toLowerCase() === normalizedLabel);
+    return categories.find((category) => (
+        getCanonicalCategoryLabel(category.label).toLowerCase() === normalizedLabel
+    ));
 };
 
 export const mergeCategoriesWithDefaults = (customCategories: CategoryType[]): CategoryType[] => {

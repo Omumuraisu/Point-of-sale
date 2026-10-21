@@ -3,8 +3,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Alert, BackHandler } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
-import { getCategoryById } from '../../components/pos/data';
-import { ProductCatalogItem, loadMergedProductsByCategory } from '../../components/pos/productsStore';
+import { getCanonicalCategoryLabel, getCategoryById, getCategoryByLabel } from '../../components/pos/data';
+import { ProductCatalogItem, loadMergedProductsByCategoryLabel } from '../../components/pos/productsStore';
 import { CategoryType } from '../../lib/types';
 import { formatCurrency, parseCart } from '../../lib/utils';
 import { loadListingCategories } from '../../components/pos/productsStore';
@@ -15,7 +15,7 @@ const CategoryRoute = () => {
   const router = useRouter();
   const { currentUser } = useAuthSession();
   const { isOpen } = useBusinessOperatingStatus();
-  const { categoryId, cart } = useLocalSearchParams();
+  const { categoryId, categoryLabel, cart } = useLocalSearchParams();
 
   const [categories, setCategories] = useState<CategoryType[]>([]);
   const [products, setProducts] = useState<string[]>([]);
@@ -33,8 +33,11 @@ const CategoryRoute = () => {
         const selectedCategory = typeof categoryId === 'string'
           ? getCategoryById(categoryId, mergedCategories)
           : undefined;
-        const mergedProducts = typeof categoryId === 'string'
-          ? (scope ? await loadMergedProductsByCategory(scope, categoryId) : [])
+        const requestedCategory = typeof categoryLabel === 'string'
+          ? getCanonicalCategoryLabel(categoryLabel)
+          : selectedCategory?.label;
+        const mergedProducts = requestedCategory
+          ? (scope ? await loadMergedProductsByCategoryLabel(scope, requestedCategory) : [])
           : [];
 
         if (isMounted) {
@@ -49,11 +52,15 @@ const CategoryRoute = () => {
       return () => {
         isMounted = false;
       };
-    }, [categoryId, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
+    }, [categoryId, categoryLabel, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
   );
 
-  const selectedCategory =
-    typeof categoryId === 'string' ? getCategoryById(categoryId, categories) : undefined;
+  const selectedCategory = typeof categoryId === 'string'
+    ? getCategoryById(categoryId, categories)
+    : undefined;
+  const resolvedCategory = selectedCategory ?? (typeof categoryLabel === 'string'
+    ? getCategoryByLabel(categories, categoryLabel)
+    : undefined);
 
   const cartItems = useMemo(
     () => parseCart(typeof cart === 'string' ? cart : ''),
@@ -96,8 +103,9 @@ const CategoryRoute = () => {
     router.push({
       pathname: '/add-item',
       params: {
-        categoryId: typeof categoryId === 'string' ? categoryId : '',
-        categoryLabel: selectedCategory?.label || 'Category',
+        categoryId: catalogProduct.categoryId,
+        categoryLabel: resolvedCategory?.label
+          ?? getCanonicalCategoryLabel(catalogProduct.categoryLabel),
         productId: catalogProduct.id,
         catalogProductId: catalogProduct.catalogProductId || '',
         productName: product,
@@ -110,8 +118,8 @@ const CategoryRoute = () => {
 
   return (
     <CategoryScreen
-      categoryLabel={selectedCategory?.label || 'Category'}
-      tintColor={selectedCategory?.textColor || '#3a3f4a'}
+      categoryLabel={resolvedCategory?.label || 'Category'}
+      tintColor={resolvedCategory?.textColor || '#3a3f4a'}
       products={products}
       onBack={handleBack}
       onProductPress={handleProductPress}
