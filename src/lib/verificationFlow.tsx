@@ -11,12 +11,13 @@ export interface VerificationFlow {
     purpose: VerificationPurpose;
     origin: VerificationOrigin;
     stage: VerificationStage;
+    verifiedAccessToken: string | null;
 }
 
 interface VerificationFlowContextValue {
     flow: VerificationFlow | null;
     startFlow: (identifier: string, channel: VerificationChannel, purpose: VerificationPurpose, origin: VerificationOrigin) => void;
-    markOtpVerified: () => void;
+    markOtpVerified: (accessToken: string) => void;
     clearFlow: () => void;
 }
 
@@ -27,9 +28,16 @@ export const VerificationFlowProvider = ({ children }: { children: ReactNode }) 
 
     const value = useMemo<VerificationFlowContextValue>(() => ({
         flow,
-        startFlow: (identifier, channel, purpose, origin) => setFlow({ identifier, channel, purpose, origin, stage: 'otp' }),
-        markOtpVerified: () => setFlow((current) => (
-            current ? { ...current, stage: 'password' } : null
+        startFlow: (identifier, channel, purpose, origin) => setFlow({
+            identifier,
+            channel,
+            purpose,
+            origin,
+            stage: 'otp',
+            verifiedAccessToken: null,
+        }),
+        markOtpVerified: (accessToken) => setFlow((current) => (
+            current ? { ...current, stage: 'password', verifiedAccessToken: accessToken } : null
         )),
         clearFlow: () => setFlow(null),
     }), [flow]);

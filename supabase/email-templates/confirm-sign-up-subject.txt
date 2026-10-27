@@ -1,0 +1,1 @@
+{{ if or (eq .RedirectTo "https://marketsync.me/delivery/otp") (eq .RedirectTo "https://marketsync.me/pos/otp") }}Your MarketSync verification code{{ else }}Confirm Your Signup{{ end }}

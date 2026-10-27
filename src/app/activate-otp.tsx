@@ -100,7 +100,7 @@ export default function ActivateOtpScreen() {
         const verification = flow.channel === 'email'
             ? await supabase.auth.verifyOtp({ email: flow.identifier, token: otp, type: 'email' })
             : await supabase.auth.verifyOtp({ phone: flow.identifier, token: otp, type: 'sms' });
-        const { error } = verification;
+        const { data, error } = verification;
         setIsVerifying(false);
         if (error) {
             logVerificationDebug('otp_verification_failed', {
@@ -119,13 +119,24 @@ export default function ActivateOtpScreen() {
             setMessage('The verification code is invalid or has expired.');
             return;
         }
+        if (!data.session?.access_token) {
+            logVerificationDebug('otp_verification_failed', {
+                purpose: flow.purpose,
+                channel: flow.channel,
+                identifier: maskIdentifier(flow.identifier, flow.channel),
+                reason: 'verified_session_missing',
+            }, 'warn');
+            logResetSms('otp_verification_failed', { reason: 'verified_session_missing' }, 'warn');
+            setMessage('The verified session could not be started. Request a new code and try again.');
+            return;
+        }
         logVerificationDebug('otp_verification_succeeded', {
             purpose: flow.purpose,
             channel: flow.channel,
             identifier: maskIdentifier(flow.identifier, flow.channel),
         });
         logResetSms('otp_verification_succeeded');
-        markOtpVerified();
+        markOtpVerified(data.session.access_token);
     };
 
     const handleResend = async () => {

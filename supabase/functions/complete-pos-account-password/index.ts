@@ -158,12 +158,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
     : channel === "sms"
     ? normalizePhone(userData.user?.phone)
     : "";
-  const channelConfirmed = channel === "email"
-    ? Boolean(userData.user?.email_confirmed_at)
-    : channel === "sms"
-    ? Boolean(userData.user?.phone_confirmed_at)
-    : Boolean(userData.user?.phone_confirmed_at || userData.user?.email_confirmed_at);
-  if (userError || !userData.user || !channelConfirmed || (channel !== null && !verifiedIdentifier)) {
+  // verifyOtp already proves ownership by issuing a JWT whose AMR contains a
+  // recent `otp` entry. Confirmation timestamps are not a reliable second
+  // signal here: an OTP session can be valid before GoTrue exposes the matching
+  // email_confirmed_at/phone_confirmed_at value on the returned user.
+  if (userError || !userData.user || (channel !== null && !verifiedIdentifier)) {
     return jsonResponse({ error: { message: "Verification has expired" } }, 401);
   }
   if (!hasRecentOtpAuthentication(token)) {

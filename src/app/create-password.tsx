@@ -63,6 +63,11 @@ export default function CreatePasswordScreen() {
             setMessage('Password setup is unavailable.');
             return;
         }
+        if (!flow.verifiedAccessToken) {
+            if (isSmsReset) logPasswordResetSmsDebug('password_completion_failed', { origin: flow.origin, reason: 'verified_session_missing' }, 'warn');
+            setMessage('Verification has expired. Request a new code and try again.');
+            return;
+        }
 
         setIsSaving(true);
         setMessage('');
@@ -74,6 +79,7 @@ export default function CreatePasswordScreen() {
         }
         const { error } = await supabase.functions.invoke('complete-pos-account-password', {
             body: { password, purpose: flow.purpose, channel: flow.channel },
+            headers: { Authorization: `Bearer ${flow.verifiedAccessToken}` },
         });
         if (error) {
             const parsed = await readFunctionError(error, 'Unable to save the password.');
