@@ -1,6 +1,6 @@
 import { SaveReceiptTransactionInput, TransactionCategoryType, TransactionRecord } from '../types';
 import { normalizeCategoryTags } from '../transactionCategories';
-import { formatCurrency, formatTransactionDate } from './formatters';
+import { formatCheckoutOrderNumber, formatCurrency, formatTransactionDate } from './formatters';
 
 export const getCategoryType = (category: string): TransactionCategoryType => {
     const normalized = String(category).toLowerCase();
@@ -44,7 +44,7 @@ export const toTransaction = ({
         : cartItems.reduce((sum, item) => sum + item.total, 0);
 
     const paidValue = Number.isFinite(paidAmount) && paidAmount > 0 ? paidAmount : settledAmount;
-    const transactionId = `#${String(createdAt).slice(-6)}`;
+    const transactionId = formatCheckoutOrderNumber(preparedAt || createdAt);
 
     return {
         id: transactionId,

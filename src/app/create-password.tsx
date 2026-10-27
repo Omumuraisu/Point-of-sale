@@ -73,7 +73,7 @@ export default function CreatePasswordScreen() {
             });
         }
         const { error } = await supabase.functions.invoke('complete-pos-account-password', {
-            body: { password, purpose: flow.purpose },
+            body: { password, purpose: flow.purpose, channel: flow.channel },
         });
         if (error) {
             const parsed = await readFunctionError(error, 'Unable to save the password.');

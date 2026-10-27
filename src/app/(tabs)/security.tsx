@@ -13,20 +13,24 @@ const Security = () => {
     const styles = useThemedStyles(baseStyles);
     const { colors } = useTheme();
     const router = useRouter();
-    const { currentUser } = useAuthSession();
+    const { currentUser, session } = useAuthSession();
     const { startFlow, clearFlow } = useVerificationFlow();
     const [message, setMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const normalizedPhone = normalizePhilippinePhone(currentUser?.phoneNumber ?? '');
-    const normalizedEmail = normalizeEmail(currentUser?.email ?? '');
+    const normalizedEmail = normalizeEmail(currentUser?.email || session?.user.email || '');
     const [selectedChannel, setSelectedChannel] = useState<VerificationChannel>('email');
     const phoneLabel = normalizedPhone ? maskPhone(normalizedPhone) : 'No verified phone number';
     const emailLabel = normalizedEmail ? maskEmail(normalizedEmail) : 'No registered email address';
     const selectedIdentifier = selectedChannel === 'email' ? normalizedEmail : normalizedPhone;
 
     useEffect(() => {
-        if (!normalizedEmail && normalizedPhone) setSelectedChannel('sms');
-    }, [normalizedEmail, normalizedPhone]);
+        if (selectedChannel === 'email' && !normalizedEmail && normalizedPhone) {
+            setSelectedChannel('sms');
+        } else if (selectedChannel === 'sms' && !normalizedPhone && normalizedEmail) {
+            setSelectedChannel('email');
+        }
+    }, [normalizedEmail, normalizedPhone, selectedChannel]);
 
     const handleBack = () => {
         clearFlow();
@@ -145,39 +149,56 @@ const Security = () => {
                         Choose where to receive a one-time verification code before setting a new password.
                     </Text>
 
-                    {normalizedEmail ? (
-                        <Pressable
-                            style={[styles.phoneCard, selectedChannel === 'email' && styles.contactCardSelected]}
-                            onPress={() => { setSelectedChannel('email'); setMessage(''); }}
-                            disabled={isSubmitting}
-                        >
-                            <View style={styles.phoneIcon}>
-                                <Ionicons name="mail-outline" size={24} color={colors.primary} />
-                            </View>
-                            <View style={styles.phoneTextWrap}>
-                                <Text style={styles.phoneLabel}>Email</Text>
-                                <Text style={styles.phoneValue}>{emailLabel}</Text>
-                            </View>
-                            {selectedChannel === 'email' ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
-                        </Pressable>
-                    ) : null}
+                    <Pressable
+                        style={[
+                            styles.phoneCard,
+                            selectedChannel === 'email' && normalizedEmail && styles.contactCardSelected,
+                            !normalizedEmail && styles.contactCardUnavailable,
+                        ]}
+                        onPress={() => { setSelectedChannel('email'); setMessage(''); }}
+                        disabled={isSubmitting || !normalizedEmail}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`Email OTP: ${emailLabel}`}
+                        accessibilityState={{
+                            checked: selectedChannel === 'email' && Boolean(normalizedEmail),
+                            disabled: isSubmitting || !normalizedEmail,
+                        }}
+                    >
+                        <View style={styles.phoneIcon}>
+                            <Ionicons name="mail-outline" size={24} color={colors.primary} />
+                        </View>
+                        <View style={styles.phoneTextWrap}>
+                            <Text style={styles.phoneLabel}>Email OTP</Text>
+                            <Text style={styles.phoneValue}>{emailLabel}</Text>
+                        </View>
+                        {selectedChannel === 'email' && normalizedEmail ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
+                    </Pressable>
 
-                    {normalizedPhone ? (
-                        <Pressable
-                            style={[styles.phoneCard, normalizedEmail && styles.contactCardSpacing, selectedChannel === 'sms' && styles.contactCardSelected]}
-                            onPress={() => { setSelectedChannel('sms'); setMessage(''); }}
-                            disabled={isSubmitting}
-                        >
-                            <View style={styles.phoneIcon}>
-                                <Ionicons name="phone-portrait-outline" size={24} color={colors.primary} />
-                            </View>
-                            <View style={styles.phoneTextWrap}>
-                                <Text style={styles.phoneLabel}>SMS</Text>
-                                <Text style={styles.phoneValue}>{phoneLabel}</Text>
-                            </View>
-                            {selectedChannel === 'sms' ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
-                        </Pressable>
-                    ) : null}
+                    <Pressable
+                        style={[
+                            styles.phoneCard,
+                            styles.contactCardSpacing,
+                            selectedChannel === 'sms' && normalizedPhone && styles.contactCardSelected,
+                            !normalizedPhone && styles.contactCardUnavailable,
+                        ]}
+                        onPress={() => { setSelectedChannel('sms'); setMessage(''); }}
+                        disabled={isSubmitting || !normalizedPhone}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`SMS OTP: ${phoneLabel}`}
+                        accessibilityState={{
+                            checked: selectedChannel === 'sms' && Boolean(normalizedPhone),
+                            disabled: isSubmitting || !normalizedPhone,
+                        }}
+                    >
+                        <View style={styles.phoneIcon}>
+                            <Ionicons name="phone-portrait-outline" size={24} color={colors.primary} />
+                        </View>
+                        <View style={styles.phoneTextWrap}>
+                            <Text style={styles.phoneLabel}>SMS OTP</Text>
+                            <Text style={styles.phoneValue}>{phoneLabel}</Text>
+                        </View>
+                        {selectedChannel === 'sms' && normalizedPhone ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
+                    </Pressable>
 
                     {message ? <Text style={styles.errorText}>{message}</Text> : null}
 
@@ -190,8 +211,10 @@ const Security = () => {
                             <ActivityIndicator color="#ffffff" />
                         ) : (
                             <>
-                                <Ionicons name="chatbubble-ellipses-outline" size={21} color="#ffffff" />
-                                <Text style={styles.sendButtonText}>Send OTP</Text>
+                                <Ionicons name={selectedChannel === 'email' ? 'mail-outline' : 'chatbubble-ellipses-outline'} size={21} color="#ffffff" />
+                                <Text style={styles.sendButtonText}>
+                                    {selectedChannel === 'email' ? 'Send Email OTP' : 'Send SMS OTP'}
+                                </Text>
                             </>
                         )}
                     </Pressable>
@@ -275,6 +298,9 @@ const baseStyles = StyleSheet.create({
     },
     contactCardSpacing: {
         marginTop: 10,
+    },
+    contactCardUnavailable: {
+        opacity: 0.55,
     },
     phoneIcon: {
         width: 42,

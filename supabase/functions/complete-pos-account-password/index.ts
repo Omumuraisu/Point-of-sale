@@ -1,8 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type VerificationPurpose = "activation" | "recovery";
+type VerificationChannel = "email" | "sms";
 type AccountRow = {
   account_id: number;
+  email: string | null;
+  phone_number: string | null;
   status: string;
   is_verified: boolean;
   user_type: string;
@@ -33,6 +36,21 @@ const isStrongPassword = (password: string): boolean =>
   /[A-Z]/.test(password) &&
   /\d/.test(password) &&
   /[^A-Za-z0-9\s]/.test(password);
+
+const normalizePhone = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  const digits = value.replace(/\D/g, "");
+  if (/^09\d{9}$/.test(digits)) return `+63${digits.slice(1)}`;
+  if (/^9\d{9}$/.test(digits)) return `+63${digits}`;
+  if (/^639\d{9}$/.test(digits)) return `+${digits}`;
+  return "";
+};
+
+const normalizeEmail = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  const email = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+};
 
 const decodeJwtClaims = (token: string): Record<string, unknown> | null => {
   try {
@@ -103,7 +121,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return jsonResponse({ error: { message: "Password setup is unavailable" } }, 500);
   }
 
-  let input: { password?: unknown; purpose?: unknown };
+  let input: { password?: unknown; purpose?: unknown; channel?: unknown };
   try {
     input = await request.json();
   } catch {
@@ -114,9 +132,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const purpose = input.purpose === "activation" || input.purpose === "recovery"
     ? input.purpose as VerificationPurpose
     : null;
-  if (!purpose || !isStrongPassword(password)) {
+  const channelProvided = input.channel !== undefined;
+  const channel = input.channel === "email" || input.channel === "sms"
+    ? input.channel as VerificationChannel
+    : null;
+  if (!purpose || !isStrongPassword(password) || (channelProvided && !channel)) {
     return jsonResponse({
-      error: { message: "Use 8 or more characters with uppercase, lowercase, a number, and a symbol" },
+      error: {
+        message: channelProvided && !channel
+          ? "Invalid verification channel"
+          : "Use 8 or more characters with uppercase, lowercase, a number, and a symbol",
+      },
     }, 400);
   }
 
@@ -127,7 +153,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: userData, error: userError } = await authClient.auth.getUser(token);
-  if (userError || (!userData.user?.phone_confirmed_at && !userData.user?.email_confirmed_at)) {
+  const verifiedIdentifier = channel === "email"
+    ? normalizeEmail(userData.user?.email)
+    : channel === "sms"
+    ? normalizePhone(userData.user?.phone)
+    : "";
+  const channelConfirmed = channel === "email"
+    ? Boolean(userData.user?.email_confirmed_at)
+    : channel === "sms"
+    ? Boolean(userData.user?.phone_confirmed_at)
+    : Boolean(userData.user?.phone_confirmed_at || userData.user?.email_confirmed_at);
+  if (userError || !userData.user || !channelConfirmed || (channel !== null && !verifiedIdentifier)) {
     return jsonResponse({ error: { message: "Verification has expired" } }, 401);
   }
   if (!hasRecentOtpAuthentication(token)) {
@@ -138,14 +174,20 @@ Deno.serve(async (request: Request): Promise<Response> => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: account, error: accountError } = await admin.from("accounts")
-    .select("account_id, status, is_verified, user_type")
+    .select("account_id, email, phone_number, status, is_verified, user_type")
     .eq("auth_user_id", userData.user.id)
     .in("user_type", ["business_owner", "vendor", "developer"])
     .maybeSingle<AccountRow>();
+  const accountIdentifier = channel === "email"
+    ? normalizeEmail(account?.email)
+    : channel === "sms"
+    ? normalizePhone(account?.phone_number)
+    : "";
+  const identifierMatches = channel === null || accountIdentifier === verifiedIdentifier;
   const allowedState = purpose === "activation"
     ? account?.status === "pending" && account?.is_verified === false
     : account?.status === "active" && account?.is_verified === true;
-  if (accountError || !account || !allowedState || !(await hasEligibleProfile(admin, account))) {
+  if (accountError || !account || !identifierMatches || !allowedState || !(await hasEligibleProfile(admin, account))) {
     return jsonResponse({ error: { message: "This account cannot complete password setup" } }, 403);
   }
 

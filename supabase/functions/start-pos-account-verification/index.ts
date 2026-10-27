@@ -1,6 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type VerificationPurpose = "activation" | "recovery";
+
+// This allow-listed redirect is used only as a template discriminator. The
+// shared Supabase email template renders a POS OTP when it sees this value.
+const POS_EMAIL_REDIRECT_TO = "https://marketsync.me/pos/otp";
+
 type AccountRow = {
   account_id: number;
   auth_user_id: string | null;
@@ -374,7 +379,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const otpResult = identifier.channel === "email"
       ? await authClient.auth.signInWithOtp({
         email: identifier.value,
-        options: { shouldCreateUser: false },
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: POS_EMAIL_REDIRECT_TO,
+        },
       })
       : await authClient.auth.signInWithOtp({
         phone: identifier.value,

@@ -2,8 +2,7 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CartItem } from '../../lib/types';
-import { formatCurrency } from '../../lib/utils';
-import { formatTransactionDate } from '../../lib/utils';
+import { formatCheckoutOrderNumber, formatCurrency, formatTransactionDate } from '../../lib/utils';
 import { useTheme, useThemedStyles } from '../../lib/theme';
 
 interface ReceiptProps {
@@ -79,7 +78,7 @@ const Receipt = ({ cartItems = [], onBack, onAddMore, onClearAll, onConfirm, isC
                 </ScrollView>
 
                 <View style={styles.cardFooter}>
-                    <Text style={styles.orderText}>Order No. Pending</Text>
+                    <Text style={styles.orderText}>Order No. {formatCheckoutOrderNumber(preparedAt)}</Text>
                     <Text style={styles.orderText}>Prepared {formatTransactionDate(preparedAt)}</Text>
                 </View>
             </View>

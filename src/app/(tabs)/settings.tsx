@@ -27,7 +27,7 @@ const SETTINGS_ITEMS = [
     {
         id: 'security',
         title: 'Security',
-        subtitle: 'Change password',
+        subtitle: 'Change password with email or SMS OTP',
         iconSet: 'material',
         iconName: 'shield-check',
     },

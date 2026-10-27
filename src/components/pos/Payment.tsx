@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { formatCurrency, formatTransactionDate } from '../../lib/utils';
+import { formatCheckoutOrderNumber, formatCurrency, formatTransactionDate } from '../../lib/utils';
 import { useTheme, useThemedStyles } from '../../lib/theme';
+import { calculatePaymentChange } from './paymentValidation';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'];
 
@@ -28,8 +29,8 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
         return Number.isFinite(parsed) ? parsed : 0;
     }, [amountInput]);
 
-    const changeAmount = Math.max(paidAmount - Number(totalDue || 0), 0);
-    const canConfirm = paidAmount >= Number(totalDue || 0) && Number(totalDue || 0) > 0 && !isConfirming && isStallOpen;
+    const paymentChange = calculatePaymentChange(Number(totalDue || 0), paidAmount);
+    const canConfirm = paymentChange.isValid && !isConfirming && isStallOpen;
 
     const handleKeyPress = (key: string) => {
         if (key === 'backspace') {
@@ -80,18 +81,14 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
                     <Text style={styles.headerTitle}>Payment Process</Text>
                 </View>
 
+                <View style={styles.orderHeader}>
+                    <Text style={styles.orderNumber}>Order No. {formatCheckoutOrderNumber(preparedAt)}</Text>
+                    <Text style={styles.orderDateText}>{formatTransactionDate(preparedAt)}</Text>
+                </View>
+
                 <View style={styles.summaryCard}>
-                    <View>
-                        <Text style={styles.summaryLabel}>Total Due</Text>
-                        <Text style={styles.summaryAmount}>{formatCurrency(Number(totalDue || 0))}</Text>
-                    </View>
-                    <View style={styles.summaryRight}>
-                        <View style={styles.cartBadge}>
-                    <Ionicons name="cart" size={28} color={colors.primary} />
-                        </View>
-                        <Text style={styles.orderText}>Order No. Pending</Text>
-                        <Text style={styles.orderDateText}>{formatTransactionDate(preparedAt)}</Text>
-                    </View>
+                    <Text style={styles.summaryLabel}>Total Due</Text>
+                    <Text style={styles.summaryAmount}>{formatCurrency(Number(totalDue || 0))}</Text>
                 </View>
 
                 <View style={styles.paidCard}>
@@ -101,8 +98,16 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
                         <Text style={styles.paidInputText}>{formatCurrency(paidAmount)}</Text>
                     </View>
 
-                    <View style={styles.changeBox}>
-                        <Text style={styles.changeText}>{formatCurrency(changeAmount)}</Text>
+                    <View
+                        style={[styles.changeBox, !paymentChange.isValid && styles.invalidChangeBox]}
+                        accessibilityLiveRegion="polite"
+                        accessibilityLabel={paymentChange.isValid
+                            ? `Change ${formatCurrency(paymentChange.changeAmount)}`
+                            : 'Invalid payment amount'}
+                    >
+                        <Text style={[styles.changeText, !paymentChange.isValid && styles.invalidChangeText]}>
+                            {paymentChange.isValid ? formatCurrency(paymentChange.changeAmount) : 'Invalid'}
+                        </Text>
                     </View>
                 </View>
 
@@ -137,7 +142,7 @@ const Payment = ({ totalDue = 0, onBack, onConfirmPayment, isConfirming = false,
 
                     <Pressable
                         style={[styles.confirmButton, !canConfirm && styles.confirmButtonDisabled]}
-                        onPress={() => onConfirmPayment?.(paidAmount, changeAmount)}
+                        onPress={() => onConfirmPayment?.(paidAmount, paymentChange.changeAmount)}
                         disabled={!canConfirm}
                     >
                         <Text style={styles.confirmButtonText}>
@@ -185,8 +190,29 @@ const baseStyles = StyleSheet.create({
         fontWeight: '800',
         color: '#0f1118',
     },
+    orderHeader: {
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#c5cad6',
+        backgroundColor: '#f4f4f5',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    orderNumber: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#20252c',
+    },
+    orderDateText: {
+        marginTop: 3,
+        textAlign: 'center',
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#717784',
+    },
     summaryCard: {
-        marginTop: 4,
+        marginTop: 12,
         borderRadius: 22,
         borderWidth: 1,
         borderColor: '#b4b8c3',
@@ -194,8 +220,7 @@ const baseStyles = StyleSheet.create({
         minHeight: 120,
         paddingHorizontal: 20,
         paddingVertical: 18,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         alignItems: 'center',
     },
     summaryLabel: {
@@ -208,24 +233,6 @@ const baseStyles = StyleSheet.create({
         fontSize: 72 / 2,
         fontWeight: '800',
         color: '#2448a4',
-    },
-    summaryRight: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    cartBadge: {
-        width: 62,
-        height: 62,
-        borderRadius: 31,
-        backgroundColor: '#cfd7f0',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    orderText: {
-        marginTop: 8,
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#c1c1c5',
     },
     paidCard: {
         marginTop: 16,
@@ -270,6 +277,12 @@ const baseStyles = StyleSheet.create({
         fontWeight: '800',
         color: '#42984e',
     },
+    invalidChangeBox: {
+        backgroundColor: '#fde8e6',
+    },
+    invalidChangeText: {
+        color: '#b3261e',
+    },
     keyboardWrap: {
         marginTop: 18,
         borderRadius: 24,
@@ -279,14 +292,6 @@ const baseStyles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingTop: 16,
         paddingBottom: 12,
-    },
-    orderDateText: {
-        marginTop: 3,
-        maxWidth: 125,
-        textAlign: 'center',
-        fontSize: 11,
-        fontWeight: '600',
-        color: '#969aa4',
     },
     errorBanner: {
         marginTop: 12,

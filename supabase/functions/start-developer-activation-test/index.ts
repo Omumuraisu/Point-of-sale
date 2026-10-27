@@ -1,5 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+// Keep developer activation-test emails on the same POS-specific OTP template
+// branch as the normal activation and recovery flows.
+const POS_EMAIL_REDIRECT_TO = "https://marketsync.me/pos/otp";
+
 type AccountRow = {
   account_id: number;
   auth_user_id: string | null;
@@ -258,7 +262,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
       identifier: identifierLabel,
     });
     const otpResult = requestedChannel === "email"
-      ? await otpClient.auth.signInWithOtp({ email: identifier, options: { shouldCreateUser: false } })
+      ? await otpClient.auth.signInWithOtp({
+        email: identifier,
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: POS_EMAIL_REDIRECT_TO,
+        },
+      })
       : await otpClient.auth.signInWithOtp({ phone: identifier, options: { channel: "sms", shouldCreateUser: false } });
     const { error: otpError } = otpResult;
     if (otpError) throw otpError;

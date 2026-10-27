@@ -2,6 +2,16 @@ const MONTH_LABELS = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Au
 
 export const formatCurrency = (value: number): string => `P ${Number.isFinite(value) ? value.toFixed(2) : '0.00'}`;
 
+export const formatCheckoutOrderNumber = (preparedAt: number): string => {
+    if (!Number.isFinite(preparedAt) || preparedAt <= 0) {
+        return '#UNAVAILABLE';
+    }
+
+    // The checkout timestamp is already part of the persisted client order key.
+    // Base 36 keeps that stable reference compact enough for receipt headers.
+    return `#${Math.trunc(preparedAt).toString(36).toUpperCase()}`;
+};
+
 export const formatTransactionDate = (timestamp: number): string => {
     const date = new Date(timestamp);
 
