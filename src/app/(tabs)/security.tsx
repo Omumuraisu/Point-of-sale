@@ -3,7 +3,7 @@ import { ActivityIndicator, View, Text, Pressable, StyleSheet } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { logVerificationDebug, maskEmail, maskIdentifier, maskPhone, normalizeEmail, normalizePhilippinePhone, readFunctionError, VerificationChannel } from '../../lib/authFlow';
+import { logPasswordResetSmsDebug, logVerificationDebug, maskEmail, maskIdentifier, maskPhone, normalizeEmail, normalizePhilippinePhone, readFunctionError, VerificationChannel } from '../../lib/authFlow';
 import { useAuthSession } from '../../lib/authSession';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
@@ -54,10 +54,55 @@ const Security = () => {
             channel: selectedChannel,
             identifier: maskIdentifier(selectedIdentifier, selectedChannel),
         });
-
-        const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
-            body: { identifier: selectedIdentifier, purpose: 'recovery' },
-        });
+        const startedAt = Date.now();
+        if (selectedChannel === 'sms') {
+            logPasswordResetSmsDebug('security_request_started', {
+                origin: 'security',
+                identifier: maskIdentifier(selectedIdentifier, selectedChannel),
+            });
+        }
+        const pendingTimer = setTimeout(() => {
+            if (selectedChannel === 'sms') {
+                logPasswordResetSmsDebug('security_request_still_pending', {
+                    origin: 'security',
+                    durationMs: Date.now() - startedAt,
+                    functionName: 'start-pos-account-verification',
+                }, 'warn');
+            }
+        }, 10_000);
+        let data: Record<string, unknown> | null = null;
+        let error: unknown = null;
+        try {
+            const result = await supabase.functions.invoke('start-pos-account-verification', {
+                body: {
+                    identifier: selectedIdentifier,
+                    ...(selectedChannel === 'sms' ? { phone: selectedIdentifier } : {}),
+                    purpose: 'recovery',
+                },
+            });
+            data = result.data as Record<string, unknown> | null;
+            error = result.error;
+            if (selectedChannel === 'sms') {
+                logPasswordResetSmsDebug('security_response_received', {
+                    origin: 'security',
+                    durationMs: Date.now() - startedAt,
+                    hasError: Boolean(result.error),
+                    status: (result.error as { context?: Response } | null)?.context?.status ?? null,
+                    debugId: typeof result.data?.debugId === 'string' ? result.data.debugId : null,
+                }, result.error ? 'warn' : 'info');
+            }
+        } catch (invokeError) {
+            error = invokeError;
+            if (selectedChannel === 'sms') {
+                logPasswordResetSmsDebug('security_request_threw', {
+                    origin: 'security',
+                    durationMs: Date.now() - startedAt,
+                    message: invokeError instanceof Error ? invokeError.message : 'Unknown invocation error',
+                }, 'warn');
+            }
+        } finally {
+            clearTimeout(pendingTimer);
+        }
 
         setIsSubmitting(false);
 

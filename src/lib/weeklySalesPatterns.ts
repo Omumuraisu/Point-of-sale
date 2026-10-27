@@ -12,13 +12,20 @@ export interface WeeklySalesDay {
     isFuture: boolean;
 }
 
-export interface CurrentWeekSales {
+export interface WeeklySales {
     days: WeeklySalesDay[];
     weekStartDateKey: string;
     weekEndDateKey: string;
     totalRevenuePhp: number;
     transactionCount: number;
 }
+
+export type WeeklySalesOffset = 0 | -1;
+
+export const getWeeklySalesNavigation = (weekOffset: WeeklySalesOffset) => ({
+    canViewPrevious: weekOffset === 0,
+    canViewNext: weekOffset === -1,
+});
 
 const DAY_LABELS = [
     'Monday',
@@ -68,10 +75,11 @@ const getTransactionIdentity = (transaction: TransactionRecord): string => {
     return `transaction:${transaction.id}`;
 };
 
-export const getCurrentWeekSales = (
+export const getWeeklySales = (
     transactions: TransactionRecord[],
+    weekOffset: WeeklySalesOffset = 0,
     now = new Date(),
-): CurrentWeekSales => {
+): WeeklySales => {
     const todayDateKey = getManilaDateKey(now);
 
     if (!todayDateKey) {
@@ -86,7 +94,8 @@ export const getCurrentWeekSales = (
 
     const todayUtcDay = new Date(dateKeyToUtcTimestamp(todayDateKey)).getUTCDay();
     const todayDowIndex = (todayUtcDay + 6) % 7;
-    const weekStartDateKey = shiftDateKey(todayDateKey, -todayDowIndex);
+    const currentWeekStartDateKey = shiftDateKey(todayDateKey, -todayDowIndex);
+    const weekStartDateKey = shiftDateKey(currentWeekStartDateKey, weekOffset * 7);
     const weekEndDateKey = shiftDateKey(weekStartDateKey, 6);
     const seenTransactions = new Set<string>();
     const totalsByDate = new Map<string, { revenuePhp: number; transactionCount: number }>();

@@ -75,7 +75,8 @@ const pushTitle = (record: NotificationRecord): string => {
     billing_due_soon: "Bill Due Soon",
     billing_due_today: "Bill Due Today",
     billing_overdue: "Billing Overdue",
-    billing_paid: "Billing payment received",
+    billing_payment_received: "Payment Received",
+    billing_paid: "Bill Paid",
     vendor_compliance_requested: "Vendor compliance request",
   };
   const title = record.title?.trim() || titles[record.notification_type] || "MarketSync notification";

@@ -110,6 +110,50 @@ test('invalid business context returns no sales without querying Supabase', asyn
     expect(mockSupabase.from).not.toHaveBeenCalled();
 });
 
+test('grouped remote orders expose item categories as ordered tags', async () => {
+    const order = {
+        order_id: 55,
+        client_order_key: 'checkout:tags:1',
+        total_due_php: 200,
+        paid_amount_php: 200,
+        change_amount_php: 0,
+        completed_at: '2026-10-06T01:00:00.000Z',
+    };
+    const row = (transactionId: number, category: string, product: string) => ({
+        transaction_id: transactionId,
+        order_id: 55,
+        business_id: 10,
+        stall_id: 'STALL-1',
+        stall_number: '1',
+        account_id: 7,
+        username: 'Vendor',
+        category,
+        product,
+        quantity_sold_kg: 1,
+        unit_price_php: 100,
+        total_revenue_php: 100,
+        transaction_date: '2026-10-06T01:00:00.000Z',
+        product_listing_id: `listing-${transactionId}`,
+        catalog_product_id: null,
+        sold_quantity: 1,
+        sold_unit: 'piece',
+        sales_order: order,
+    });
+    mockQuery.order.mockResolvedValueOnce({
+        data: [row(1, 'Meat', 'Pork'), row(2, 'Rice', 'Brown Rice')],
+        error: null,
+    });
+
+    const records = await loadRemoteSalesTransactions({ businessId: 10 });
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+        category: 'Meat',
+        categories: ['Meat', 'Rice'],
+    });
+    expect(records[0].cartItems?.map((item) => item.category)).toEqual(['Meat', 'Rice']);
+});
+
 test('sale synchronization carries business_id in both RPC scope and row payload', async () => {
     const result = await syncTransactionRecordWithResult(transaction(), { accountId: 7, businessId: 10, stallNumber: '1' });
 

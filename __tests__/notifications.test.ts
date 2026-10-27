@@ -30,6 +30,8 @@ describe('billing notification presentation', () => {
         ['billing_due_soon', 'Bill Due Soon', 'alert'],
         ['billing_due_today', 'Bill Due Today', 'warning'],
         ['billing_overdue', 'Billing Overdue', 'danger'],
+        ['billing_payment_received', 'Payment Received', 'success'],
+        ['billing_paid', 'Bill Paid', 'success'],
     ])('%s gets a title, style, and View Bill action', (type, title, style) => {
         const item = notification(type);
         expect(formatNotificationTitle(item)).toContain(title);
@@ -37,10 +39,8 @@ describe('billing notification presentation', () => {
         expect(getReadNotificationAction(item)).toBe('View Bill');
     });
 
-    test('preserves compliance behavior and does not invent billing_paid support', () => {
+    test('preserves compliance behavior outside billing actions', () => {
         expect(getReadNotificationAction(notification('vendor_compliance_requested'))).toBeUndefined();
-        expect(getReadNotificationAction(notification('billing_paid'))).toBeUndefined();
-        expect(formatNotificationTitle(notification('billing_paid'))).toBe('');
     });
 
     test('passes authoritative cycle and month context to Rent navigation', () => {

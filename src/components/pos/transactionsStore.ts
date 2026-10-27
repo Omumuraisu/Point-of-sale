@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SaveReceiptTransactionInput, TransactionRecord, TransactionScope } from '../../lib/types';
-import { formatCurrency, formatTransactionDate, isTransactionRecord, toTransaction } from '../../lib/utils';
+import { formatCurrency, formatTransactionDate, getCategoryType, isTransactionRecord, toTransaction } from '../../lib/utils';
 import { debugError, debugWarn } from '../../lib/debugLogging';
 import { notifyTransactionSyncChanged } from '../../lib/transactionSyncEvents';
+import { getTransactionCategories } from '../../lib/transactionCategories';
 
 const SALES_TRANSACTIONS_KEY = '@pos/sales-transactions';
 const SALES_TRANSACTIONS_FALLBACK_KEY = 'pos-sales-transactions';
@@ -34,6 +35,26 @@ const withSyncDefaults = (transaction: TransactionRecord): TransactionRecord => 
     synced: transaction.synced ?? false,
     syncAttempts: transaction.syncAttempts ?? 0,
 });
+
+const withCategoryTags = (transaction: TransactionRecord): TransactionRecord => {
+    const categories = getTransactionCategories(transaction);
+    const category = categories[0] ?? 'General';
+
+    return {
+        ...transaction,
+        category,
+        categories,
+        categoryType: getCategoryType(category),
+    };
+};
+
+const hasPersistedCategoryTags = (transaction: TransactionRecord): boolean => {
+    const categories = getTransactionCategories(transaction);
+    return Array.isArray(transaction.categories)
+        && transaction.categories.length === categories.length
+        && transaction.categories.every((category, index) => category === categories[index])
+        && transaction.category === (categories[0] ?? 'General');
+};
 
 const trimTransactions = (transactions: TransactionRecord[]): TransactionRecord[] => {
     const unsynced = transactions.filter((transaction) => !transaction.synced);
@@ -99,7 +120,7 @@ export const loadSavedTransactions = async (
             return [];
         }
 
-        const scopedTransactions = parsed
+        const scopedStoredTransactions = parsed
             .filter(isTransactionRecord)
             .map(withSyncDefaults)
             .filter((transaction) => (
@@ -107,8 +128,12 @@ export const loadSavedTransactions = async (
                 && transaction.businessId === scope.businessId
                 && transaction.stallNumber === scope.stallNumber
             ));
+        const needsCategoryTagMigration = scopedStoredTransactions.some((transaction) => (
+            !hasPersistedCategoryTags(transaction)
+        ));
+        const scopedTransactions = scopedStoredTransactions.map(withCategoryTags);
 
-        if (importedLegacyRecords && scopedTransactions.length > 0) {
+        if ((importedLegacyRecords || needsCategoryTagMigration) && scopedTransactions.length > 0) {
             await saveTransactions(scope, scopedTransactions);
         }
 

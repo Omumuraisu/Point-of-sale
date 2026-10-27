@@ -28,7 +28,7 @@ export const getSalesTotalForRange = (
 export const getTodaySalesSummary = (
     transactions: TransactionRecord[],
     now = new Date(),
-): { total: number; yesterdayTotal: number; growthPercent: number | null } => {
+): { total: number; yesterdayTotal: number } => {
     const todayStart = startOfDay(now);
     const tomorrowStart = new Date(
         now.getFullYear(),
@@ -46,8 +46,5 @@ export const getTodaySalesSummary = (
     return {
         total,
         yesterdayTotal,
-        growthPercent: yesterdayTotal > 0
-            ? ((total - yesterdayTotal) / yesterdayTotal) * 100
-            : null,
     };
 };

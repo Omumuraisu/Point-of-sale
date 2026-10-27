@@ -9,7 +9,6 @@ import { buildListingCategories, filterProductsByCategoryLabel } from './product
 const LEGACY_PRODUCTS_KEY = '@pos/products';
 const LEGACY_PRODUCTS_FALLBACK_KEY = 'pos-products';
 const LEGACY_MIGRATION_KEY = '@pos/products-migrated:v2';
-const MAX_SAVED_PRODUCTS = 300;
 
 export type ProductUnit = 'pieces' | 'kg' | 'g' | 'mg' | 'L' | 'mL';
 export const PRODUCT_UNITS: ProductUnit[] = ['pieces', 'kg', 'g', 'mg', 'L', 'mL'];
@@ -115,8 +114,7 @@ const persist = async (scope: ProductScope, products: SavedProductRecord[]) => {
     const scoped = products.filter((item) => item.accountId === scope.accountId
         && item.businessId === scope.businessId && item.stallNumber === scope.stallNumber);
     const queued = scoped.filter((item) => item.syncState !== 'synced');
-    const synced = scoped.filter((item) => item.syncState === 'synced')
-        .slice(0, Math.max(MAX_SAVED_PRODUCTS - queued.length, 0));
+    const synced = scoped.filter((item) => item.syncState === 'synced');
     const serialized = JSON.stringify([...queued, ...synced]);
     try {
         await AsyncStorage.setItem(scopedKey(scope), serialized);
@@ -231,10 +229,14 @@ export const migrateLegacyProducts = async (scope: ProductScope) => {
     await AsyncStorage.setItem(marker, 'complete');
 };
 
+export const loadCachedScopedProducts = async (scope: ProductScope): Promise<SavedProductRecord[]> => {
+    await migrateLegacyProducts(scope);
+    return (await loadSavedProducts(scope)).filter((item) => !item.archivedAt);
+};
+
 export const loadScopedProducts = async (scope: ProductScope): Promise<SavedProductRecord[]> => {
     const startedAt = Date.now();
-    await migrateLegacyProducts(scope);
-    const local = await loadSavedProducts(scope);
+    const local = await loadCachedScopedProducts(scope);
     if (!isSupabaseConfigured || !supabase) {
         debugWarn('product-sync', 'product load using local cache', {
             stallNumber: scope.stallNumber, localCount: local.length, reason: 'Supabase is not configured.',

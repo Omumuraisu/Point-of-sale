@@ -91,13 +91,15 @@ describe('Android push notification registration', () => {
 
 describe('push notification navigation', () => {
     test('routes billing pushes to the focused bill', () => {
-        expect(getPushNotificationDestination({
-            notificationType: 'billing_overdue',
-            billingCycleId: 42,
-            billingMonth: '2026-10-01',
-        })).toEqual({
-            pathname: '/rent',
-            params: { billingCycleId: '42', billingMonth: '2026-10-01' },
+        ['billing_overdue', 'billing_payment_received', 'billing_paid'].forEach((notificationType) => {
+            expect(getPushNotificationDestination({
+                notificationType,
+                billingCycleId: 42,
+                billingMonth: '2026-10-01',
+            })).toEqual({
+                pathname: '/rent',
+                params: { billingCycleId: '42', billingMonth: '2026-10-01' },
+            });
         });
     });
 

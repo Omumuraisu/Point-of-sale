@@ -1,13 +1,13 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Alert, BackHandler } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CategoryScreen from '../../components/pos/category';
 import { getCanonicalCategoryLabel, getCategoryById, getCategoryByLabel } from '../../components/pos/data';
-import { ProductCatalogItem, loadMergedProductsByCategoryLabel } from '../../components/pos/productsStore';
+import { loadCachedScopedProducts, loadScopedProducts, ProductCatalogItem, SavedProductRecord } from '../../components/pos/productsStore';
 import { CategoryType } from '../../lib/types';
 import { formatCurrency, parseCart } from '../../lib/utils';
-import { loadListingCategories } from '../../components/pos/productsStore';
+import { buildListingCategories, filterProductsByCategoryLabel } from '../../components/pos/productSearch';
 import { useAuthSession } from '../../lib/authSession';
 import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
 
@@ -20,37 +20,71 @@ const CategoryRoute = () => {
   const [categories, setCategories] = useState<CategoryType[]>([]);
   const [products, setProducts] = useState<string[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductCatalogItem[]>([]);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
+  const refreshGeneration = useRef(0);
+  const activeProductScope = useRef<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
+      const generation = ++refreshGeneration.current;
 
       const hydrateCategoryContext = async () => {
         const scope = currentUser?.stallNumber && currentUser.businessId
           ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
           : null;
-        const mergedCategories = scope ? await loadListingCategories(scope) : [];
-        const selectedCategory = typeof categoryId === 'string'
-          ? getCategoryById(categoryId, mergedCategories)
-          : undefined;
-        const requestedCategory = typeof categoryLabel === 'string'
-          ? getCanonicalCategoryLabel(categoryLabel)
-          : selectedCategory?.label;
-        const mergedProducts = requestedCategory
-          ? (scope ? await loadMergedProductsByCategoryLabel(scope, requestedCategory) : [])
-          : [];
-
-        if (isMounted) {
-          setCategories(mergedCategories);
-          setCatalogProducts(mergedProducts);
-          setProducts(mergedProducts.map((product) => product.variant ? `${product.name} — ${product.variant}` : product.name));
+        const scopeKey = scope ? `${scope.accountId}:${scope.businessId}:${scope.stallNumber}` : null;
+        if (activeProductScope.current !== scopeKey) {
+          activeProductScope.current = scopeKey;
+          setCategories([]);
+          setCatalogProducts([]);
+          setProducts([]);
+          setIsProductsLoading(Boolean(scope));
         }
+        if (!scope) {
+          if (isMounted && generation === refreshGeneration.current) {
+            setCategories([]);
+            setCatalogProducts([]);
+            setProducts([]);
+            setIsProductsLoading(false);
+          }
+          return;
+        }
+
+        const applySnapshot = (snapshot: SavedProductRecord[]) => {
+          if (!isMounted || generation !== refreshGeneration.current) return;
+          const snapshotCategories = buildListingCategories(snapshot);
+          const selectedCategory = typeof categoryId === 'string'
+            ? getCategoryById(categoryId, snapshotCategories)
+            : undefined;
+          const requestedCategory = typeof categoryLabel === 'string'
+            ? getCanonicalCategoryLabel(categoryLabel)
+            : selectedCategory?.label;
+          const matchingProducts = requestedCategory
+            ? filterProductsByCategoryLabel(snapshot, requestedCategory)
+            : [];
+          setCategories(snapshotCategories);
+          setCatalogProducts(matchingProducts);
+          setProducts(matchingProducts.map((product) => product.variant ? `${product.name} — ${product.variant}` : product.name));
+        };
+
+        setIsProductsLoading(true);
+        const cachedProducts = await loadCachedScopedProducts(scope);
+        if (cachedProducts.length > 0) {
+          applySnapshot(cachedProducts);
+          if (isMounted && generation === refreshGeneration.current) setIsProductsLoading(false);
+        }
+
+        const refreshedProducts = await loadScopedProducts(scope);
+        applySnapshot(refreshedProducts);
+        if (isMounted && generation === refreshGeneration.current) setIsProductsLoading(false);
       };
 
       void hydrateCategoryContext();
 
       return () => {
         isMounted = false;
+        refreshGeneration.current += 1;
       };
     }, [categoryId, categoryLabel, currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
   );
@@ -84,7 +118,6 @@ const CategoryRoute = () => {
         handleBack();
         return true;
       });
-
       return () => subscription.remove();
     }, [handleBack]),
   );
@@ -97,15 +130,13 @@ const CategoryRoute = () => {
     const catalogProduct = catalogProducts.find((item) => (
       (item.variant ? `${item.name} — ${item.variant}` : item.name).trim().toLowerCase() === product.trim().toLowerCase()
     ));
-
     if (!catalogProduct) return;
 
     router.push({
       pathname: '/add-item',
       params: {
         categoryId: catalogProduct.categoryId,
-        categoryLabel: resolvedCategory?.label
-          ?? getCanonicalCategoryLabel(catalogProduct.categoryLabel),
+        categoryLabel: resolvedCategory?.label ?? getCanonicalCategoryLabel(catalogProduct.categoryLabel),
         productId: catalogProduct.id,
         catalogProductId: catalogProduct.catalogProductId || '',
         productName: product,
@@ -121,6 +152,7 @@ const CategoryRoute = () => {
       categoryLabel={resolvedCategory?.label || 'Category'}
       tintColor={resolvedCategory?.textColor || '#3a3f4a'}
       products={products}
+      isLoading={isProductsLoading}
       onBack={handleBack}
       onProductPress={handleProductPress}
       cartCount={cartItems.length}

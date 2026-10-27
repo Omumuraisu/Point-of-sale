@@ -1,4 +1,5 @@
 import { SaveReceiptTransactionInput, TransactionCategoryType, TransactionRecord } from '../types';
+import { normalizeCategoryTags } from '../transactionCategories';
 import { formatCurrency, formatTransactionDate } from './formatters';
 
 export const getCategoryType = (category: string): TransactionCategoryType => {
@@ -31,15 +32,8 @@ export const toTransaction = ({
     const itemCount = cartItems.length;
     const firstItem = cartItems[0];
 
-    const categorySet = new Set(
-        cartItems
-            .map((item) => item.category.trim())
-            .filter(Boolean),
-    );
-
-    const category = categorySet.size === 1
-        ? Array.from(categorySet)[0]
-        : (categorySet.size > 1 ? 'Mixed' : 'General');
+    const categories = normalizeCategoryTags(cartItems.map((item) => item.category));
+    const category = categories[0] ?? 'General';
 
     const itemTitle = itemCount > 1
         ? `${firstItem.name} +${itemCount - 1} more`
@@ -64,6 +58,7 @@ export const toTransaction = ({
         amount: formatCurrency(settledAmount),
         subtitle: `${itemCount} item${itemCount === 1 ? '' : 's'} • Paid ${formatCurrency(paidValue)}`,
         category,
+        categories: categories.length > 0 ? categories : ['General'],
         categoryType: getCategoryType(category),
         dateLabel: formatTransactionDate(createdAt),
         createdAt,

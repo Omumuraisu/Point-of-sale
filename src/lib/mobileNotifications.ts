@@ -9,6 +9,8 @@ export type MobileNotificationType =
     | 'billing_due_soon'
     | 'billing_due_today'
     | 'billing_overdue'
+    | 'billing_payment_received'
+    | 'billing_paid'
     | 'vendor_compliance_requested';
 
 export interface MobileNotification {

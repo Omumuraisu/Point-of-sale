@@ -15,6 +15,8 @@ jest.mock('../src/lib/debugLogging', () => ({
 
 import {
     deleteProductRecord,
+    loadCachedScopedProducts,
+    loadScopedProducts,
     loadSavedProducts,
     saveProductRecord,
     updateProductRecord,
@@ -82,4 +84,38 @@ test('a primary storage write failure falls back without losing the queued produ
 
     expect(result.localSaved).toBe(true);
     expect(await AsyncStorage.getItem('pos-products:v3:7:10:1')).toContain('Rice');
+});
+
+test('cached scoped products load without making a remote request', async () => {
+    await AsyncStorage.setItem('@pos/products:v3:7:10:1', JSON.stringify([
+        { ...record('cached'), syncState: 'synced', pendingAction: undefined },
+    ]));
+
+    expect((await loadCachedScopedProducts(scope(10))).map((item) => item.id)).toEqual(['cached']);
+    expect(mockRpc).not.toHaveBeenCalled();
+});
+
+test('remote refresh caches every synchronized product without a 300 item limit', async () => {
+    mockRpc.mockResolvedValue({
+        error: null,
+        data: Array.from({ length: 350 }, (_, index) => ({
+            id: `remote-${index}`,
+            stall_number: '1',
+            name: `Product ${index}`,
+            category_id: 'general',
+            category_label: 'General',
+            main_category: 'General',
+            section_name: 'General',
+            catalog_variant: '',
+            price_per_unit: 10,
+            unit: 'pieces',
+            created_at_ms: index + 1,
+            updated_at_ms: index + 1,
+            catalog_product_id: null,
+            archived_at: null,
+        })),
+    });
+
+    expect(await loadScopedProducts(scope(10))).toHaveLength(350);
+    expect(await loadSavedProducts(scope(10))).toHaveLength(350);
 });

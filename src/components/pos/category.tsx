@@ -1,4 +1,4 @@
-import { View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import CategoryRow from './components/CategoryRow';
@@ -14,6 +14,7 @@ interface CategoryScreenProps {
     cartCount?: number;
     cartTotal?: string;
     isStallOpen?: boolean;
+    isLoading?: boolean;
 }
 
 const CategoryScreen = ({
@@ -25,6 +26,7 @@ const CategoryScreen = ({
     cartCount = 0,
     cartTotal = 'P 00.00',
     isStallOpen = false,
+    isLoading = false,
 }: CategoryScreenProps) => {
     const styles = useThemedStyles(baseStyles);
     const { colors, resolveTextColor } = useTheme();
@@ -47,7 +49,12 @@ const CategoryScreen = ({
                 renderItem={({ item }) => (
                     <CategoryRow item={item} tintColor={tintColor} onPress={onProductPress} disabled={!isStallOpen} />
                 )}
-                ListEmptyComponent={(
+                ListEmptyComponent={isLoading ? (
+                    <View style={styles.emptyStateWrap}>
+                        <ActivityIndicator size="small" color={colors.primary} />
+                        <Text style={styles.emptyStateText}>Loading products...</Text>
+                    </View>
+                ) : (
                     <View style={styles.emptyStateWrap}>
                         <Text style={styles.emptyStateTitle}>No products yet</Text>
                         <Text style={styles.emptyStateText}>

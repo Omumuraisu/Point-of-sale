@@ -27,7 +27,16 @@ import { subscribeToTransactionSyncEvents } from '../../lib/transactionSyncEvent
 import { getTodaySalesSummary } from '../../lib/salesMetrics';
 import { formatCurrency } from '../../lib/utils';
 import { debugError, debugLog } from '../../lib/debugLogging';
-import { getCurrentWeekSales } from '../../lib/weeklySalesPatterns';
+import {
+    getTransactionCategories,
+    getTransactionCategoryOptions,
+    transactionHasCategory,
+} from '../../lib/transactionCategories';
+import {
+    getWeeklySales,
+    getWeeklySalesNavigation,
+    WeeklySalesOffset,
+} from '../../lib/weeklySalesPatterns';
 
 type TopSoldProductBar = {
     label: string;
@@ -218,7 +227,7 @@ const createSalesPdfHtml = ({
             <td>${escapeHtml(transaction.id)}</td>
             <td>${escapeHtml(transaction.dateLabel)}</td>
             <td>${escapeHtml(transaction.item)}</td>
-            <td>${escapeHtml(transaction.category)}</td>
+            <td>${escapeHtml(getTransactionCategories(transaction).join(', '))}</td>
             <td class="amount">${escapeHtml(formatCurrency(getTransactionNumericTotal(transaction)))}</td>
             <td>${transaction.synced ? 'Synced' : 'Pending'}</td>
         </tr>
@@ -517,18 +526,21 @@ const ChartView = ({
 }: ChartViewProps) => {
     const styles = useThemedStyles(baseStyles);
     const { colors } = useTheme();
-    const currentWeekSales = useMemo(
-        () => getCurrentWeekSales(transactions),
-        [transactions],
+    const [selectedWeekOffset, setSelectedWeekOffset] = useState<WeeklySalesOffset>(0);
+    const selectedWeekSales = useMemo(
+        () => getWeeklySales(transactions, selectedWeekOffset),
+        [selectedWeekOffset, transactions],
     );
     const highestDailyRevenue = useMemo(() => Math.max(
-        ...currentWeekSales.days.map((day) => day.revenuePhp),
+        ...selectedWeekSales.days.map((day) => day.revenuePhp),
         0,
-    ), [currentWeekSales.days]);
+    ), [selectedWeekSales.days]);
     const weekDateRange = formatWeekDateRange(
-        currentWeekSales.weekStartDateKey,
-        currentWeekSales.weekEndDateKey,
+        selectedWeekSales.weekStartDateKey,
+        selectedWeekSales.weekEndDateKey,
     );
+    const isCurrentWeek = selectedWeekOffset === 0;
+    const weekNavigation = getWeeklySalesNavigation(selectedWeekOffset);
 
     return (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -544,19 +556,52 @@ const ChartView = ({
 
             <View style={styles.chartCard}>
                 <View style={styles.patternHeader}>
-                    <View style={styles.patternTitleWrap}>
-                        <Text style={styles.cardTitle}>This Week&apos;s Sales</Text>
-                        {weekDateRange ? (
-                            <Text style={styles.patternGeneratedAt}>{weekDateRange} · Manila time</Text>
-                        ) : null}
+                    <View style={styles.weekNavigation}>
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.weekNavigationButton,
+                                !weekNavigation.canViewPrevious && styles.weekNavigationButtonDisabled,
+                                pressed && weekNavigation.canViewPrevious && styles.weekNavigationButtonPressed,
+                            ]}
+                            onPress={() => setSelectedWeekOffset(-1)}
+                            disabled={!weekNavigation.canViewPrevious}
+                            accessibilityRole="button"
+                            accessibilityLabel="View previous week"
+                            accessibilityState={{ disabled: !weekNavigation.canViewPrevious }}
+                        >
+                            <Ionicons name="chevron-back" size={20} color={colors.primary} />
+                        </Pressable>
+                        <View style={styles.weekNavigationLabel}>
+                            <Text style={[styles.cardTitle, styles.weekNavigationTitle]}>
+                                {isCurrentWeek ? 'This Week\'s Sales' : 'Last Week\'s Sales'}
+                            </Text>
+                            {weekDateRange ? (
+                                <Text style={styles.patternGeneratedAt}>{weekDateRange} · Manila time</Text>
+                            ) : null}
+                        </View>
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.weekNavigationButton,
+                                !weekNavigation.canViewNext && styles.weekNavigationButtonDisabled,
+                                pressed && weekNavigation.canViewNext && styles.weekNavigationButtonPressed,
+                            ]}
+                            onPress={() => setSelectedWeekOffset(0)}
+                            disabled={!weekNavigation.canViewNext}
+                            accessibilityRole="button"
+                            accessibilityLabel="View next week"
+                            accessibilityState={{ disabled: !weekNavigation.canViewNext }}
+                        >
+                            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+                        </Pressable>
                     </View>
-                        <MaterialCommunityIcons name="chart-timeline-variant" size={24} color={colors.primary} />
                 </View>
 
                 {isTransactionsLoading ? (
                     <View style={styles.patternState}>
                             <ActivityIndicator size="small" color={colors.primary} />
-                        <Text style={styles.patternStateText}>Loading this week&apos;s sales...</Text>
+                        <Text style={styles.patternStateText}>
+                            {isCurrentWeek ? 'Loading this week\'s sales...' : 'Loading last week\'s sales...'}
+                        </Text>
                     </View>
                 ) : null}
 
@@ -566,20 +611,22 @@ const ChartView = ({
                             <View>
                                 <Text style={styles.weeklySalesSummaryLabel}>Week total</Text>
                                 <Text style={styles.weeklySalesSummaryAmount}>
-                                    {formatCurrency(currentWeekSales.totalRevenuePhp)}
+                                    {formatCurrency(selectedWeekSales.totalRevenuePhp)}
                                 </Text>
                             </View>
                             <Text style={styles.weeklySalesTransactionCount}>
-                                {currentWeekSales.transactionCount} transaction{currentWeekSales.transactionCount === 1 ? '' : 's'}
+                                {selectedWeekSales.transactionCount} transaction{selectedWeekSales.transactionCount === 1 ? '' : 's'}
                             </Text>
                         </View>
 
-                        {currentWeekSales.totalRevenuePhp === 0 ? (
-                            <Text style={styles.weeklySalesEmptyText}>No sales recorded this week yet.</Text>
+                        {selectedWeekSales.totalRevenuePhp === 0 ? (
+                            <Text style={styles.weeklySalesEmptyText}>
+                                {isCurrentWeek ? 'No sales recorded this week yet.' : 'No sales recorded last week.'}
+                            </Text>
                         ) : null}
 
                         <View style={styles.patternBarsWrap}>
-                            {currentWeekSales.days.map((day) => {
+                            {selectedWeekSales.days.map((day) => {
                                 const barHeight = day.revenuePhp > 0 && highestDailyRevenue > 0
                                     ? Math.max(4, Math.round((day.revenuePhp / highestDailyRevenue) * 100))
                                     : 0;
@@ -707,21 +754,13 @@ const TransactionsView = ({
     const [currentPage, setCurrentPage] = useState(1);
 
     const categoryOptions = useMemo(() => {
-        const uniqueCategories = Array.from(
-            new Set(
-                transactions
-                    .map((transaction) => transaction.category.trim())
-                    .filter(Boolean),
-            ),
-        );
-
-        return ['All', ...uniqueCategories];
+        return ['All', ...getTransactionCategoryOptions(transactions)];
     }, [transactions]);
 
     const filteredTransactions = useMemo(() => {
         const selectedDateKey = selectedDate ? getDateKeyFromParts(selectedDate) : null;
         return transactions.filter((transaction) => (
-            (selectedCategory === 'All' || transaction.category === selectedCategory)
+            transactionHasCategory(transaction, selectedCategory)
             && (!selectedDateKey || getManilaTransactionDateKey(transaction.createdAt) === selectedDateKey)
         ));
     }, [selectedCategory, selectedDate, transactions]);
@@ -916,8 +955,7 @@ const TransactionsView = ({
 
             {paginatedTransactions.map((transaction) => (
                 (() => {
-                    const colorTheme = CATEGORY_COLOR_MAP[getCanonicalCategoryLabel(transaction.category).toLowerCase()];
-                    const resolvedCategoryTheme = colorTheme ? resolvePalette(colorTheme) : null;
+                    const categoryTags = getTransactionCategories(transaction);
                     const syncStatus = getSyncStatus(transaction, styles);
 
                     return (
@@ -932,28 +970,40 @@ const TransactionsView = ({
                             </View>
 
                             <View style={styles.transactionMetaRow}>
-                                <View
-                                    style={[
-                                        styles.categoryPill,
-                                        resolvedCategoryTheme
-                                            ? {
-                                                backgroundColor: resolvedCategoryTheme.backgroundColor,
-                                                borderWidth: 1,
-                                                borderColor: resolvedCategoryTheme.borderColor,
-                                            }
-                                            : styles.categoryPillNeutral,
-                                    ]}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.categoryPillText,
-                                            resolvedCategoryTheme
-                                                ? { color: resolvedCategoryTheme.textColor }
-                                                : styles.categoryPillTextNeutral,
-                                        ]}
-                                    >
-                                        {transaction.category}
-                                    </Text>
+                                <View style={styles.categoryTagsWrap}>
+                                    {categoryTags.map((category) => {
+                                        const colorTheme = CATEGORY_COLOR_MAP[
+                                            getCanonicalCategoryLabel(category).toLowerCase()
+                                        ];
+                                        const resolvedCategoryTheme = colorTheme ? resolvePalette(colorTheme) : null;
+
+                                        return (
+                                            <View
+                                                key={category.toLowerCase()}
+                                                style={[
+                                                    styles.categoryPill,
+                                                    resolvedCategoryTheme
+                                                        ? {
+                                                            backgroundColor: resolvedCategoryTheme.backgroundColor,
+                                                            borderWidth: 1,
+                                                            borderColor: resolvedCategoryTheme.borderColor,
+                                                        }
+                                                        : styles.categoryPillNeutral,
+                                                ]}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.categoryPillText,
+                                                        resolvedCategoryTheme
+                                                            ? { color: resolvedCategoryTheme.textColor }
+                                                            : styles.categoryPillTextNeutral,
+                                                    ]}
+                                                >
+                                                    {category}
+                                                </Text>
+                                            </View>
+                                        );
+                                    })}
                                 </View>
 
                                 <Text style={styles.transactionSub}>{transaction.subtitle}</Text>
@@ -1141,14 +1191,42 @@ const baseStyles = StyleSheet.create({
         justifyContent: 'space-between',
         gap: 12,
     },
-    patternTitleWrap: {
+    weekNavigation: {
         flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    weekNavigationLabel: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    weekNavigationTitle: {
+        textAlign: 'center',
+    },
+    weekNavigationButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: '#b7c4e5',
+        backgroundColor: '#eef2ff',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    weekNavigationButtonPressed: {
+        backgroundColor: '#dce5ff',
+    },
+    weekNavigationButtonDisabled: {
+        opacity: 0.35,
     },
     patternGeneratedAt: {
         marginTop: 3,
         fontSize: 12,
         fontWeight: '600',
         color: '#747b8a',
+        textAlign: 'center',
     },
     patternState: {
         minHeight: 210,
@@ -1474,10 +1552,17 @@ const baseStyles = StyleSheet.create({
         marginTop: 4,
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'flex-start',
+        gap: 8,
+    },
+    categoryTagsWrap: {
+        flex: 1,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 5,
     },
     categoryPill: {
-        minWidth: 94,
+        minWidth: 54,
         height: 26,
         borderRadius: 13,
         alignItems: 'center',
@@ -1516,6 +1601,8 @@ const baseStyles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         color: '#7c8089',
+        flexShrink: 1,
+        textAlign: 'right',
     },
     transactionFooterRow: {
         marginTop: 8,

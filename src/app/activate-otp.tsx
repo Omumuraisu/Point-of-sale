@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { logVerificationDebug, maskIdentifier, readFunctionError } from '../lib/authFlow';
+import { logPasswordResetSmsDebug, logVerificationDebug, maskIdentifier, readFunctionError } from '../lib/authFlow';
 import { supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
 import { useTheme, useThemedStyles } from '../lib/theme';
@@ -40,6 +40,16 @@ export default function ActivateOtpScreen() {
 
     if (!flow || flow.stage !== 'otp') return null;
 
+    const logResetSms = (
+        stage: string,
+        details: Record<string, unknown> = {},
+        level: 'info' | 'warn' = 'info',
+    ) => {
+        if (flow.purpose === 'recovery' && flow.channel === 'sms') {
+            logPasswordResetSmsDebug(stage, { origin: flow.origin, ...details }, level);
+        }
+    };
+
     const handleCancel = () => {
         const origin = flow.origin;
         isCancellingRef.current = true;
@@ -64,6 +74,7 @@ export default function ActivateOtpScreen() {
                 identifier: maskIdentifier(flow.identifier, flow.channel),
                 reason: 'invalid_otp_format',
             }, 'warn');
+            logResetSms('otp_verification_validation_failed', { reason: 'invalid_otp_format' }, 'warn');
             setMessage('Enter the six-digit verification code.');
             return;
         }
@@ -72,6 +83,7 @@ export default function ActivateOtpScreen() {
                 purpose: flow.purpose,
                 reason: 'supabase_unavailable',
             }, 'warn');
+            logResetSms('otp_verification_configuration_failed', { reason: 'supabase_unavailable' }, 'warn');
             setMessage('Verification is unavailable.');
             return;
         }
@@ -80,6 +92,9 @@ export default function ActivateOtpScreen() {
         logVerificationDebug('otp_verification_started', {
             purpose: flow.purpose,
             channel: flow.channel,
+            identifier: maskIdentifier(flow.identifier, flow.channel),
+        });
+        logResetSms('otp_verification_started', {
             identifier: maskIdentifier(flow.identifier, flow.channel),
         });
         const verification = flow.channel === 'email'
@@ -96,6 +111,11 @@ export default function ActivateOtpScreen() {
                 code: error.code ?? null,
                 message: error.message,
             }, 'warn');
+            logResetSms('otp_verification_failed', {
+                status: error.status ?? null,
+                code: error.code ?? null,
+                message: error.message,
+            }, 'warn');
             setMessage('The verification code is invalid or has expired.');
             return;
         }
@@ -104,6 +124,7 @@ export default function ActivateOtpScreen() {
             channel: flow.channel,
             identifier: maskIdentifier(flow.identifier, flow.channel),
         });
+        logResetSms('otp_verification_succeeded');
         markOtpVerified();
     };
 
@@ -111,6 +132,10 @@ export default function ActivateOtpScreen() {
         if (!supabase || countdown > 0 || isResending) {
             logVerificationDebug('resend_skipped', {
                 purpose: flow.purpose,
+                reason: !supabase ? 'supabase_unavailable' : countdown > 0 ? 'cooldown_active' : 'already_resending',
+                countdown,
+            });
+            logResetSms('resend_skipped', {
                 reason: !supabase ? 'supabase_unavailable' : countdown > 0 ? 'cooldown_active' : 'already_resending',
                 countdown,
             });
@@ -123,8 +148,15 @@ export default function ActivateOtpScreen() {
             channel: flow.channel,
             identifier: maskIdentifier(flow.identifier, flow.channel),
         });
+        logResetSms('resend_started', {
+            identifier: maskIdentifier(flow.identifier, flow.channel),
+        });
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
-            body: { identifier: flow.identifier, purpose: flow.purpose },
+            body: {
+                identifier: flow.identifier,
+                ...(flow.channel === 'sms' ? { phone: flow.identifier } : {}),
+                purpose: flow.purpose,
+            },
         });
         setIsResending(false);
         if (error) {
@@ -140,6 +172,13 @@ export default function ActivateOtpScreen() {
                 retryAfterSeconds: parsed.retryAfterSeconds,
                 debugId: parsed.debugId,
             }, 'warn');
+            logResetSms('resend_failed', {
+                status,
+                message: parsed.message,
+                reason: parsed.reason,
+                retryAfterSeconds: parsed.retryAfterSeconds,
+                debugId: parsed.debugId,
+            }, 'warn');
             setMessage(parsed.message);
             if (parsed.retryAfterSeconds > 0) setCountdown(parsed.retryAfterSeconds);
             return;
@@ -149,6 +188,10 @@ export default function ActivateOtpScreen() {
             purpose: flow.purpose,
             channel: flow.channel,
             identifier: maskIdentifier(flow.identifier, flow.channel),
+            resendAfterSeconds,
+            debugId: typeof data?.debugId === 'string' ? data.debugId : null,
+        });
+        logResetSms('resend_accepted', {
             resendAfterSeconds,
             debugId: typeof data?.debugId === 'string' ? data.debugId : null,
         });

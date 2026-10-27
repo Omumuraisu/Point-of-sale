@@ -52,6 +52,11 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
     const hasValidCartItems = value.cartItems === undefined
         || (Array.isArray(value.cartItems) && value.cartItems.every(isCartItem));
 
+    const hasValidCategories = value.categories === undefined
+        || (Array.isArray(value.categories) && value.categories.every((category) => (
+            typeof category === 'string' && category.trim().length > 0
+        )));
+
     const hasValidAccountId = value.accountId === undefined
         || (typeof value.accountId === 'number' && Number.isFinite(value.accountId));
 
@@ -116,6 +121,7 @@ export const isTransactionRecord = (value: unknown): value is TransactionRecord 
         && hasValidStallId
         && hasValidStallNumber
         && hasValidCartItems
+        && hasValidCategories
         && hasValidPaidAmount
         && hasValidTotalDue
         && hasValidPreparedAt

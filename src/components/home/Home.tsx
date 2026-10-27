@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Switch, ScrollView, Image } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, View, Text, StyleSheet, Pressable, Switch, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ import { formatCurrency } from '../../lib/utils';
 import { useBusinessOperatingStatus } from '../../lib/businessOperatingStatus';
 import { useTheme, useThemedStyles } from '../../lib/theme';
 import { getUserRoleLabel } from '../../lib/userRole';
+import { loadHomeSalesCache, saveHomeSalesCache } from './homeSalesStore';
 
 const CURRENT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -30,6 +31,9 @@ export default function Home() {
     const { currentUser } = useAuthSession();
     const { isOpen, isLoading, isUpdating, error: statusError, canToggle, setIsOpen } = useBusinessOperatingStatus();
     const [recentSales, setRecentSales] = useState<TransactionRecord[]>([]);
+    const [isSalesLoading, setIsSalesLoading] = useState(true);
+    const activeSalesScope = useRef<string | null>(null);
+    const salesRefreshGeneration = useRef(0);
     const { unreadNotificationCount } = useUnreadNotificationCount(currentUser?.accountId);
     const currentDateLabel = CURRENT_DATE_FORMATTER.format(new Date());
     const stallLabel = currentUser?.stallNumber ? `Stall ${currentUser.stallNumber}` : 'No stall assigned';
@@ -38,31 +42,55 @@ export default function Home() {
     useFocusEffect(
         useCallback(() => {
             let isMounted = true;
-            setRecentSales([]);
+            const scope = currentUser?.accountId && currentUser.businessId && currentUser.stallNumber
+                ? { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber }
+                : null;
+            const scopeKey = scope ? `${scope.accountId}:${scope.businessId}:${scope.stallNumber}` : null;
+            if (activeSalesScope.current !== scopeKey) {
+                activeSalesScope.current = scopeKey;
+                setRecentSales([]);
+                setIsSalesLoading(Boolean(scope));
+            }
 
             const hydrateRecentSales = async () => {
-                if (!currentUser?.accountId || !currentUser.businessId || !currentUser.stallNumber) {
+                const generation = ++salesRefreshGeneration.current;
+                if (!scope) {
+                    if (isMounted && generation === salesRefreshGeneration.current) setIsSalesLoading(false);
                     return;
                 }
-                const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId, stallNumber: currentUser.stallNumber };
-                const [remoteTransactions, localTransactions] = await Promise.all([
-                    loadRemoteSalesTransactions({ businessId: scope.businessId }),
+                const [cachedTransactions, localTransactions] = await Promise.all([
+                    loadHomeSalesCache(scope),
                     loadSavedTransactions(scope),
                 ]);
-                const savedTransactions = mergeLocalAndRemoteTransactions(localTransactions, remoteTransactions);
+                const cachedSnapshot = mergeLocalAndRemoteTransactions(localTransactions, cachedTransactions);
+                const localSnapshot = mergeLocalAndRemoteTransactions(
+                    cachedSnapshot,
+                    localTransactions.filter((transaction) => !transaction.synced),
+                );
 
-                if (isMounted) {
-                    setRecentSales(savedTransactions);
+                if (isMounted && generation === salesRefreshGeneration.current && localSnapshot.length > 0) {
+                    setRecentSales(localSnapshot);
+                    setIsSalesLoading(false);
                 }
+
+                const remoteTransactions = await loadRemoteSalesTransactions({ businessId: scope.businessId });
+                const refreshedSnapshot = mergeLocalAndRemoteTransactions(localSnapshot, remoteTransactions);
+                if (!isMounted || generation !== salesRefreshGeneration.current) return;
+                await saveHomeSalesCache(scope, refreshedSnapshot);
+
+                if (!isMounted || generation !== salesRefreshGeneration.current) return;
+                setRecentSales(refreshedSnapshot);
+                setIsSalesLoading(false);
             };
 
-            hydrateRecentSales();
+            void hydrateRecentSales();
             const unsubscribe = subscribeToTransactionSyncEvents(() => {
                 void hydrateRecentSales();
             });
 
             return () => {
                 isMounted = false;
+                salesRefreshGeneration.current += 1;
                 unsubscribe();
             };
         }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]),
@@ -76,7 +104,12 @@ export default function Home() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.headerRow}>
-                    <View style={styles.profileGroup}>
+                    <Pressable
+                        style={({ pressed }) => [styles.profileGroup, pressed && styles.profileGroupPressed]}
+                        onPress={() => router.push('/profile')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Open profile"
+                    >
                         <View style={styles.avatar}>
                             {currentUser?.profilePictureUrl ? (
                                 <Image source={{ uri: currentUser.profilePictureUrl }} style={styles.avatarImage} />
@@ -97,7 +130,7 @@ export default function Home() {
                                 <Text style={styles.date}>{currentDateLabel}</Text>
                             </View>
                         </View>
-                    </View>
+                    </Pressable>
 
                     <View style={styles.headerActions}>
                         <Pressable style={[styles.actionBtn, styles.lightBtn]} onPress={() => router.push('/notifications')}>
@@ -141,12 +174,19 @@ export default function Home() {
                 <View style={styles.totalCard}>
                     <View>
                         <Text style={styles.totalLabel}>Today's Total</Text>
-                        <Text style={styles.totalValue}>{formatCurrency(todaySales.total)}</Text>
-                        <Text style={styles.growthText}>
-                            {todaySales.growthPercent === null
-                                ? 'No sales recorded yesterday'
-                                : `${todaySales.growthPercent >= 0 ? '+' : ''}${todaySales.growthPercent.toFixed(1)}% from yesterday`}
-                        </Text>
+                        {isSalesLoading ? (
+                            <View style={styles.salesLoadingRow}>
+                                <ActivityIndicator size="small" color="#ffffff" />
+                                <Text style={styles.salesLoadingText}>Loading sales...</Text>
+                            </View>
+                        ) : (
+                            <>
+                                <Text style={styles.totalValue}>{formatCurrency(todaySales.total)}</Text>
+                                <Text style={styles.growthText}>
+                                    Yesterday&apos;s Total: {formatCurrency(todaySales.yesterdayTotal)}
+                                </Text>
+                            </>
+                        )}
                     </View>
 
                     <View style={styles.chartCircle}>
@@ -162,7 +202,12 @@ export default function Home() {
                 </View>
 
                 <View style={styles.salesWrap}>
-                    {recentSales.length === 0 ? (
+                    {isSalesLoading ? (
+                        <View style={styles.emptyRecentSalesCard}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text style={styles.emptyRecentSalesText}>Loading recent sales...</Text>
+                        </View>
+                    ) : recentSales.length === 0 ? (
                         <View style={styles.emptyRecentSalesCard}>
                             <Text style={styles.emptyRecentSalesTitle}>No recent sales yet</Text>
                             <Text style={styles.emptyRecentSalesText}>
@@ -212,6 +257,9 @@ const baseStyles = StyleSheet.create({
         alignItems: 'center',
         gap: 12,
         minWidth: 0,
+    },
+    profileGroupPressed: {
+        opacity: 0.7,
     },
     avatar: {
         width: 46,
@@ -388,6 +436,17 @@ const baseStyles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#dce5ff',
+    },
+    salesLoadingRow: {
+        minHeight: 56,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 9,
+    },
+    salesLoadingText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#ffffff',
     },
     chartCircle: {
         width: 86,

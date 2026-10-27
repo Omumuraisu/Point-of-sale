@@ -12,12 +12,16 @@ export interface BillingFocus {
     billingMonth?: string | null;
 }
 
+export type BillingUtilityType = 'rent' | 'electricity' | 'water' | 'other';
+export type ChargeableUtilityType = Exclude<BillingUtilityType, 'other'>;
+
 export interface BillingCharge {
     id: number;
     code: string;
     label: string;
     amount: number;
     description: string | null;
+    utilityType: Exclude<BillingUtilityType, 'other'> | null;
 }
 
 export interface BillPaymentAllocation {
@@ -30,6 +34,7 @@ export interface BillPaymentAllocation {
     recordedByStaffId: number | null;
     recordedBy: string | null;
     recordedAt: string | null;
+    utilityType: BillingUtilityType | null;
 }
 
 export interface MonthlyBillBalance {
@@ -56,6 +61,17 @@ export interface MonthlyBillBalance {
     paymentHistory: BillPaymentAllocation[];
 }
 
+export interface UtilityPenaltyBreakdown {
+    originalUtilityAmount: number;
+    unpaidPrincipal: number;
+    surcharge: number;
+    interest: number;
+    additional36MonthCharge: number;
+    totalUtilityBalance: number;
+    interestMonths: number;
+    totalPenalty: number;
+}
+
 export interface BillingSummary {
     currentBill: MonthlyBillBalance;
     arrearsBills: MonthlyBillBalance[];
@@ -70,6 +86,17 @@ export interface PaymentHistoryEntry {
     paidAt: string | null;
     referenceNumber: string | null;
     notes: string | null;
+    recordedBy: string | null;
+    recordedAt: string | null;
+    allocations: PaymentHistoryAllocation[];
+}
+
+export interface PaymentHistoryAllocation {
+    allocationId: number;
+    monthlyBillId: number;
+    billingMonth: string;
+    utilityType: BillingUtilityType | null;
+    amount: number;
 }
 
 interface MonthlyBillBalanceRow {
@@ -116,6 +143,12 @@ const toNullableInteger = (value: unknown): number | null => {
     return integer > 0 ? integer : null;
 };
 
+const toBillingUtilityType = (value: unknown, allowOther: boolean): BillingUtilityType | null => {
+    if (value === 'rent' || value === 'electricity' || value === 'water') return value;
+    if (allowOther && value === 'other') return value;
+    return null;
+};
+
 const asRecordArray = (value: unknown): Record<string, unknown>[] => {
     let parsed = value;
     if (typeof value === 'string') {
@@ -132,6 +165,7 @@ const mapCharges = (value: unknown): BillingCharge[] => asRecordArray(value).map
     label: typeof charge.label === 'string' && charge.label.trim() ? charge.label : 'Other charge',
     amount: toAmount(charge.amount),
     description: typeof charge.description === 'string' ? charge.description : null,
+    utilityType: toBillingUtilityType(charge.utilityType, false) as Exclude<BillingUtilityType, 'other'> | null,
 }));
 
 const mapPaymentHistory = (value: unknown): BillPaymentAllocation[] => asRecordArray(value)
@@ -145,6 +179,7 @@ const mapPaymentHistory = (value: unknown): BillPaymentAllocation[] => asRecordA
         recordedByStaffId: toNullableInteger(payment.recordedByStaffId),
         recordedBy: typeof payment.recordedBy === 'string' && payment.recordedBy.trim() ? payment.recordedBy : null,
         recordedAt: typeof payment.recordedAt === 'string' ? payment.recordedAt : null,
+        utilityType: toBillingUtilityType(payment.utilityType, true),
     }))
     .filter((payment) => payment.transactionId > 0 && payment.allocationId > 0);
 
@@ -172,6 +207,85 @@ export const mapMonthlyBillRow = (row: MonthlyBillBalanceRow): MonthlyBillBalanc
         isArrears: row.is_arrears === true,
         chargeBreakdown: mapCharges(row.charge_breakdown),
         paymentHistory: mapPaymentHistory(row.payment_history),
+    };
+};
+
+const roundCurrency = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+
+const manilaDateString = (): string => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(new Date());
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+    return `${value('year')}-${value('month')}-${value('day')}`;
+};
+
+const parseDateParts = (value: string): [number, number, number] | null => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) return null;
+    const parts: [number, number, number] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    return parts.every(Number.isSafeInteger) ? parts : null;
+};
+
+const overdueChargeMonths = (dueDate: string, asOfDate: string): number => {
+    const due = parseDateParts(dueDate);
+    const asOf = parseDateParts(asOfDate);
+    if (!due || !asOf || asOfDate <= dueDate.slice(0, 10)) return 0;
+    const calendarMonths = (asOf[0] - due[0]) * 12 + asOf[1] - due[1];
+    const completedMonthlySteps = Math.max(0, calendarMonths - (asOf[2] <= due[2] ? 1 : 0));
+    return Math.min(36, 1 + completedMonthlySteps);
+};
+
+export const calculateUtilityPenalty = (
+    bill: MonthlyBillBalance,
+    asOfDate: string = manilaDateString(),
+    utilityType?: ChargeableUtilityType,
+): UtilityPenaltyBreakdown => {
+    const combinedUtilityAmount = roundCurrency(bill.rentAmount + bill.waterAmount + bill.electricityAmount);
+    const utilityAmounts: Record<ChargeableUtilityType, number> = {
+        rent: bill.rentAmount,
+        water: bill.waterAmount,
+        electricity: bill.electricityAmount,
+    };
+    const originalUtilityAmount = roundCurrency(
+        utilityType ? utilityAmounts[utilityType] : combinedUtilityAmount,
+    );
+    const typedAllocations = bill.paymentHistory.filter((allocation) => allocation.utilityType !== null);
+    const utilityApplied = typedAllocations.length > 0
+        ? typedAllocations
+            .filter((allocation) => utilityType
+                ? allocation.utilityType === utilityType
+                : allocation.utilityType === 'rent'
+                    || allocation.utilityType === 'water'
+                    || allocation.utilityType === 'electricity')
+            .reduce((sum, allocation) => sum + allocation.amount, 0)
+        : utilityType && combinedUtilityAmount > 0
+            ? roundCurrency(
+                Math.min(bill.appliedAmount, combinedUtilityAmount)
+                * (originalUtilityAmount / combinedUtilityAmount),
+            )
+            : Math.min(bill.appliedAmount, originalUtilityAmount);
+    const unpaidPrincipal = roundCurrency(Math.max(originalUtilityAmount - utilityApplied, 0));
+    const interestMonths = unpaidPrincipal <= 0
+        ? 0
+        : overdueChargeMonths(bill.dueDate, asOfDate);
+    const surcharge = interestMonths > 0 ? roundCurrency(originalUtilityAmount * 0.25) : 0;
+    const interest = interestMonths > 0 ? roundCurrency(originalUtilityAmount * 0.02 * interestMonths) : 0;
+    const additional36MonthCharge = interestMonths >= 36 ? roundCurrency(originalUtilityAmount * 0.72) : 0;
+    const totalPenalty = roundCurrency(surcharge + interest + additional36MonthCharge);
+
+    return {
+        originalUtilityAmount,
+        unpaidPrincipal,
+        surcharge,
+        interest,
+        additional36MonthCharge,
+        totalUtilityBalance: roundCurrency(unpaidPrincipal + totalPenalty),
+        interestMonths,
+        totalPenalty,
     };
 };
 
@@ -218,12 +332,28 @@ export const buildPaymentHistory = (bills: MonthlyBillBalance[]): PaymentHistory
     const transactions = new Map<number, PaymentHistoryEntry>();
     bills.forEach((bill) => bill.paymentHistory.forEach((allocation) => {
         const existing = transactions.get(allocation.transactionId);
+        const allocations = [
+            ...(existing?.allocations ?? []),
+            {
+                allocationId: allocation.allocationId,
+                monthlyBillId: bill.monthlyBillId,
+                billingMonth: bill.billingMonth,
+                utilityType: allocation.utilityType,
+                amount: allocation.amount,
+            },
+        ].sort((first, second) => (
+            second.billingMonth.localeCompare(first.billingMonth)
+            || second.allocationId - first.allocationId
+        ));
         transactions.set(allocation.transactionId, {
             paymentId: allocation.transactionId,
             amount: (existing?.amount ?? 0) + allocation.amount,
             paidAt: existing?.paidAt ?? allocation.paymentDate,
             referenceNumber: existing?.referenceNumber ?? allocation.referenceNumber,
             notes: existing?.notes ?? allocation.notes,
+            recordedBy: existing?.recordedBy ?? allocation.recordedBy,
+            recordedAt: existing?.recordedAt ?? allocation.recordedAt,
+            allocations,
         });
     }));
     return Array.from(transactions.values()).sort((first, second) => (

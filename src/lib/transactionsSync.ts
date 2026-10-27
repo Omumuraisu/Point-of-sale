@@ -4,6 +4,7 @@ import { getUnsyncedTransactions, updateTransactionSyncState } from '../componen
 import { formatCurrency, formatTransactionDate, getCategoryType } from './utils';
 import { notifyTransactionSyncChanged } from './transactionSyncEvents';
 import { debugError, debugLog } from './debugLogging';
+import { normalizeCategoryTags } from './transactionCategories';
 
 interface SalesTransactionRow {
     transaction_id: number;
@@ -116,6 +117,8 @@ const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
     const total = cartItem.total;
     const quantity = cartItem.quantity;
     const unitPrice = cartItem.pricePerUnit;
+    const categories = normalizeCategoryTags([row.category]);
+    const category = categories[0] ?? 'General';
 
     return {
         id: `#${row.transaction_id}`,
@@ -127,8 +130,9 @@ const toTransactionRecord = (row: SalesTransactionRow): TransactionRecord => {
         item: row.product,
         amount: formatCurrency(total),
         subtitle: `${quantity} ${row.sold_unit ?? 'kg'} • ${formatCurrency(unitPrice)}/${row.sold_unit ?? 'kg'}`,
-        category: row.category,
-        categoryType: getCategoryType(row.category),
+        category,
+        categories: categories.length > 0 ? categories : ['General'],
+        categoryType: getCategoryType(category),
         dateLabel: formatTransactionDate(createdAt),
         createdAt,
         cartItems: [cartItem],
@@ -148,8 +152,8 @@ const toOrderTransactionRecord = (rows: SalesTransactionRow[]): TransactionRecor
     const calculatedTotal = cartItems.reduce((sum, item) => sum + item.total, 0);
     const totalDue = Number(order?.total_due_php ?? calculatedTotal) || calculatedTotal;
     const paidAmount = Number(order?.paid_amount_php ?? totalDue) || totalDue;
-    const categories = Array.from(new Set(cartItems.map((item) => item.category).filter(Boolean)));
-    const category = categories.length === 1 ? categories[0] : 'Mixed';
+    const categories = normalizeCategoryTags(cartItems.map((item) => item.category));
+    const category = categories[0] ?? 'General';
     const firstItem = cartItems[0];
     const item = cartItems.length > 1 ? `${firstItem.name} +${cartItems.length - 1} more` : firstItem.name;
 
@@ -166,6 +170,7 @@ const toOrderTransactionRecord = (rows: SalesTransactionRow[]): TransactionRecor
         amount: formatCurrency(totalDue),
         subtitle: `${cartItems.length} item${cartItems.length === 1 ? '' : 's'} • Paid ${formatCurrency(paidAmount)}`,
         category,
+        categories: categories.length > 0 ? categories : ['General'],
         categoryType: getCategoryType(category),
         dateLabel: formatTransactionDate(completedAt),
         createdAt: completedAt,

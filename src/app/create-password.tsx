@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { isStrongPassword, readFunctionError } from '../lib/authFlow';
+import { isStrongPassword, logPasswordResetSmsDebug, maskIdentifier, readFunctionError } from '../lib/authFlow';
 import { useAuthSession } from '../lib/authSession';
 import { supabase } from '../lib/supabase';
 import { useVerificationFlow } from '../lib/verificationFlow';
@@ -47,26 +47,45 @@ export default function CreatePasswordScreen() {
     };
 
     const handleSubmit = async () => {
+        const isSmsReset = flow.purpose === 'recovery' && flow.channel === 'sms';
         if (!isStrongPassword(password)) {
+            if (isSmsReset) logPasswordResetSmsDebug('password_validation_failed', { origin: flow.origin, reason: 'weak_password' }, 'warn');
             setMessage('Use 8 or more characters with uppercase, lowercase, a number, and a symbol.');
             return;
         }
         if (password !== confirmPassword) {
+            if (isSmsReset) logPasswordResetSmsDebug('password_validation_failed', { origin: flow.origin, reason: 'password_mismatch' }, 'warn');
             setMessage('Passwords do not match.');
             return;
         }
         if (!supabase) {
+            if (isSmsReset) logPasswordResetSmsDebug('password_completion_failed', { origin: flow.origin, reason: 'supabase_unavailable' }, 'warn');
             setMessage('Password setup is unavailable.');
             return;
         }
 
         setIsSaving(true);
         setMessage('');
+        if (isSmsReset) {
+            logPasswordResetSmsDebug('password_completion_started', {
+                origin: flow.origin,
+                identifier: maskIdentifier(flow.identifier, flow.channel),
+            });
+        }
         const { error } = await supabase.functions.invoke('complete-pos-account-password', {
             body: { password, purpose: flow.purpose },
         });
         if (error) {
             const parsed = await readFunctionError(error, 'Unable to save the password.');
+            if (isSmsReset) {
+                logPasswordResetSmsDebug('password_completion_failed', {
+                    origin: flow.origin,
+                    message: parsed.message,
+                    reason: parsed.reason,
+                    retryAfterSeconds: parsed.retryAfterSeconds,
+                    debugId: parsed.debugId,
+                }, 'warn');
+            }
             setIsSaving(false);
             setMessage(parsed.message);
             return;
@@ -75,6 +94,7 @@ export default function CreatePasswordScreen() {
         const success = flow.purpose === 'activation'
             ? 'Account activated. Sign in with your new password.'
             : 'Password updated. Sign in with your new password.';
+        if (isSmsReset) logPasswordResetSmsDebug('password_completion_succeeded', { origin: flow.origin });
         await logout();
         clearFlow();
         setIsSaving(false);

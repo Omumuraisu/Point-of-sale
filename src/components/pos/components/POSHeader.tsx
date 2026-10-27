@@ -23,7 +23,13 @@ const POSHeader = () => {
 
     return (
         <View style={styles.headerRow}>
-            <View style={styles.profileGroup}>
+            <TouchableOpacity
+                style={styles.profileGroup}
+                onPress={() => router.push('/profile')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Open profile"
+            >
                 <View style={styles.avatarCircle}>
                     {currentUser?.profilePictureUrl ? (
                         <Image source={{ uri: currentUser.profilePictureUrl }} style={styles.avatarImage} />
@@ -44,7 +50,7 @@ const POSHeader = () => {
                         <Text style={styles.profileDate}>{currentDateLabel}</Text>
                     </View>
                 </View>
-            </View>
+            </TouchableOpacity>
             <View style={styles.headerActions}>
                 <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/notifications')}>
                     <Ionicons name="notifications" size={20} color="#f0cc42" />

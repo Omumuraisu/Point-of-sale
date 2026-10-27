@@ -4,14 +4,14 @@ import {
     Text,
     Pressable,
     StyleSheet,
-    TextInput,
     Image,
     Alert,
     ActivityIndicator,
+    ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useAuthSession } from '../../lib/authSession';
@@ -23,30 +23,18 @@ import {
     validateProfilePhoto,
 } from '../../lib/profilePhoto';
 import { useTheme, useThemedStyles } from '../../lib/theme';
-
-const splitDisplayName = (displayName: string) => {
-    const parts = displayName.trim().split(/\s+/).filter(Boolean);
-    const firstName = parts[0] ?? 'Unnamed';
-    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : firstName;
-
-    return {
-        firstName,
-        lastName,
-    };
-};
+import { getUserRoleLabel } from '../../lib/userRole';
 
 const Profile = () => {
     const styles = useThemedStyles(baseStyles);
     const { colors } = useTheme();
     const router = useRouter();
     const { session, currentUser, updateCurrentUser } = useAuthSession();
-    const [name, setName] = useState('');
     const [selectedPhoto, setSelectedPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
     const [removePhoto, setRemovePhoto] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        setName(currentUser?.displayName ?? '');
         setSelectedPhoto(null);
         setRemovePhoto(false);
     }, [currentUser]);
@@ -122,8 +110,6 @@ const Profile = () => {
     };
 
     const handleSave = async () => {
-        const trimmedName = name.trim();
-
         if (!currentUser) {
             Alert.alert('No active session', 'Please log in again before editing your profile.');
             router.replace('/');
@@ -136,11 +122,6 @@ const Profile = () => {
             return;
         }
 
-        if (!trimmedName) {
-            Alert.alert('Missing details', 'Name is required.');
-            return;
-        }
-
         if (!isSupabaseConfigured || !supabase) {
             Alert.alert('Supabase unavailable', 'Supabase is not configured.');
             return;
@@ -150,11 +131,8 @@ const Profile = () => {
 
         try {
             const profilePictureUrl = removePhoto ? '' : await uploadSelectedPhoto();
-            const { firstName, lastName } = splitDisplayName(trimmedName);
-            const { error: profileError } = await supabase.rpc('update_my_pos_profile', {
-                p_first_name: firstName,
-                p_last_name: lastName,
-                p_profile_picture_url: selectedPhoto || removePhoto ? profilePictureUrl : null,
+            const { error: profileError } = await supabase.rpc('update_my_pos_profile_photo', {
+                p_profile_picture_url: removePhoto ? null : profilePictureUrl,
             });
 
             if (profileError) {
@@ -169,7 +147,6 @@ const Profile = () => {
             }
 
             await updateCurrentUser({
-                displayName: trimmedName,
                 profilePictureUrl: removePhoto ? null : profilePictureUrl,
             });
             setSelectedPhoto(null);
@@ -185,9 +162,8 @@ const Profile = () => {
         }
     };
 
-    if (currentUser?.profileTable === 'developer') {
-        return <Redirect href="/(tabs)/settings" />;
-    }
+    const isDeveloper = currentUser?.profileTable === 'developer';
+    const email = currentUser?.email?.trim() ?? '';
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -198,7 +174,10 @@ const Profile = () => {
                 <Text style={styles.headerTitle}>Profile</Text>
             </View>
 
-            <View style={styles.contentWrap}>
+            <ScrollView
+                contentContainerStyle={styles.contentWrap}
+                showsVerticalScrollIndicator={false}
+            >
                 <View style={styles.avatarOuter}>
                     <View style={styles.avatarInner}>
                         {photoUri ? (
@@ -210,44 +189,78 @@ const Profile = () => {
                 </View>
 
                 <View style={styles.formCard}>
-                    <Text style={styles.sectionTitle}>Change Profile Picture</Text>
-                    <Pressable style={styles.uploadBtn} onPress={handleUploadPhoto}>
-                        <Text style={styles.uploadText}>{photoUri ? 'Replace Photo' : 'Upload Photo'}</Text>
-                    </Pressable>
-                    {photoUri ? (
-                        <Pressable style={styles.removeBtn} onPress={handleRemovePhoto}>
-                            <Text style={styles.removeText}>Remove Photo</Text>
-                        </Pressable>
+                    <Text style={styles.sectionTitle}>{isDeveloper ? 'Profile Picture' : 'Change Profile Picture'}</Text>
+                    {!isDeveloper ? (
+                        <>
+                            <Pressable style={styles.uploadBtn} onPress={handleUploadPhoto}>
+                                <Text style={styles.uploadText}>{photoUri ? 'Replace Photo' : 'Upload Photo'}</Text>
+                            </Pressable>
+                            {photoUri ? (
+                                <Pressable style={styles.removeBtn} onPress={handleRemovePhoto}>
+                                    <Text style={styles.removeText}>Remove Photo</Text>
+                                </Pressable>
+                            ) : null}
+                        </>
                     ) : null}
 
-                    <Text style={styles.sectionTitle}>Change Name</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="Account name"
-                        placeholderTextColor={colors.textMuted}
-                    />
-
-                    <Text style={styles.sectionTitle}>Verified Phone Number</Text>
-                    <View style={styles.phoneInfoRow}>
+                    <Text style={styles.sectionTitle}>Account Details</Text>
+                    <View style={styles.detailRow}>
+                        <Ionicons name="person-outline" size={20} color={colors.textSecondary} />
+                        <View style={styles.detailTextWrap}>
+                            <Text style={styles.detailLabel}>Name</Text>
+                            <Text style={styles.detailValue}>{currentUser?.displayName ?? 'Unavailable'}</Text>
+                        </View>
+                    </View>
+                    <View style={styles.detailRow}>
+                        <Ionicons name="id-card-outline" size={20} color={colors.textSecondary} />
+                        <View style={styles.detailTextWrap}>
+                            <Text style={styles.detailLabel}>Role</Text>
+                            <Text style={styles.detailValue}>
+                                {currentUser ? getUserRoleLabel(currentUser.profileTable) : 'Unavailable'}
+                            </Text>
+                        </View>
+                    </View>
+                    {email ? (
+                        <View style={styles.detailRow}>
+                            <Ionicons name="mail-outline" size={20} color={colors.textSecondary} />
+                            <View style={styles.detailTextWrap}>
+                                <Text style={styles.detailLabel}>Email</Text>
+                                <Text style={styles.detailValue}>{email}</Text>
+                            </View>
+                        </View>
+                    ) : null}
+                    <View style={styles.detailRow}>
+                        <Ionicons name="storefront-outline" size={20} color={colors.textSecondary} />
+                        <View style={styles.detailTextWrap}>
+                            <Text style={styles.detailLabel}>Business</Text>
+                            <Text style={styles.detailValue}>
+                                {currentUser?.businessName?.trim() || 'No business assigned'}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={styles.detailRow}>
                         <Ionicons name="call-outline" size={20} color={colors.textSecondary} />
-                        <Text style={styles.phoneInfoText}>
-                            {currentUser?.phoneNumber ?? 'No verified phone number'}
-                        </Text>
+                        <View style={styles.detailTextWrap}>
+                            <Text style={styles.detailLabel}>Verified Phone Number</Text>
+                            <Text style={styles.detailValue}>
+                                {currentUser?.phoneNumber ?? 'No verified phone number'}
+                            </Text>
+                        </View>
                     </View>
 
-                    <View style={styles.saveRow}>
-                        <Pressable style={styles.saveBtn} onPress={handleSave} disabled={isSaving}>
-                            {isSaving ? (
-                                <ActivityIndicator color="#ffffff" />
-                            ) : (
-                                <Text style={styles.saveText}>Save</Text>
-                            )}
-                        </Pressable>
-                    </View>
+                    {!isDeveloper ? (
+                        <View style={styles.saveRow}>
+                            <Pressable style={styles.saveBtn} onPress={handleSave} disabled={isSaving}>
+                                {isSaving ? (
+                                    <ActivityIndicator color="#ffffff" />
+                                ) : (
+                                    <Text style={styles.saveText}>Save Picture</Text>
+                                )}
+                            </Pressable>
+                        </View>
+                    ) : null}
                 </View>
-            </View>
+            </ScrollView>
         </SafeAreaView>
     );
 };
@@ -277,10 +290,11 @@ const baseStyles = StyleSheet.create({
         color: '#20252c',
     },
     contentWrap: {
-        flex: 1,
+        flexGrow: 1,
         alignItems: 'center',
         paddingTop: 26,
         paddingHorizontal: 14,
+        paddingBottom: 28,
     },
     avatarOuter: {
         width: 154,
@@ -355,33 +369,31 @@ const baseStyles = StyleSheet.create({
         fontWeight: '700',
         color: '#c23934',
     },
-    input: {
-        height: 48,
-        borderRadius: 24,
-        borderWidth: 1,
-        borderColor: '#b7bcc8',
-        backgroundColor: '#f4f4f5',
-        paddingHorizontal: 16,
-        fontSize: 18,
-        color: '#242a32',
-        marginBottom: 8,
-    },
-    phoneInfoRow: {
-        minHeight: 48,
+    detailRow: {
+        minHeight: 58,
         borderRadius: 12,
         borderWidth: 1,
         borderColor: '#c5c9d3',
         backgroundColor: '#e5e7ed',
         paddingHorizontal: 14,
+        paddingVertical: 9,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
         marginBottom: 8,
     },
-    phoneInfoText: {
+    detailTextWrap: {
         flex: 1,
-        fontSize: 17,
-        fontWeight: '600',
+    },
+    detailLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#7d818b',
+    },
+    detailValue: {
+        marginTop: 2,
+        fontSize: 16,
+        fontWeight: '700',
         color: '#565d69',
     },
     saveRow: {

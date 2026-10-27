@@ -14,6 +14,7 @@ export interface TransactionRecord {
     amount: string;
     subtitle: string;
     category: string;
+    categories?: string[];
     categoryType: TransactionCategoryType;
     dateLabel: string;
     createdAt: number;

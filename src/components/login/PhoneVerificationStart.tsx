@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { logVerificationDebug, maskIdentifier, parseAuthIdentifier, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
+import { logPasswordResetSmsDebug, logVerificationDebug, maskIdentifier, parseAuthIdentifier, readFunctionError, VerificationPurpose } from '../../lib/authFlow';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useVerificationFlow } from '../../lib/verificationFlow';
 import { useTheme, useThemedStyles } from '../../lib/theme';
@@ -39,8 +39,18 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
             channel: identifier.channel,
             identifier: maskIdentifier(identifier.value, identifier.channel),
         });
+        if (purpose === 'recovery' && identifier.channel === 'sms') {
+            logPasswordResetSmsDebug('request_started', {
+                origin: 'forgot-password',
+                identifier: maskIdentifier(identifier.value, identifier.channel),
+            });
+        }
         const { data, error } = await supabase.functions.invoke('start-pos-account-verification', {
-            body: { identifier: identifier.value, purpose },
+            body: {
+                identifier: identifier.value,
+                ...(identifier.channel === 'sms' ? { phone: identifier.value } : {}),
+                purpose,
+            },
         });
         setIsSubmitting(false);
         if (error) {
@@ -56,6 +66,12 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
                 retryAfterSeconds: parsed.retryAfterSeconds,
                 debugId: parsed.debugId,
             }, 'warn');
+            if (purpose === 'recovery' && identifier.channel === 'sms') {
+                logPasswordResetSmsDebug('request_failed', {
+                    origin: 'forgot-password', status, message: parsed.message, reason: parsed.reason,
+                    retryAfterSeconds: parsed.retryAfterSeconds, debugId: parsed.debugId,
+                }, 'warn');
+            }
             setMessage(parsed.message);
             return;
         }
@@ -70,6 +86,12 @@ export default function PhoneVerificationStart({ purpose }: { purpose: Verificat
             resendAfterSeconds,
             debugId: typeof data?.debugId === 'string' ? data.debugId : null,
         });
+        if (purpose === 'recovery' && identifier.channel === 'sms') {
+            logPasswordResetSmsDebug('request_accepted', {
+                origin: 'forgot-password', resendAfterSeconds,
+                debugId: typeof data?.debugId === 'string' ? data.debugId : null,
+            });
+        }
         startFlow(identifier.value, identifier.channel, purpose, isActivation ? 'activation' : 'forgot-password');
         router.push({ pathname: '/activate-otp', params: { resendAfterSeconds } });
     };

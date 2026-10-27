@@ -11,6 +11,7 @@ export const DEBUG_CHANNELS = [
     { id: 'notifications', label: 'Notifications', description: 'Notification loading, unread counts, and updates.' },
     { id: 'billing-lease', label: 'Billing & Lease', description: 'Billing records and business lease information.' },
     { id: 'authentication-sms', label: 'Authentication & OTP', description: 'Email/SMS verification flows and developer activation testing.' },
+    { id: 'password-reset-sms', label: 'Password Reset SMS', description: 'SMS password-reset requests, resends, OTP verification, and password completion.' },
     { id: 'analytics-export', label: 'Analytics & Export', description: 'Sales analysis and report export diagnostics.' },
     { id: 'supabase-sync', label: 'General Supabase Sync', description: 'Full synchronization lifecycle and summaries.' },
 ] as const;
@@ -22,7 +23,13 @@ const disabledSettings = (): DebugChannelSettings => Object.fromEntries(
     DEBUG_CHANNELS.map(({ id }) => [id, false]),
 ) as DebugChannelSettings;
 
-let runtimeSettings: DebugChannelSettings = disabledSettings();
+const defaultSettings = (): DebugChannelSettings => ({
+    ...disabledSettings(),
+    'authentication-sms': true,
+    'password-reset-sms': true,
+});
+
+let runtimeSettings: DebugChannelSettings = defaultSettings();
 
 const redactKey = (key: string) => /password|passcode|otp|token|secret|authorization|session|phone|email|identifier/i.test(key);
 
@@ -67,11 +74,13 @@ interface DebugLoggingContextValue {
 const DebugLoggingContext = createContext<DebugLoggingContextValue | null>(null);
 
 const parseSettings = (raw: string | null): DebugChannelSettings => {
-    const next = disabledSettings();
+    const next = defaultSettings();
     if (!raw) return next;
     try {
         const parsed = JSON.parse(raw) as Partial<Record<DebugChannel, unknown>>;
-        DEBUG_CHANNELS.forEach(({ id }) => { next[id] = parsed[id] === true; });
+        DEBUG_CHANNELS.forEach(({ id }) => {
+            if (typeof parsed[id] === 'boolean') next[id] = parsed[id];
+        });
     } catch {
         return next;
     }
@@ -79,7 +88,7 @@ const parseSettings = (raw: string | null): DebugChannelSettings => {
 };
 
 export const DebugLoggingProvider = ({ children }: { children: ReactNode }) => {
-    const [settings, setSettings] = useState<DebugChannelSettings>(disabledSettings);
+    const [settings, setSettings] = useState<DebugChannelSettings>(defaultSettings);
     const [isHydrating, setIsHydrating] = useState(true);
 
     useEffect(() => {

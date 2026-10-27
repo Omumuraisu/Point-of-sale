@@ -26,6 +26,7 @@ const BILLING_NOTIFICATION_TYPES = new Set([
     'billing_due_soon',
     'billing_due_today',
     'billing_overdue',
+    'billing_payment_received',
     'billing_paid',
 ]);
 

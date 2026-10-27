@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   FlatList,
   Pressable,
@@ -12,7 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { CartItem, CategoryType } from '../../lib/types';
-import { getProductSyncSummary, loadScopedProducts, ProductSyncSummary, retryAllProductSync, SavedProductRecord, subscribeToProductSyncChanges } from './productsStore';
+import { getProductSyncSummary, loadCachedScopedProducts, loadScopedProducts, ProductSyncSummary, retryAllProductSync, SavedProductRecord, subscribeToProductSyncChanges } from './productsStore';
 import { useAuthSession } from '../../lib/authSession';
 import POSHeader from './components/POSHeader';
 import ProductsTitle from './components/ProductsTitle';
@@ -50,22 +51,42 @@ const POS = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [syncSummary, setSyncSummary] = useState<ProductSyncSummary>({ attempted: 0, synced: 0, failed: 0, pending: 0 });
   const [isRetryingProducts, setIsRetryingProducts] = useState(false);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
+  const refreshGeneration = useRef(0);
+  const activeProductScope = useRef<string | null>(null);
 
   const refreshProducts = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     if (!currentUser?.stallNumber || !currentUser.businessId) {
       setCategories([]);
       setProducts([]);
       setSyncSummary({ attempted: 0, synced: 0, failed: 0, pending: 0 });
+      setIsProductsLoading(false);
+      activeProductScope.current = null;
       return;
     }
+    setIsProductsLoading(true);
     const scope = { accountId: currentUser.accountId, businessId: currentUser.businessId!, stallNumber: currentUser.stallNumber };
-    const [mergedProducts, summary] = await Promise.all([
-      loadScopedProducts(scope),
-      getProductSyncSummary(scope),
-    ]);
+    const scopeKey = `${scope.accountId}:${scope.businessId}:${scope.stallNumber}`;
+    if (activeProductScope.current !== scopeKey) {
+      activeProductScope.current = scopeKey;
+      setProducts([]);
+      setCategories([]);
+      setSyncSummary({ attempted: 0, synced: 0, failed: 0, pending: 0 });
+    }
+    const cachedProducts = await loadCachedScopedProducts(scope);
+    if (generation !== refreshGeneration.current) return;
+    if (cachedProducts.length > 0) {
+      setProducts(cachedProducts);
+      setCategories(buildListingCategories(cachedProducts));
+      setIsProductsLoading(false);
+    }
+    const [mergedProducts, summary] = await Promise.all([loadScopedProducts(scope), getProductSyncSummary(scope)]);
+    if (generation !== refreshGeneration.current) return;
     setProducts(mergedProducts);
     setCategories(buildListingCategories(mergedProducts));
     setSyncSummary(summary);
+    setIsProductsLoading(false);
   }, [currentUser?.accountId, currentUser?.businessId, currentUser?.stallNumber]);
 
   useFocusEffect(
@@ -78,6 +99,7 @@ const POS = ({
 
       return () => {
         isMounted = false;
+        refreshGeneration.current += 1;
       };
     }, [refreshProducts]),
   );
@@ -208,13 +230,23 @@ const POS = ({
               </View>
             </>
           }
-          ListEmptyComponent={isSearching ? (
+          ListEmptyComponent={isProductsLoading ? (
+            <View style={styles.emptySearchWrap}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.emptySearchText}>Loading products...</Text>
+            </View>
+          ) : isSearching ? (
             <View style={styles.emptySearchWrap}>
               <Ionicons name="search-outline" size={36} color={colors.textMuted} />
               <Text style={styles.emptySearchTitle}>No matching products</Text>
               <Text style={styles.emptySearchText}>Try another product, variant, or category name.</Text>
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.emptySearchWrap}>
+              <Text style={styles.emptySearchTitle}>No products yet</Text>
+              <Text style={styles.emptySearchText}>Add a product to begin using the sales catalog.</Text>
+            </View>
+          )}
           ListFooterComponent={
             <View style={styles.footerWrap}>
               <Pressable style={[styles.addProductsButton, salesDisabled && styles.disabledButton]} onPress={handleAddNewProduct} disabled={salesDisabled}>

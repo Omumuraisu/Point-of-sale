@@ -22,6 +22,18 @@ export const logVerificationDebug = (
     }
 };
 
+export const logPasswordResetSmsDebug = (
+    stage: string,
+    details: Record<string, unknown> = {},
+    level: VerificationDebugLevel = 'info',
+): void => {
+    if (level === 'warn') {
+        debugWarn('password-reset-sms', stage, details);
+    } else {
+        debugLog('password-reset-sms', stage, details);
+    }
+};
+
 export const normalizePhilippinePhone = (value: string): string => {
     const digits = value.replace(/\D/g, '');
 

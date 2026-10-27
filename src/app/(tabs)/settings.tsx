@@ -13,7 +13,7 @@ const SETTINGS_ITEMS = [
     {
         id: 'profile',
         title: 'Profile',
-        subtitle: 'Change name and picture',
+        subtitle: 'View account details and picture',
         iconSet: 'ionicons',
         iconName: 'person',
     },
@@ -112,7 +112,7 @@ const Settings = () => {
     const isDeveloper = currentUser?.profileTable === 'developer';
     const visibleSettingsItems = typedSettingsItems.filter((item) => {
         if (item.id === 'test-sms' || item.id === 'debug-logging') return isDeveloper;
-        return isDeveloper ? item.id !== 'profile' : item.id !== 'switch-business';
+        return isDeveloper || item.id !== 'switch-business';
     });
 
     const refreshSyncStatus = useCallback(async () => {

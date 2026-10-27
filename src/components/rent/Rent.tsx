@@ -16,7 +16,13 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import POSHeader from '../pos/components/POSHeader';
 import { loadVendorApplications, PersonnelRecord } from './personnelStore';
 import { useAuthSession } from '../../lib/authSession';
-import { fetchBillingSummary, BillingStatus, BillingSummary } from '../../lib/billing';
+import {
+    calculateUtilityPenalty,
+    fetchBillingSummary,
+    BillingStatus,
+    BillingSummary,
+    ChargeableUtilityType,
+} from '../../lib/billing';
 import { useTheme, useThemedStyles } from '../../lib/theme';
 import { fetchBusinessLeaseAgreement, BusinessLeaseAgreement } from '../../lib/businessLease';
 import { formatCurrency } from '../../lib/utils';
@@ -99,6 +105,8 @@ const BILLING_STATUS_LABELS: Record<BillingStatus, string> = {
     fully_paid: 'FULLY PAID',
 };
 
+const formatLeaseType = (value: string): string => value.replace(/_+/g, ' ').trim();
+
 const Rent = () => {
     const styles = useThemedStyles(baseStyles);
     const { colors } = useTheme();
@@ -106,6 +114,7 @@ const Rent = () => {
     const params = useLocalSearchParams<{ billingCycleId?: string | string[]; billingMonth?: string | string[] }>();
     const { currentUser } = useAuthSession();
     const [isDueDetailsExpanded, setDueDetailsExpanded] = useState(false);
+    const [expandedUtilities, setExpandedUtilities] = useState<Partial<Record<ChargeableUtilityType, boolean>>>({});
     const [personnelRecords, setPersonnelRecords] = useState<PersonnelRecord[]>([]);
     const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
     const [leaseAgreement, setLeaseAgreement] = useState<BusinessLeaseAgreement | null>(null);
@@ -187,18 +196,37 @@ const Rent = () => {
         router.push('/payment-history');
     };
 
+    const handleToggleUtility = (utilityType: ChargeableUtilityType) => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setExpandedUtilities((current) => ({
+            ...current,
+            [utilityType]: !current[utilityType],
+        }));
+    };
+
     const personnelList = isVendor
         ? personnelRecords.filter((personnel) => personnel.accountId !== currentUser?.accountId)
         : personnelRecords;
     const stallNumber = currentUser?.stallNumber ?? 'Not assigned';
     const currentBill = billingSummary?.currentBill ?? null;
+    useEffect(() => {
+        setExpandedUtilities({});
+    }, [currentBill?.monthlyBillId]);
+    const currentUtilityPenalty = currentBill ? calculateUtilityPenalty(currentBill) : null;
+    const arrearsPenaltyTotal = billingSummary?.arrearsBills.reduce((sum, bill) => (
+        sum + calculateUtilityPenalty(bill).totalPenalty
+    ), 0) ?? 0;
     const billingStatus = currentBill?.status ?? 'pending';
     const billingStatusIsPaid = billingStatus === 'fully_paid';
     const billingStatusIsPartial = billingStatus === 'partially_paid';
     const billingStatusIsOverdue = billingStatus === 'overdue' || billingStatus === 'overdue_partially_paid';
     const totalAmount = isBillingLoading
         ? 'Loading...'
-        : formatCurrency(billingSummary?.totalOutstanding ?? 0);
+        : formatCurrency(
+            (billingSummary?.totalOutstanding ?? 0)
+            + (currentUtilityPenalty?.totalPenalty ?? 0)
+            + arrearsPenaltyTotal,
+        );
     const amountLabel = 'Total Outstanding';
     const billingDateLabel = currentBill
         ? billingStatusIsPaid
@@ -210,14 +238,33 @@ const Rent = () => {
             : 'calendar-outline';
     const billBreakdown = currentBill
         ? currentBill.chargeBreakdown.length > 0
-            ? currentBill.chargeBreakdown.map((charge) => ({ label: charge.label, amount: charge.amount }))
+            ? currentBill.chargeBreakdown.map((charge) => ({
+                id: `charge-${charge.id}`,
+                code: charge.code,
+                label: charge.label,
+                amount: charge.amount,
+                description: charge.description,
+                utilityType: charge.utilityType,
+            }))
             : [
-                { label: 'Rent', amount: currentBill.rentAmount },
-                { label: 'Electricity', amount: currentBill.electricityAmount },
-                { label: 'Water', amount: currentBill.waterAmount },
-                ...(currentBill.otherAmount > 0 ? [{ label: 'Other Charges', amount: currentBill.otherAmount }] : []),
+                { id: 'fallback-rent', code: 'rent', label: 'Rent', amount: currentBill.rentAmount, description: null, utilityType: 'rent' as const },
+                { id: 'fallback-electricity', code: 'electricity', label: 'Electricity', amount: currentBill.electricityAmount, description: null, utilityType: 'electricity' as const },
+                { id: 'fallback-water', code: 'water', label: 'Water', amount: currentBill.waterAmount, description: null, utilityType: 'water' as const },
+                ...(currentBill.otherAmount > 0 ? [{
+                    id: 'fallback-other', code: 'other', label: 'Other Charges', amount: currentBill.otherAmount, description: null, utilityType: null,
+                }] : []),
             ].filter((charge) => charge.amount > 0)
         : [];
+    const utilityCharges = currentBill ? [
+        { id: 'utility-rent', utilityType: 'rent' as const, label: 'Rent', amount: currentBill.rentAmount },
+        { id: 'utility-water', utilityType: 'water' as const, label: 'Water', amount: currentBill.waterAmount },
+        { id: 'utility-electricity', utilityType: 'electricity' as const, label: 'Electricity', amount: currentBill.electricityAmount },
+    ] : [];
+    const marketFeeCharges = billBreakdown.filter((charge) => {
+        const normalizedCode = charge.code.trim().toLowerCase();
+        return normalizedCode !== 'rent' && normalizedCode !== 'water' && normalizedCode !== 'electricity';
+    });
+    const marketFeeTotal = marketFeeCharges.reduce((sum, charge) => sum + charge.amount, 0);
 
     return (
         <SafeAreaView style={styles.screen} edges={['top']}>
@@ -324,16 +371,91 @@ const Rent = () => {
                                                 {formatBillingMonthLabel(billingSummary?.currentBill?.billingMonth ?? null)}
                                             </Text>
                                         </View>
-                                        {billBreakdown.map((item) => (
-                                            <View style={styles.breakdownRow} key={item.label}>
-                                                <Text style={styles.extraDetailsLabel}>{item.label}</Text>
-                                                <Text style={styles.extraDetailsAmount}>{formatCurrency(item.amount)}</Text>
+                                        <View style={styles.chargeSectionWrap}>
+                                            <Text style={styles.chargeSectionTitle}>Utilities</Text>
+                                            {utilityCharges.map((item) => {
+                                                const calculation = currentBill
+                                                    ? calculateUtilityPenalty(currentBill, undefined, item.utilityType)
+                                                    : null;
+                                                const isExpanded = Boolean(expandedUtilities[item.utilityType]);
+
+                                                return (
+                                                    <View key={item.id}>
+                                                        <Pressable
+                                                            style={styles.breakdownRow}
+                                                            accessibilityRole="button"
+                                                            accessibilityLabel={`${item.label} charge details`}
+                                                            accessibilityState={{ expanded: isExpanded }}
+                                                            onPress={() => handleToggleUtility(item.utilityType)}
+                                                        >
+                                                            <View style={styles.utilityRowLabelWrap}>
+                                                                <Text style={styles.extraDetailsLabel}>{item.label}</Text>
+                                                                <Ionicons
+                                                                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                                                                    size={16}
+                                                                    color={colors.textMuted}
+                                                                />
+                                                            </View>
+                                                            <Text style={styles.extraDetailsAmount}>{formatCurrency(item.amount)}</Text>
+                                                        </Pressable>
+                                                        {calculation && isExpanded ? (
+                                                            <View style={styles.utilityPenaltyWrap}>
+                                                                <Text style={styles.utilityPenaltyTitle}>
+                                                                    {item.label} Charge Calculation
+                                                                </Text>
+                                                                <View style={styles.penaltyRow}>
+                                                                    <Text style={styles.penaltyLabel}>Unpaid principal</Text>
+                                                                    <Text style={styles.penaltyAmount}>
+                                                                        {formatCurrency(calculation.unpaidPrincipal)}
+                                                                    </Text>
+                                                                </View>
+                                                                <View style={styles.penaltyRow}>
+                                                                    <Text style={styles.penaltyLabel}>One-time 25% surcharge</Text>
+                                                                    <Text style={styles.penaltyAmount}>
+                                                                        {formatCurrency(calculation.surcharge)}
+                                                                    </Text>
+                                                                </View>
+                                                                <View style={styles.penaltyRow}>
+                                                                    <Text style={styles.penaltyLabel}>
+                                                                        Interest (2% per month starting when overdue, maximum 36 charges)
+                                                                    </Text>
+                                                                    <Text style={styles.penaltyAmount}>
+                                                                        {formatCurrency(calculation.interest)}
+                                                                    </Text>
+                                                                </View>
+                                                                <View style={styles.penaltyRow}>
+                                                                    <Text style={styles.penaltyLabel}>36-month additional charge (72%)</Text>
+                                                                    <Text style={styles.penaltyAmount}>
+                                                                        {formatCurrency(calculation.additional36MonthCharge)}
+                                                                    </Text>
+                                                                </View>
+                                                                <View style={[styles.penaltyRow, styles.totalUtilityRow]}>
+                                                                    <Text style={styles.totalUtilityLabel}>
+                                                                        Total {item.label.toLowerCase()} balance
+                                                                    </Text>
+                                                                    <Text style={styles.totalUtilityAmount}>
+                                                                        {formatCurrency(calculation.totalUtilityBalance)}
+                                                                    </Text>
+                                                                </View>
+                                                            </View>
+                                                        ) : null}
+                                                    </View>
+                                                );
+                                            })}
+                                        </View>
+                                        <View style={styles.marketFeesWrap}>
+                                            <View style={styles.marketFeesHeader}>
+                                                <Text style={styles.marketFeesTitle}>Market Fees</Text>
+                                                <Text style={styles.marketFeesTotal}>{formatCurrency(marketFeeTotal)}</Text>
                                             </View>
-                                        ))}
+                                        </View>
                                         <View style={[styles.breakdownRow, styles.subtotalRow]}>
                                             <Text style={styles.subtotalLabel}>Bill Total</Text>
                                             <Text style={styles.subtotalAmount}>
-                                                {formatCurrency(currentBill?.totalAmount ?? 0)}
+                                                {formatCurrency(
+                                                    (currentBill?.totalAmount ?? 0)
+                                                    + (currentUtilityPenalty?.totalPenalty ?? 0),
+                                                )}
                                             </Text>
                                         </View>
                                         <View style={styles.breakdownRow}>
@@ -342,7 +464,12 @@ const Rent = () => {
                                         </View>
                                         <View style={[styles.breakdownRow, styles.subtotalRow]}>
                                             <Text style={styles.subtotalLabel}>Current Balance</Text>
-                                            <Text style={styles.subtotalAmount}>{formatCurrency(currentBill?.balance ?? 0)}</Text>
+                                            <Text style={styles.subtotalAmount}>
+                                                {formatCurrency(
+                                                    (currentBill?.balance ?? 0)
+                                                    + (currentUtilityPenalty?.totalPenalty ?? 0),
+                                                )}
+                                            </Text>
                                         </View>
                                         {billingSummary?.arrearsBills.length ? (
                                             <View style={styles.arrearsWrap}>
@@ -350,26 +477,47 @@ const Rent = () => {
                                                     <Text style={styles.monthSectionTitle}>Arrears</Text>
                                                     <Text style={styles.monthSectionMeta}>Previous Balance</Text>
                                                 </View>
-                                                {billingSummary.arrearsBills.map((month) => (
-                                                    <View
-                                                        style={[
-                                                            styles.breakdownRow,
-                                                            billingSummary.focusedBillId === month.monthlyBillId ? styles.focusedBill : null,
-                                                        ]}
-                                                        key={month.monthlyBillId}
-                                                    >
-                                                        <Text style={styles.extraDetailsLabel}>
-                                                            {formatBillingMonthLabel(month.billingMonth)}
-                                                        </Text>
-                                                        <Text style={styles.extraDetailsAmount}>
-                                                            {formatCurrency(month.balance)}
-                                                        </Text>
-                                                    </View>
-                                                ))}
+                                                {billingSummary.arrearsBills.map((month) => {
+                                                    const arrearsPenalty = calculateUtilityPenalty(month);
+                                                    const arrearsMarketFees = month.chargeBreakdown.filter((charge) => (
+                                                        charge.code.trim().toLowerCase() === 'market_fee'
+                                                    ));
+                                                    const arrearsMarketFeeTotal = arrearsMarketFees.reduce((sum, charge) => (
+                                                        sum + charge.amount
+                                                    ), 0);
+
+                                                    return (
+                                                        <View style={styles.arrearsMonthWrap} key={month.monthlyBillId}>
+                                                            <View
+                                                                style={[
+                                                                    styles.breakdownRow,
+                                                                    billingSummary.focusedBillId === month.monthlyBillId ? styles.focusedBill : null,
+                                                                ]}
+                                                            >
+                                                                <Text style={styles.extraDetailsLabel}>
+                                                                    {formatBillingMonthLabel(month.billingMonth)}
+                                                                </Text>
+                                                                <Text style={styles.extraDetailsAmount}>
+                                                                    {formatCurrency(month.balance + arrearsPenalty.totalPenalty)}
+                                                                </Text>
+                                                            </View>
+                                                            {arrearsMarketFees.length > 0 ? (
+                                                                <View style={styles.arrearsMarketFeesWrap}>
+                                                                    <View style={styles.marketFeesHeader}>
+                                                                        <Text style={styles.arrearsMarketFeesTitle}>Market Fees</Text>
+                                                                        <Text style={styles.arrearsMarketFeesTotal}>
+                                                                            {formatCurrency(arrearsMarketFeeTotal)} billed
+                                                                        </Text>
+                                                                    </View>
+                                                                </View>
+                                                            ) : null}
+                                                        </View>
+                                                    );
+                                                })}
                                                 <View style={[styles.breakdownRow, styles.subtotalRow]}>
                                                     <Text style={styles.subtotalLabel}>Arrears Subtotal</Text>
                                                     <Text style={styles.subtotalAmount}>
-                                                        {formatCurrency(billingSummary.arrearsAmount)}
+                                                        {formatCurrency(billingSummary.arrearsAmount + arrearsPenaltyTotal)}
                                                     </Text>
                                                 </View>
                                             </View>
@@ -379,7 +527,11 @@ const Rent = () => {
                                                 Total Outstanding
                                             </Text>
                                             <Text style={styles.overallAmount}>
-                                                {formatCurrency(billingSummary?.totalOutstanding ?? 0)}
+                                                {formatCurrency(
+                                                    (billingSummary?.totalOutstanding ?? 0)
+                                                    + (currentUtilityPenalty?.totalPenalty ?? 0)
+                                                    + arrearsPenaltyTotal,
+                                                )}
                                             </Text>
                                         </View>
                                     </>
@@ -396,7 +548,7 @@ const Rent = () => {
                                             ? billingStatusIsPaid
                                                 ? 'This bill has been paid in full.'
                                                 : billingStatusIsOverdue
-                                                    ? 'This bill is overdue. The balance shown is current.'
+                                                    ? 'This bill is overdue. The balance includes the applicable utility charges.'
                                                     : 'The balance shown includes all payments currently applied.'
                                             : 'Billing details will appear once submitted.'}
                                     </Text>
@@ -508,7 +660,7 @@ const Rent = () => {
                                 </View>
                                 <View style={styles.leaseDetailRow}>
                                     <Text style={styles.leaseDetailLabel}>Type</Text>
-                                    <Text style={styles.leaseDetailValue}>{leaseAgreement.businessType}</Text>
+                                    <Text style={styles.leaseDetailValue}>{formatLeaseType(leaseAgreement.businessType)}</Text>
                                 </View>
                                 <View style={styles.leaseDetailRow}>
                                     <Text style={styles.leaseDetailLabel}>Section</Text>
@@ -733,11 +885,129 @@ const baseStyles = StyleSheet.create({
     },
     breakdownRow: {
         minHeight: 34,
+        paddingVertical: 6,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         borderBottomWidth: 1,
         borderBottomColor: '#e1e5ee',
+    },
+    chargeSectionWrap: {
+        marginTop: 4,
+    },
+    chargeSectionTitle: {
+        paddingVertical: 7,
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#303846',
+    },
+    utilityRowLabelWrap: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    utilityPenaltyWrap: {
+        marginTop: 6,
+        marginBottom: 8,
+        marginLeft: 8,
+        borderRadius: 10,
+        backgroundColor: '#eef2fa',
+        paddingHorizontal: 10,
+        paddingTop: 10,
+    },
+    utilityPenaltyTitle: {
+        marginBottom: 8,
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#26324e',
+    },
+    penaltyRow: {
+        minHeight: 38,
+        paddingVertical: 7,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#dce2ef',
+    },
+    penaltyLabel: {
+        flex: 1,
+        fontSize: 13,
+        lineHeight: 17,
+        fontWeight: '700',
+        color: '#566176',
+    },
+    penaltyAmount: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#26324e',
+        textAlign: 'right',
+    },
+    totalUtilityRow: {
+        minHeight: 44,
+        borderBottomWidth: 0,
+        borderTopWidth: 1,
+        borderTopColor: '#bdc9e4',
+    },
+    totalUtilityLabel: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#24418c',
+    },
+    totalUtilityAmount: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#2448a4',
+    },
+    breakdownLabelWrap: {
+        flex: 1,
+        paddingRight: 12,
+    },
+    marketFeesWrap: {
+        marginTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#d4d8e2',
+        paddingTop: 8,
+    },
+    marketFeesHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        paddingVertical: 6,
+    },
+    marketFeesTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#252932',
+    },
+    marketFeesTotal: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#252932',
+    },
+    arrearsMonthWrap: {
+        borderBottomWidth: 1,
+        borderBottomColor: '#e4e7ed',
+        paddingBottom: 6,
+    },
+    arrearsMarketFeesWrap: {
+        marginLeft: 12,
+        marginBottom: 6,
+        borderLeftWidth: 2,
+        borderLeftColor: '#c6d2ef',
+        paddingLeft: 10,
+    },
+    arrearsMarketFeesTitle: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#4c5565',
+    },
+    arrearsMarketFeesTotal: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#7a808e',
     },
     subtotalRow: {
         minHeight: 38,

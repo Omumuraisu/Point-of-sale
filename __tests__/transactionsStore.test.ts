@@ -97,6 +97,56 @@ test('a valid-business offline sale is saved only in its scoped queue', async ()
     expect(await loadSavedTransactions({ accountId: 7, businessId: 20, stallNumber: '1' })).toEqual([]);
 });
 
+test('multi-category sales persist category tags in the offline queue', async () => {
+    mockedSync.mockResolvedValue({ success: false, error: 'Network unavailable' });
+    const meatItem = transaction(7, 10, '#meat').cartItems![0];
+    const riceItem = {
+        ...transaction(7, 10, '#rice').cartItems![0],
+        id: 'rice-item',
+        name: 'Rice',
+        category: 'Rice',
+    };
+
+    const result = await saveReceiptTransaction({
+        cartItems: [{ ...meatItem, category: 'Meat' }, riceItem],
+        paidAmount: 200,
+        totalDue: 200,
+        accountId: 7,
+        businessId: 10,
+        username: 'Owner',
+        clientOrderKey: 'checkout:tags:1',
+        preparedAt: 1,
+        stallId: 'STALL-1',
+        stallNumber: '1',
+    });
+
+    expect(result.transaction).toMatchObject({
+        category: 'Meat',
+        categories: ['Meat', 'Rice'],
+    });
+    await expect(loadSavedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' }))
+        .resolves.toEqual([expect.objectContaining({ categories: ['Meat', 'Rice'] })]);
+});
+
+test('loading a legacy Mixed record recovers and persists tags from its cart items', async () => {
+    const legacy = {
+        ...transaction(7, 10, '#legacy-mixed'),
+        category: 'Mixed',
+        categoryType: { key: 'neutral', label: 'Neutral' },
+        cartItems: [
+            { ...transaction(7, 10, '#meat').cartItems![0], category: 'Meat' },
+            { ...transaction(7, 10, '#rice').cartItems![0], id: 'rice-item', category: 'Rice' },
+        ],
+    };
+    await AsyncStorage.setItem('@pos/sales-transactions:v3:7:10:1', JSON.stringify([legacy]));
+
+    const loaded = await loadSavedTransactions({ accountId: 7, businessId: 10, stallNumber: '1' });
+
+    expect(loaded[0]).toMatchObject({ category: 'Meat', categories: ['Meat', 'Rice'] });
+    expect(await AsyncStorage.getItem('@pos/sales-transactions:v3:7:10:1'))
+        .toContain('"categories":["Meat","Rice"]');
+});
+
 test('a sale is durable before its first network attempt and keeps its checkout key', async () => {
     mockedSync.mockImplementation(async (queued) => {
         expect(await AsyncStorage.getItem('@pos/sales-transactions:v3:7:10:1')).toContain(queued.clientOrderKey!);
